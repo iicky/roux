@@ -1,0 +1,13 @@
+[package]
+name = "roux-cli"
+version = "0.0.1"
+edition = "2024"
+description = "Prep fresh docs - chop, embed, retreive and let your agents cook."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/iicky/roux"
+keywords = ["rag", "embeddings", "documentation", "ai", "search"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = ["CLAUDE.md", "AGENTS.md", "SPEC.md", ".beads/"]
+
+
+[dependencies]
