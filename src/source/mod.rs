@@ -104,3 +104,133 @@ impl Source {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_raw_crate_name() {
+        let src = Source::from_raw("tokio", None, None, None);
+        assert!(matches!(src.kind, SourceKind::Crate(ref s) if s == "tokio"));
+        assert_eq!(src.name, "tokio");
+    }
+
+    #[test]
+    fn test_from_raw_url() {
+        let src = Source::from_raw("https://docs.rs/tokio", None, None, None);
+        assert!(matches!(src.kind, SourceKind::Url(_)));
+        assert_eq!(src.name, "https://docs.rs/tokio");
+    }
+
+    #[test]
+    fn test_from_raw_http_url() {
+        let src = Source::from_raw("http://example.com/docs", None, None, None);
+        assert!(matches!(src.kind, SourceKind::Url(_)));
+    }
+
+    #[test]
+    fn test_from_raw_local_file() {
+        // Cargo.toml exists in the repo
+        let src = Source::from_raw("Cargo.toml", None, None, None);
+        assert!(matches!(src.kind, SourceKind::File(_)));
+        assert_eq!(src.name, "Cargo");
+    }
+
+    #[test]
+    fn test_from_raw_local_dir() {
+        let src = Source::from_raw("src", None, None, None);
+        assert!(matches!(src.kind, SourceKind::LocalPath(_)));
+        assert_eq!(src.name, "src");
+    }
+
+    #[test]
+    fn test_from_raw_with_name_override() {
+        let src = Source::from_raw("tokio", Some("my-tokio".to_string()), None, None);
+        assert_eq!(src.name, "my-tokio");
+    }
+
+    #[test]
+    fn test_from_raw_with_language_override() {
+        let src = Source::from_raw("tokio", None, Some("python".to_string()), None);
+        assert_eq!(src.detected_language(), Some("python"));
+    }
+
+    #[test]
+    fn test_detected_language_crate() {
+        let src = Source::from_raw("tokio", None, None, None);
+        assert_eq!(src.detected_language(), Some("rust"));
+    }
+
+    #[test]
+    fn test_detected_language_extensions() {
+        let cases = vec![
+            ("foo.rs", Some("rust")),
+            ("foo.py", Some("python")),
+            ("foo.ts", Some("typescript")),
+            ("foo.tsx", Some("typescript")),
+            ("foo.js", Some("javascript")),
+            ("foo.go", Some("go")),
+            ("foo.md", Some("markdown")),
+            ("foo.html", Some("html")),
+            ("foo.yaml", None),
+            ("foo.unknown", None),
+        ];
+
+        for (filename, expected) in cases {
+            // These files don't exist, so they'll be treated as crate names
+            // We need to construct Source directly to test File variant
+            let src = Source {
+                name: filename.to_string(),
+                version: None,
+                kind: SourceKind::File(PathBuf::from(filename)),
+                language: None,
+            };
+            assert_eq!(src.detected_language(), expected, "failed for {filename}");
+        }
+    }
+
+    #[test]
+    fn test_format_hint_crate() {
+        let src = Source::from_raw("tokio", None, None, None);
+        assert_eq!(src.format_hint(), Some("rustdoc"));
+    }
+
+    #[test]
+    fn test_format_hint_url() {
+        let src = Source::from_raw("https://docs.rs/tokio", None, None, None);
+        assert_eq!(src.format_hint(), Some("html"));
+    }
+
+    #[test]
+    fn test_format_hint_files() {
+        let cases = vec![
+            ("foo.md", Some("markdown")),
+            ("foo.html", Some("html")),
+            ("foo.yaml", Some("openapi")),
+            ("foo.json", Some("openapi")),
+            ("foo.rs", None),
+        ];
+
+        for (filename, expected) in cases {
+            let src = Source {
+                name: filename.to_string(),
+                version: None,
+                kind: SourceKind::File(PathBuf::from(filename)),
+                language: None,
+            };
+            assert_eq!(src.format_hint(), expected, "failed for {filename}");
+        }
+    }
+
+    #[test]
+    fn test_format_hint_local_path() {
+        let src = Source {
+            name: "myproject".to_string(),
+            version: None,
+            kind: SourceKind::LocalPath(PathBuf::from("/tmp/myproject")),
+            language: None,
+        };
+        assert_eq!(src.format_hint(), None);
+    }
+}

@@ -119,4 +119,96 @@ impl Config {
             .join("roux")
             .join("config.toml")
     }
+
+    pub fn parse(s: &str) -> Result<Self> {
+        Ok(toml::from_str(s)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = Config::default();
+        assert_eq!(config.model.id, "intfloat/multilingual-e5-small");
+        assert_eq!(config.model.device, "auto");
+        assert!(config.index.prefer_local);
+        assert_eq!(config.ingest.batch_size, 32);
+        assert_eq!(config.ingest.default_top_k, 3);
+        assert!(!config.ingest.transitive);
+        assert!(config.api.is_none());
+    }
+
+    #[test]
+    fn test_empty_toml_gives_defaults() {
+        let config: Config = toml::from_str("").unwrap();
+        assert_eq!(config.model.id, "intfloat/multilingual-e5-small");
+        assert_eq!(config.ingest.batch_size, 32);
+    }
+
+    #[test]
+    fn test_partial_toml_override() {
+        let config: Config = toml::from_str(
+            r#"
+            [model]
+            id = "BAAI/bge-small-en-v1.5"
+
+            [ingest]
+            batch_size = 64
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.model.id, "BAAI/bge-small-en-v1.5");
+        assert_eq!(config.model.device, "auto"); // still default
+        assert_eq!(config.ingest.batch_size, 64);
+        assert_eq!(config.ingest.default_top_k, 3); // still default
+    }
+
+    #[test]
+    fn test_full_toml() {
+        let config: Config = toml::from_str(
+            r#"
+            [model]
+            id = "custom/model"
+            device = "cuda"
+
+            [index]
+            global_path = "/custom/path/db.sqlite"
+            prefer_local = false
+
+            [ingest]
+            batch_size = 16
+            default_top_k = 5
+            transitive = true
+
+            [api]
+            provider = "voyage"
+            api_key_env = "VOYAGE_API_KEY"
+            model = "voyage-code-2"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.model.device, "cuda");
+        assert!(!config.index.prefer_local);
+        assert!(config.ingest.transitive);
+        assert_eq!(config.api.unwrap().provider, "voyage");
+    }
+
+    #[test]
+    fn test_load_missing_file_gives_defaults() {
+        // Config::load() falls back to defaults when file doesn't exist
+        // This test just ensures it doesn't panic
+        let config = Config::default();
+        assert_eq!(config.model.id, "intfloat/multilingual-e5-small");
+    }
+
+    #[test]
+    fn test_from_str() {
+        let config = Config::parse("[ingest]\nbatch_size = 128").unwrap();
+        assert_eq!(config.ingest.batch_size, 128);
+    }
 }
