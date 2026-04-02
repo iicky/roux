@@ -6,11 +6,11 @@ use crate::source::Source;
 pub struct MarkdownExtractor;
 
 impl Extractor for MarkdownExtractor {
-    fn can_handle(&self, _source: &Source) -> bool {
-        todo!()
+    fn can_handle(&self, source: &Source) -> bool {
+        source.format_hint() == Some("markdown")
     }
 
     fn extract(&self, _source: &Source) -> Result<Vec<RawChunk>> {
-        todo!()
+        todo!("markdown extraction")
     }
 }

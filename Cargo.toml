@@ -24,7 +24,8 @@ serde_json = "1"
 toml = "0.8"
 
 # Storage
-rusqlite = { version = "0.34", features = ["bundled"] }
+rusqlite = { version = "0.34", features = ["bundled", "blob"] }
+sqlite-vec = "0.1"
 
 # Embedding / ML inference
 candle-core = "0.8"
