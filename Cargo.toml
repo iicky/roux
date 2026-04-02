@@ -2,7 +2,7 @@
 name = "roux-cli"
 version = "0.0.1"
 edition = "2024"
-rust-version = "1.85.0"
+rust-version = "1.88.0"
 description = "Prep fresh docs - chop, embed, retrieve and let your agents cook."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/iicky/roux"
