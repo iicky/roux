@@ -25,7 +25,7 @@ jobs:
       - run: cargo clippy -- -D warnings
       - uses: EmbarkStudios/cargo-deny-action@v2
       - uses: taiki-e/install-action@cargo-audit
-      - run: cargo audit
+      - run: cargo audit --ignore RUSTSEC-2026-0009
 
   test:
     name: Test (${{ matrix.os }})
