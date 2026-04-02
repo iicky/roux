@@ -78,7 +78,25 @@ fn download_crate(name: &str, version: &str) -> Result<PathBuf> {
 
     let decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(bytes));
     let mut archive = tar::Archive::new(decoder);
-    archive.unpack(&tmp_dir)?;
+
+    // Validate each entry to prevent path traversal attacks (e.g. ../../../etc/passwd)
+    let canonical_tmp = tmp_dir.canonicalize()?;
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?;
+        if path
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+            || path.is_absolute()
+        {
+            anyhow::bail!(
+                "refusing to extract tar entry with unsafe path: {}",
+                path.display()
+            );
+        }
+        let dest = canonical_tmp.join(&path);
+        entry.unpack(&dest)?;
+    }
 
     // The extracted dir is usually {name}-{version}/
     let entries: Vec<_> = std::fs::read_dir(&tmp_dir)?

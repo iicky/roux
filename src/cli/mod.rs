@@ -5,7 +5,6 @@ use crate::config::Config;
 use crate::embed::Embedder;
 use crate::embed::candle::CandleEmbedder;
 use crate::extract;
-use crate::extract::RawChunk;
 use crate::model;
 use crate::source::Source;
 use crate::store::sqlite::SqliteStore;
@@ -182,7 +181,7 @@ fn cmd_add(
         return Ok(());
     }
 
-    // Embed
+    // Embed + store in batches so each committed batch survives partial failures
     eprintln!("Loading embedding model...");
     let model_files = model::ensure_model(&config.model.id)?;
     let embedder = CandleEmbedder::load(
@@ -191,17 +190,60 @@ fn cmd_add(
         &model_files.config,
     )?;
 
-    eprintln!("Embedding {} chunks...", raw_chunks.len());
-    let chunks = embed_raw_chunks(&raw_chunks, &embedder, config.ingest.batch_size)?;
-
-    // Store
     let store_path = config.resolve_store_path(local);
     let store = SqliteStore::open(&store_path)?;
-    store.upsert_chunks(&chunks)?;
+    let batch_size = config.ingest.batch_size;
+    let total_batches = raw_chunks.len().div_ceil(batch_size);
+    let mut stored = 0usize;
+
+    eprintln!(
+        "Embedding and storing {} chunks in {} batches...",
+        raw_chunks.len(),
+        total_batches
+    );
+
+    for (i, batch) in raw_chunks.chunks(batch_size).enumerate() {
+        let texts: Vec<&str> = batch.iter().map(|c| c.body.as_str()).collect();
+        let embeddings = embedder.embed_passages(&texts).with_context(|| {
+            format!(
+                "embedding batch {}/{} failed ({stored} chunks already stored)",
+                i + 1,
+                total_batches
+            )
+        })?;
+
+        let chunks: Vec<Chunk> = batch
+            .iter()
+            .zip(embeddings)
+            .map(|(raw, embedding)| Chunk {
+                id: raw.id(),
+                source_name: raw.source_name.clone(),
+                source_version: raw.source_version.clone(),
+                language: raw.language.clone(),
+                item_type: raw.item_type.clone(),
+                qualified_name: raw.qualified_name.clone(),
+                signature: raw.signature.clone(),
+                doc: raw.doc.clone(),
+                body: raw.body.clone(),
+                embedding,
+                url: raw.url.clone(),
+                ingested_at: 0,
+            })
+            .collect();
+
+        store.upsert_chunks(&chunks)?;
+        stored += chunks.len();
+        eprintln!(
+            "  batch {}/{}: stored {} chunks",
+            i + 1,
+            total_batches,
+            stored
+        );
+    }
 
     eprintln!(
         "Indexed {} chunks from {} into {}",
-        chunks.len(),
+        stored,
         source.name,
         store_path.display()
     );
@@ -356,41 +398,6 @@ fn cmd_model_status(config: &Config) -> Result<()> {
     let status = model::status(&config.model.id)?;
     println!("{status}");
     Ok(())
-}
-
-/// Convert RawChunks to Chunks by embedding them in batches.
-fn embed_raw_chunks(
-    raw_chunks: &[RawChunk],
-    embedder: &CandleEmbedder,
-    batch_size: usize,
-) -> Result<Vec<Chunk>> {
-    let mut chunks = Vec::with_capacity(raw_chunks.len());
-
-    for batch in raw_chunks.chunks(batch_size) {
-        let texts: Vec<&str> = batch.iter().map(|c| c.body.as_str()).collect();
-        let embeddings = embedder
-            .embed_passages(&texts)
-            .context("embedding batch failed")?;
-
-        for (raw, embedding) in batch.iter().zip(embeddings) {
-            chunks.push(Chunk {
-                id: raw.id(),
-                source_name: raw.source_name.clone(),
-                source_version: raw.source_version.clone(),
-                language: raw.language.clone(),
-                item_type: raw.item_type.clone(),
-                qualified_name: raw.qualified_name.clone(),
-                signature: raw.signature.clone(),
-                doc: raw.doc.clone(),
-                body: raw.body.clone(),
-                embedding,
-                url: raw.url.clone(),
-                ingested_at: 0,
-            });
-        }
-    }
-
-    Ok(chunks)
 }
 
 #[cfg(test)]
