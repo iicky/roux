@@ -2,12 +2,57 @@
 name = "roux-cli"
 version = "0.0.1"
 edition = "2024"
-description = "Prep fresh docs - chop, embed, retreive and let your agents cook."
+rust-version = "1.85.0"
+description = "Prep fresh docs - chop, embed, retrieve and let your agents cook."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/iicky/roux"
 keywords = ["rag", "embeddings", "documentation", "ai", "search"]
 categories = ["command-line-utilities", "development-tools"]
 exclude = ["CLAUDE.md", "AGENTS.md", "SPEC.md", ".beads/"]
 
+[[bin]]
+name = "roux"
+path = "src/main.rs"
 
 [dependencies]
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Serialization & config
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Storage
+rusqlite = { version = "0.34", features = ["bundled"] }
+
+# Embedding / ML inference
+candle-core = "0.8"
+candle-nn = "0.8"
+candle-transformers = "0.8"
+tokenizers = "0.21"
+
+# Hashing
+blake3 = "1"
+
+# HTTP
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+
+# Paths
+dirs = "6"
+
+# Error handling
+anyhow = "1"
+
+# Tree-sitter (fallback extractor)
+tree-sitter = "0.25"
+
+[features]
+default = []
+cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1

@@ -1,0 +1,3 @@
+[profile.ci]
+default-filter = "all()"
+junit.path = "junit.xml"
