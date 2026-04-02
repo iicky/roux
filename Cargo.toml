@@ -48,6 +48,14 @@ dirs = "6"
 # Error handling
 anyhow = "1"
 
+# Rust source parsing
+syn = { version = "2", features = ["full", "parsing"] }
+quote = "1"
+
+# Archive extraction (for crate downloads)
+flate2 = "1"
+tar = "0.4"
+
 # Tree-sitter (fallback extractor)
 tree-sitter = "0.25"
 
