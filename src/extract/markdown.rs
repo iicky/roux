@@ -34,7 +34,13 @@ fn extract_from_dir(dir: &Path, source: &Source) -> Result<Vec<RawChunk>> {
 fn walk_md_files(dir: &Path, source: &Source, chunks: &mut Vec<RawChunk>) -> Result<()> {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(_) => return Ok(()),
+        Err(e) => {
+            eprintln!(
+                "warning: skipping unreadable directory {}: {e}",
+                dir.display()
+            );
+            return Ok(());
+        }
     };
 
     for entry in entries {
@@ -49,7 +55,10 @@ fn walk_md_files(dir: &Path, source: &Source, chunks: &mut Vec<RawChunk>) -> Res
         {
             let content = match std::fs::read_to_string(&path) {
                 Ok(c) => c,
-                Err(_) => continue,
+                Err(e) => {
+                    eprintln!("warning: skipping unreadable file {}: {e}", path.display());
+                    continue;
+                }
             };
             chunks.extend(parse_markdown(&content, source));
         }
@@ -110,19 +119,29 @@ fn flush_section(
     chunks: &mut Vec<RawChunk>,
 ) {
     let trimmed = body.trim();
-    if trimmed.is_empty() || heading_stack.is_empty() {
+    if trimmed.is_empty() {
         return;
     }
 
-    let qualified_name: String = heading_stack
-        .iter()
-        .map(|(_, h)| h.as_str())
-        .collect::<Vec<_>>()
-        .join(" > ");
-
-    let full_qualified = format!("{source_name} > {qualified_name}");
-    let heading_text = heading_stack.last().map(|(_, h)| h.as_str()).unwrap_or("");
-    let body_text = RawChunk::build_body("section", &full_qualified, Some(heading_text), trimmed);
+    let (full_qualified, heading_text) = if heading_stack.is_empty() {
+        // Content before first heading gets an implicit preamble section
+        (
+            format!("{source_name} > (preamble)"),
+            "(preamble)".to_string(),
+        )
+    } else {
+        let qualified_name: String = heading_stack
+            .iter()
+            .map(|(_, h)| h.as_str())
+            .collect::<Vec<_>>()
+            .join(" > ");
+        let heading = heading_stack
+            .last()
+            .map(|(_, h)| h.clone())
+            .unwrap_or_default();
+        (format!("{source_name} > {qualified_name}"), heading)
+    };
+    let body_text = RawChunk::build_body("section", &full_qualified, Some(&heading_text), trimmed);
 
     chunks.push(RawChunk {
         source_name: source_name.to_string(),
@@ -130,7 +149,7 @@ fn flush_section(
         language: "markdown".to_string(),
         item_type: "section".to_string(),
         qualified_name: full_qualified,
-        signature: Some(heading_text.to_string()),
+        signature: Some(heading_text),
         doc: trimmed.to_string(),
         body: body_text,
         url: None,
@@ -220,10 +239,20 @@ mod tests {
     }
 
     #[test]
-    fn test_content_before_first_heading_skipped() {
+    fn test_content_before_first_heading_captured() {
         let md = "Some preamble.\n# Real Section\nContent.\n";
         let chunks = parse_markdown(md, &test_source());
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].qualified_name, "docs > (preamble)");
+        assert!(chunks[0].doc.contains("Some preamble"));
+        assert_eq!(chunks[1].qualified_name, "docs > Real Section");
+    }
+
+    #[test]
+    fn test_preamble_only_document() {
+        let md = "Just some text with no headings at all.\n";
+        let chunks = parse_markdown(md, &test_source());
         assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0].qualified_name, "docs > Real Section");
+        assert_eq!(chunks[0].qualified_name, "docs > (preamble)");
     }
 }
