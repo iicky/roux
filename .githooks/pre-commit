@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -e
+
+# Block commits directly to main
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+if [ "$branch" = "main" ]; then
+    echo "error: direct commits to main are blocked. Use a feature branch."
+    exit 1
+fi
+
+# Format check
+echo "Running cargo fmt..."
+cargo fmt --check || {
+    echo "error: cargo fmt check failed. Run 'cargo fmt' and re-commit."
+    exit 1
+}
+
+# Lint
+echo "Running cargo clippy..."
+cargo clippy -- -D warnings || {
+    echo "error: clippy found warnings."
+    exit 1
+}
