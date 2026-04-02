@@ -43,7 +43,13 @@ fn walk_py_files(
 ) -> Result<()> {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(_) => return Ok(()),
+        Err(e) => {
+            eprintln!(
+                "warning: skipping unreadable directory {}: {e}",
+                dir.display()
+            );
+            return Ok(());
+        }
     };
 
     for entry in entries {
@@ -58,7 +64,10 @@ fn walk_py_files(
         } else if path.extension().is_some_and(|e| e == "py") {
             let code = match std::fs::read_to_string(&path) {
                 Ok(c) => c,
-                Err(_) => continue,
+                Err(e) => {
+                    eprintln!("warning: skipping unreadable file {}: {e}", path.display());
+                    continue;
+                }
             };
 
             let rel = path.strip_prefix(base).unwrap_or(&path);
@@ -96,13 +105,26 @@ fn parse_python(code: &str, source: &Source, module: &str) -> Vec<RawChunk> {
 
         if let Some(item) = parse_def_or_class(stripped) {
             let indent = indent_level(line);
+
+            // Collect decorators from preceding lines
+            let decorators = collect_decorators(&lines, i, indent);
+
             let docstring = extract_docstring(&lines, i + 1, indent);
 
             if let Some(doc) = docstring {
-                let (item_type, name, signature) = match item {
+                let (item_type, name, mut signature) = match item {
                     PyItem::Function(name, sig) => ("function", name, Some(sig)),
                     PyItem::Class(name) => ("class", name, None),
                 };
+
+                // Prepend decorators to signature
+                if !decorators.is_empty() {
+                    let dec_str = decorators.join("\n");
+                    signature = Some(match signature {
+                        Some(sig) => format!("{dec_str}\n{sig}"),
+                        None => dec_str,
+                    });
+                }
 
                 let qualified = format!("{prefix}.{name}");
                 let body = RawChunk::build_body(item_type, &qualified, signature.as_deref(), &doc);
@@ -165,6 +187,26 @@ fn extract_signature(rest: &str) -> Option<&str> {
     // Find the last `:` — that's the def terminator
     let sig_end = rest.rfind(':')?;
     Some(rest[..sig_end].trim())
+}
+
+/// Collect decorator lines immediately preceding a def/class at the given index.
+fn collect_decorators(lines: &[&str], def_index: usize, expected_indent: usize) -> Vec<String> {
+    let mut decorators = Vec::new();
+    let mut j = def_index;
+    while j > 0 {
+        j -= 1;
+        let line = lines[j];
+        let stripped = line.trim();
+        if stripped.starts_with('@') && indent_level(line) == expected_indent {
+            decorators.push(stripped.to_string());
+        } else if stripped.is_empty() {
+            continue;
+        } else {
+            break;
+        }
+    }
+    decorators.reverse();
+    decorators
 }
 
 fn indent_level(line: &str) -> usize {
@@ -364,5 +406,53 @@ def setup():
         let chunks = parse_python(code, &test_source(), "mod");
         assert_eq!(chunks.len(), 1);
         assert!(chunks[0].doc.contains("Single quoted"));
+    }
+
+    #[test]
+    fn test_decorator_captured() {
+        let code = r#"
+@property
+def name(self) -> str:
+    """Get the name."""
+    return self._name
+"#;
+        let chunks = parse_python(code, &test_source(), "mod");
+        assert_eq!(chunks.len(), 1);
+        let sig = chunks[0].signature.as_deref().unwrap();
+        assert!(
+            sig.contains("@property"),
+            "signature should contain decorator: {sig}"
+        );
+        assert!(sig.contains("def name(self) -> str"));
+    }
+
+    #[test]
+    fn test_multiple_decorators() {
+        let code = r#"
+@staticmethod
+@lru_cache(maxsize=128)
+def compute(x: int) -> int:
+    """Compute something."""
+    return x * 2
+"#;
+        let chunks = parse_python(code, &test_source(), "mod");
+        assert_eq!(chunks.len(), 1);
+        let sig = chunks[0].signature.as_deref().unwrap();
+        assert!(sig.contains("@staticmethod"));
+        assert!(sig.contains("@lru_cache(maxsize=128)"));
+    }
+
+    #[test]
+    fn test_class_decorator() {
+        let code = r#"
+@dataclass
+class Config:
+    """Configuration."""
+    pass
+"#;
+        let chunks = parse_python(code, &test_source(), "mod");
+        assert_eq!(chunks.len(), 1);
+        let sig = chunks[0].signature.as_deref().unwrap();
+        assert!(sig.contains("@dataclass"));
     }
 }

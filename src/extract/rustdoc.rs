@@ -134,7 +134,13 @@ fn walk_rs_files(
 ) -> Result<()> {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(_) => return Ok(()),
+        Err(e) => {
+            eprintln!(
+                "warning: skipping unreadable directory {}: {e}",
+                dir.display()
+            );
+            return Ok(());
+        }
     };
 
     for entry in entries {
@@ -146,7 +152,10 @@ fn walk_rs_files(
         } else if path.extension().is_some_and(|e| e == "rs") {
             let code = match std::fs::read_to_string(&path) {
                 Ok(code) => code,
-                Err(_) => continue,
+                Err(e) => {
+                    eprintln!("warning: skipping unreadable file {}: {e}", path.display());
+                    continue;
+                }
             };
 
             // Build module path from file path relative to base
