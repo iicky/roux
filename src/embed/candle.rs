@@ -31,8 +31,16 @@ impl CandleEmbedder {
         };
         let model = BertModel::load(vb, &config).context("building BERT model")?;
 
-        // Load tokenizer
-        let tokenizer = Tokenizer::from_file(tokenizer_path).map_err(|e| anyhow::anyhow!("{e}"))?;
+        // Load tokenizer with truncation to model's max length
+        let mut tokenizer =
+            Tokenizer::from_file(tokenizer_path).map_err(|e| anyhow::anyhow!("{e}"))?;
+        let truncation = tokenizers::TruncationParams {
+            max_length: 512,
+            ..Default::default()
+        };
+        tokenizer
+            .with_truncation(Some(truncation))
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         Ok(Self {
             model,
