@@ -123,6 +123,48 @@ impl Config {
     pub fn parse(s: &str) -> Result<Self> {
         Ok(toml::from_str(s)?)
     }
+
+    pub fn load_from(path: &std::path::Path) -> Result<Self> {
+        let contents = std::fs::read_to_string(path)?;
+        Ok(toml::from_str(&contents)?)
+    }
+
+    /// Resolve the store path, checking for local .roux/db.sqlite first if prefer_local is set.
+    pub fn resolve_store_path(&self, local: bool) -> PathBuf {
+        if local {
+            return PathBuf::from(".roux/db.sqlite");
+        }
+        if self.index.prefer_local {
+            let local_path = PathBuf::from(".roux/db.sqlite");
+            if local_path.exists() {
+                return local_path;
+            }
+        }
+        self.index.global_path.clone()
+    }
+
+    /// Resolve the model directory path.
+    pub fn model_dir(&self) -> PathBuf {
+        dirs::data_dir()
+            .unwrap_or_else(|| PathBuf::from("~/.local/share"))
+            .join("roux")
+            .join("models")
+            .join(self.model.id.replace('/', "-"))
+    }
+
+    /// Write a default config file if one doesn't exist.
+    pub fn init_default() -> Result<PathBuf> {
+        let path = Self::config_path();
+        if !path.exists() {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let default = Self::default();
+            let toml_str = toml::to_string_pretty(&default)?;
+            std::fs::write(&path, toml_str)?;
+        }
+        Ok(path)
+    }
 }
 
 #[cfg(test)]
@@ -210,5 +252,60 @@ mod tests {
     fn test_from_str() {
         let config = Config::parse("[ingest]\nbatch_size = 128").unwrap();
         assert_eq!(config.ingest.batch_size, 128);
+    }
+
+    #[test]
+    fn test_resolve_store_path_global() {
+        let config = Config::default();
+        let path = config.resolve_store_path(false);
+        // prefer_local is true by default, but .roux/db.sqlite won't exist in test dir
+        assert!(path.to_string_lossy().contains("db.sqlite"));
+    }
+
+    #[test]
+    fn test_resolve_store_path_local_flag() {
+        let config = Config::default();
+        let path = config.resolve_store_path(true);
+        assert_eq!(path, PathBuf::from(".roux/db.sqlite"));
+    }
+
+    #[test]
+    fn test_model_dir() {
+        let config = Config::default();
+        let dir = config.model_dir();
+        assert!(
+            dir.to_string_lossy()
+                .contains("intfloat-multilingual-e5-small")
+        );
+    }
+
+    #[test]
+    fn test_load_from_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "[ingest]\nbatch_size = 99\n").unwrap();
+
+        let config = Config::load_from(&path).unwrap();
+        assert_eq!(config.ingest.batch_size, 99);
+    }
+
+    #[test]
+    fn test_init_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("roux").join("config.toml");
+
+        // Temporarily override — we can't easily test init_default without
+        // touching the real config path, so test the serialization round-trip
+        let default = Config::default();
+        let toml_str = toml::to_string_pretty(&default).unwrap();
+        let roundtrip: Config = toml::from_str(&toml_str).unwrap();
+        assert_eq!(roundtrip.model.id, default.model.id);
+        assert_eq!(roundtrip.ingest.batch_size, default.ingest.batch_size);
+
+        // Also verify we can write and read back
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &toml_str).unwrap();
+        let loaded = Config::load_from(&path).unwrap();
+        assert_eq!(loaded.model.id, "intfloat/multilingual-e5-small");
     }
 }
