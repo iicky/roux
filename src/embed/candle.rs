@@ -8,6 +8,28 @@ use tokenizers::Tokenizer;
 
 use super::Embedder;
 
+/// Select the best available device: Metal > CUDA > CPU.
+fn best_device() -> Result<Device> {
+    #[cfg(feature = "metal")]
+    {
+        if let Ok(device) = Device::new_metal(0) {
+            eprintln!("Using Metal GPU");
+            return Ok(device);
+        }
+    }
+
+    #[cfg(feature = "cuda")]
+    {
+        if let Ok(device) = Device::new_cuda(0) {
+            eprintln!("Using CUDA GPU");
+            return Ok(device);
+        }
+    }
+
+    eprintln!("Using CPU");
+    Ok(Device::Cpu)
+}
+
 pub struct CandleEmbedder {
     model: BertModel,
     tokenizer: Tokenizer,
@@ -16,7 +38,7 @@ pub struct CandleEmbedder {
 
 impl CandleEmbedder {
     pub fn load(model_path: &Path, tokenizer_path: &Path, config_path: &Path) -> Result<Self> {
-        let device = Device::Cpu;
+        let device = best_device()?;
 
         // Load config
         let config_str =
