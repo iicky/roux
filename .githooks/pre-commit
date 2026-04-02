@@ -21,3 +21,12 @@ cargo clippy -- -D warnings || {
     echo "error: clippy found warnings."
     exit 1
 }
+
+# Dependency check (if cargo-deny is installed)
+if command -v cargo-deny &>/dev/null; then
+    echo "Running cargo deny..."
+    cargo deny check || {
+        echo "error: cargo deny check failed."
+        exit 1
+    }
+fi
