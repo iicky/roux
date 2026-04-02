@@ -1,10 +1,8 @@
 /target
-
-# Beads / Dolt files (added by bd init)
 .dolt/
 *.db
 .beads-credential-key
-
 AGENTS.md
 CLAUDE.md
 .beads
+.claude
