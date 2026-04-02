@@ -255,4 +255,71 @@ mod tests {
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].qualified_name, "docs > (preamble)");
     }
+
+    #[test]
+    fn test_empty_document() {
+        let chunks = parse_markdown("", &test_source());
+        assert!(chunks.is_empty());
+
+        let chunks = parse_markdown("   \n\n  \n", &test_source());
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn test_deeply_nested_headings() {
+        let md = "# A\n## B\n### C\nDeep content.\n";
+        let chunks = parse_markdown(md, &test_source());
+        let deep = chunks
+            .iter()
+            .find(|c| c.doc.contains("Deep content"))
+            .unwrap();
+        assert_eq!(deep.qualified_name, "docs > A > B > C");
+    }
+
+    #[test]
+    fn test_heading_level_jump_back() {
+        // h3 followed by h1 should reset the stack
+        let md = "# A\n## B\n### C\nContent C.\n# D\nContent D.\n";
+        let chunks = parse_markdown(md, &test_source());
+        let d = chunks.iter().find(|c| c.doc.contains("Content D")).unwrap();
+        assert_eq!(d.qualified_name, "docs > D");
+    }
+
+    #[test]
+    fn test_can_handle_markdown_source() {
+        let ext = MarkdownExtractor;
+        let md_source = Source {
+            name: "docs".to_string(),
+            version: None,
+            kind: SourceKind::File(std::path::PathBuf::from("README.md")),
+            language: Some("markdown".to_string()),
+        };
+        assert!(ext.can_handle(&md_source));
+
+        let py_source = Source {
+            name: "lib".to_string(),
+            version: None,
+            kind: SourceKind::File(std::path::PathBuf::from("main.py")),
+            language: Some("python".to_string()),
+        };
+        assert!(!ext.can_handle(&py_source));
+    }
+
+    #[test]
+    fn test_extract_from_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("one.md"), "# First\nContent one.\n").unwrap();
+        std::fs::write(dir.path().join("two.md"), "# Second\nContent two.\n").unwrap();
+        std::fs::write(dir.path().join("ignore.txt"), "not markdown").unwrap();
+
+        let source = Source {
+            name: "docs".to_string(),
+            version: Some("1.0.0".to_string()),
+            kind: SourceKind::LocalPath(dir.path().to_path_buf()),
+            language: Some("markdown".to_string()),
+        };
+        let ext = MarkdownExtractor;
+        let chunks = ext.extract(&source).unwrap();
+        assert_eq!(chunks.len(), 2);
+    }
 }

@@ -455,4 +455,126 @@ class Config:
         let sig = chunks[0].signature.as_deref().unwrap();
         assert!(sig.contains("@dataclass"));
     }
+
+    #[test]
+    fn test_empty_file() {
+        let chunks = parse_python("", &test_source(), "mod");
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn test_no_documented_items() {
+        let code = "x = 1\ny = 2\ndef no_doc():\n    pass\n";
+        let chunks = parse_python(code, &test_source(), "mod");
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn test_method_inside_class() {
+        let code = r#"
+class MyClass:
+    """A class."""
+
+    def method(self, x: int) -> str:
+        """Do something."""
+        return str(x)
+"#;
+        let chunks = parse_python(code, &test_source(), "mod");
+        assert_eq!(chunks.len(), 2);
+        let method = chunks
+            .iter()
+            .find(|c| c.qualified_name.contains("method"))
+            .unwrap();
+        assert_eq!(method.item_type, "function");
+        assert!(
+            method
+                .signature
+                .as_deref()
+                .unwrap()
+                .contains("def method(self, x: int) -> str")
+        );
+    }
+
+    #[test]
+    fn test_can_handle_python_source() {
+        let ext = GriffeExtractor;
+        let py_source = Source {
+            name: "lib".to_string(),
+            version: None,
+            kind: SourceKind::File(std::path::PathBuf::from("main.py")),
+            language: Some("python".to_string()),
+        };
+        assert!(ext.can_handle(&py_source));
+
+        let md_source = Source {
+            name: "docs".to_string(),
+            version: None,
+            kind: SourceKind::File(std::path::PathBuf::from("README.md")),
+            language: Some("markdown".to_string()),
+        };
+        assert!(!ext.can_handle(&md_source));
+    }
+
+    #[test]
+    fn test_extract_from_package_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let pkg = dir.path().join("mypkg");
+        std::fs::create_dir(&pkg).unwrap();
+        std::fs::write(pkg.join("__init__.py"), "").unwrap();
+        std::fs::write(
+            pkg.join("core.py"),
+            "def hello():\n    \"\"\"Say hello.\"\"\"\n    pass\n",
+        )
+        .unwrap();
+
+        let source = Source {
+            name: "mylib".to_string(),
+            version: Some("1.0.0".to_string()),
+            kind: SourceKind::LocalPath(dir.path().to_path_buf()),
+            language: Some("python".to_string()),
+        };
+        let ext = GriffeExtractor;
+        let chunks = ext.extract(&source).unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert!(chunks[0].qualified_name.contains("mypkg.core.hello"));
+    }
+
+    #[test]
+    fn test_skips_non_package_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        // Dir without __init__.py should be skipped
+        let subdir = dir.path().join("notapkg");
+        std::fs::create_dir(&subdir).unwrap();
+        std::fs::write(
+            subdir.join("mod.py"),
+            "def hidden():\n    \"\"\"Hidden.\"\"\"\n    pass\n",
+        )
+        .unwrap();
+
+        let source = Source {
+            name: "mylib".to_string(),
+            version: Some("1.0.0".to_string()),
+            kind: SourceKind::LocalPath(dir.path().to_path_buf()),
+            language: Some("python".to_string()),
+        };
+        let ext = GriffeExtractor;
+        let chunks = ext.extract(&source).unwrap();
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn test_decorator_with_blank_line_between() {
+        // Blank line between decorator and def — should still capture
+        let code = r#"
+@cache
+
+def compute():
+    """Compute."""
+    pass
+"#;
+        let chunks = parse_python(code, &test_source(), "mod");
+        assert_eq!(chunks.len(), 1);
+        let sig = chunks[0].signature.as_deref().unwrap();
+        assert!(sig.contains("@cache"));
+    }
 }
