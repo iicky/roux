@@ -96,6 +96,15 @@ enum ModelAction {
 }
 
 impl Cli {
+    /// Parse from an iterator of arguments (for testing).
+    pub fn try_parse_from<I, T>(iter: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<std::ffi::OsString> + Clone,
+    {
+        <Self as Parser>::try_parse_from(iter)
+    }
+
     pub fn run(&self) -> Result<()> {
         match &self.command {
             Command::Init { .. } => todo!("init"),
@@ -110,5 +119,103 @@ impl Cli {
                 ModelAction::Set { .. } => todo!("model set"),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_add() {
+        let cli = Cli::try_parse_from(["roux", "add", "tokio"]).unwrap();
+        assert!(matches!(cli.command, Command::Add { ref source, .. } if source == "tokio"));
+    }
+
+    #[test]
+    fn test_parse_add_with_options() {
+        Cli::try_parse_from([
+            "roux",
+            "add",
+            "tokio",
+            "--lang",
+            "rust",
+            "--local",
+            "--version",
+            "1.35",
+            "--name",
+            "my-tokio",
+        ])
+        .unwrap();
+    }
+
+    #[test]
+    fn test_parse_query() {
+        Cli::try_parse_from(["roux", "query", "how to spawn"]).unwrap();
+    }
+
+    #[test]
+    fn test_parse_query_with_options() {
+        Cli::try_parse_from([
+            "roux",
+            "query",
+            "mutex lock",
+            "--top",
+            "5",
+            "--source",
+            "tokio",
+            "--format",
+            "json",
+        ])
+        .unwrap();
+    }
+
+    #[test]
+    fn test_parse_init() {
+        Cli::try_parse_from(["roux", "init"]).unwrap();
+        Cli::try_parse_from(["roux", "init", "--transitive", "--local"]).unwrap();
+    }
+
+    #[test]
+    fn test_parse_list() {
+        Cli::try_parse_from(["roux", "list"]).unwrap();
+        Cli::try_parse_from(["roux", "list", "--format", "json"]).unwrap();
+    }
+
+    #[test]
+    fn test_parse_sync() {
+        Cli::try_parse_from(["roux", "sync"]).unwrap();
+        Cli::try_parse_from(["roux", "sync", "tokio"]).unwrap();
+        Cli::try_parse_from(["roux", "sync", "--dry-run"]).unwrap();
+    }
+
+    #[test]
+    fn test_parse_remove() {
+        Cli::try_parse_from(["roux", "remove", "tokio"]).unwrap();
+    }
+
+    #[test]
+    fn test_parse_model_download() {
+        Cli::try_parse_from(["roux", "model", "download"]).unwrap();
+    }
+
+    #[test]
+    fn test_parse_model_status() {
+        Cli::try_parse_from(["roux", "model", "status"]).unwrap();
+    }
+
+    #[test]
+    fn test_parse_model_set() {
+        Cli::try_parse_from(["roux", "model", "set", "BAAI/bge-small-en-v1.5"]).unwrap();
+    }
+
+    #[test]
+    fn test_parse_no_args_fails() {
+        assert!(Cli::try_parse_from(["roux"]).is_err());
+    }
+
+    #[test]
+    fn test_parse_unknown_command_fails() {
+        assert!(Cli::try_parse_from(["roux", "unknown"]).is_err());
     }
 }

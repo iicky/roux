@@ -107,9 +107,10 @@ impl Store for SqliteStore {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             )?;
 
-            let mut vec_stmt = tx.prepare_cached(
-                "INSERT OR REPLACE INTO vec_chunks (id, embedding) VALUES (?1, ?2)",
-            )?;
+            let mut vec_del_stmt = tx.prepare_cached("DELETE FROM vec_chunks WHERE id = ?1")?;
+
+            let mut vec_ins_stmt =
+                tx.prepare_cached("INSERT INTO vec_chunks (id, embedding) VALUES (?1, ?2)")?;
 
             for chunk in chunks {
                 let now = Self::now();
@@ -133,7 +134,8 @@ impl Store for SqliteStore {
                     .iter()
                     .flat_map(|f| f.to_le_bytes())
                     .collect();
-                vec_stmt.execute(params![chunk.id, embedding_bytes])?;
+                vec_del_stmt.execute(params![chunk.id])?;
+                vec_ins_stmt.execute(params![chunk.id, embedding_bytes])?;
             }
 
             // Update source record
@@ -323,7 +325,6 @@ mod tests {
     fn test_search() {
         let store = SqliteStore::open_in_memory().unwrap();
 
-        // Insert chunks with slightly different embeddings
         let mut c1 = make_chunk("tokio", "tokio::spawn");
         c1.embedding[0] = 1.0;
 
@@ -332,12 +333,119 @@ mod tests {
 
         store.upsert_chunks(&[c1, c2]).unwrap();
 
-        // Query closer to c1
         let mut query_vec = vec![0.0; EMBEDDING_DIM];
         query_vec[0] = 1.0;
 
         let results = store.search(&query_vec, 1, None).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].qualified_name, "tokio::spawn");
+    }
+
+    #[test]
+    fn test_search_with_source_filter() {
+        let store = SqliteStore::open_in_memory().unwrap();
+
+        let mut c1 = make_chunk("tokio", "tokio::spawn");
+        c1.embedding[0] = 1.0;
+
+        let mut c2 = make_chunk("serde", "serde::Serialize");
+        c2.embedding[0] = 0.9;
+        c2.embedding[1] = 0.1;
+
+        store.upsert_chunks(&[c1]).unwrap();
+        store.upsert_chunks(&[c2]).unwrap();
+
+        let mut query_vec = vec![0.0; EMBEDDING_DIM];
+        query_vec[0] = 1.0;
+
+        // Without filter: tokio::spawn is closest
+        let results = store.search(&query_vec, 2, None).unwrap();
+        assert_eq!(results.len(), 2);
+
+        // With filter: only serde results
+        let results = store.search(&query_vec, 2, Some("serde")).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].source_name, "serde");
+    }
+
+    #[test]
+    fn test_search_empty_store() {
+        let store = SqliteStore::open_in_memory().unwrap();
+        let query_vec = vec![0.0; EMBEDDING_DIM];
+        let results = store.search(&query_vec, 5, None).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_upsert_updates_existing() {
+        let store = SqliteStore::open_in_memory().unwrap();
+
+        let mut c1 = make_chunk("tokio", "tokio::spawn");
+        c1.doc = "Original doc".to_string();
+        store.upsert_chunks(&[c1]).unwrap();
+
+        // Upsert same ID with different doc
+        let mut c2 = make_chunk("tokio", "tokio::spawn");
+        c2.doc = "Updated doc".to_string();
+        c2.embedding[0] = 1.0;
+        store.upsert_chunks(&[c2]).unwrap();
+
+        // Should still be 1 chunk, not 2
+        let sources = store.list_sources().unwrap();
+        assert_eq!(sources[0].chunk_count, 1);
+
+        // Search should find the updated chunk
+        let mut query_vec = vec![0.0; EMBEDDING_DIM];
+        query_vec[0] = 1.0;
+        let results = store.search(&query_vec, 1, None).unwrap();
+        assert_eq!(results[0].doc, "Updated doc");
+    }
+
+    #[test]
+    fn test_multiple_sources() {
+        let store = SqliteStore::open_in_memory().unwrap();
+
+        store
+            .upsert_chunks(&[
+                make_chunk("tokio", "tokio::spawn"),
+                make_chunk("tokio", "tokio::sleep"),
+            ])
+            .unwrap();
+        store
+            .upsert_chunks(&[make_chunk("serde", "serde::Serialize")])
+            .unwrap();
+
+        let sources = store.list_sources().unwrap();
+        assert_eq!(sources.len(), 2);
+
+        let tokio = sources.iter().find(|s| s.name == "tokio").unwrap();
+        assert_eq!(tokio.chunk_count, 2);
+
+        let serde = sources.iter().find(|s| s.name == "serde").unwrap();
+        assert_eq!(serde.chunk_count, 1);
+    }
+
+    #[test]
+    fn test_remove_nonexistent_source() {
+        let store = SqliteStore::open_in_memory().unwrap();
+        // Should not error
+        store.remove_source("doesnt_exist").unwrap();
+    }
+
+    #[test]
+    fn test_open_file_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.sqlite");
+
+        let store = SqliteStore::open(&db_path).unwrap();
+        store
+            .upsert_chunks(&[make_chunk("tokio", "tokio::spawn")])
+            .unwrap();
+
+        // Reopen and verify persistence
+        drop(store);
+        let store = SqliteStore::open(&db_path).unwrap();
+        let sources = store.list_sources().unwrap();
+        assert_eq!(sources.len(), 1);
     }
 }
