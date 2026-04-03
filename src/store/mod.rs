@@ -23,7 +23,13 @@ pub struct Chunk {
 
 pub trait Store {
     fn upsert_chunks(&self, chunks: &[Chunk]) -> Result<()>;
-    fn search(&self, embedding: &[f32], limit: usize, source: Option<&str>) -> Result<Vec<Chunk>>;
+    fn search(
+        &self,
+        embedding: &[f32],
+        query_text: &str,
+        limit: usize,
+        source: Option<&str>,
+    ) -> Result<Vec<Chunk>>;
     fn list_sources(&self) -> Result<Vec<SourceRecord>>;
     fn remove_source(&self, name: &str) -> Result<()>;
 }

@@ -282,7 +282,7 @@ fn cmd_query(
     // Search
     let store_path = config.resolve_store_path(local);
     let store = SqliteStore::open(&store_path, embedder.embedding_dim())?;
-    let results = store.search(&query_embedding, top, source)?;
+    let results = store.search(&query_embedding, query, top, source)?;
 
     if results.is_empty() {
         eprintln!("No results found.");
