@@ -2,18 +2,18 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
-pub const DEFAULT_MODEL_ID: &str = "intfloat/multilingual-e5-small";
+pub const DEFAULT_MODEL_ID: &str = "BAAI/bge-base-en-v1.5";
 
 const MODEL_FILES: &[&str] = &["model.safetensors", "tokenizer.json", "config.json"];
 
 /// Returns the local cache path for a model file, downloading it if necessary.
 /// Known safe model IDs. Warn if user configures an unknown model.
 const KNOWN_MODELS: &[&str] = &[
+    "BAAI/bge-base-en-v1.5",
+    "microsoft/graphcodebert-base",
     "intfloat/multilingual-e5-small",
     "intfloat/e5-small-v2",
     "BAAI/bge-small-en-v1.5",
-    "jinaai/jina-embeddings-v2-base-code",
-    "nomic-ai/nomic-embed-code",
 ];
 
 pub fn ensure_model(model_id: &str) -> Result<ModelFiles> {

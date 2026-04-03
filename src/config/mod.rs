@@ -48,7 +48,7 @@ pub struct ApiConfig {
 }
 
 fn default_model_id() -> String {
-    "intfloat/multilingual-e5-small".to_string()
+    "BAAI/bge-base-en-v1.5".to_string()
 }
 
 fn default_device() -> String {
@@ -180,7 +180,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.model.id, "intfloat/multilingual-e5-small");
+        assert_eq!(config.model.id, "BAAI/bge-base-en-v1.5");
         assert_eq!(config.model.device, "auto");
         assert!(config.index.prefer_local);
         assert_eq!(config.ingest.batch_size, 32);
@@ -192,7 +192,7 @@ mod tests {
     #[test]
     fn test_empty_toml_gives_defaults() {
         let config: Config = toml::from_str("").unwrap();
-        assert_eq!(config.model.id, "intfloat/multilingual-e5-small");
+        assert_eq!(config.model.id, "BAAI/bge-base-en-v1.5");
         assert_eq!(config.ingest.batch_size, 32);
     }
 
@@ -251,7 +251,7 @@ mod tests {
         // Config::load() falls back to defaults when file doesn't exist
         // This test just ensures it doesn't panic
         let config = Config::default();
-        assert_eq!(config.model.id, "intfloat/multilingual-e5-small");
+        assert_eq!(config.model.id, "BAAI/bge-base-en-v1.5");
     }
 
     #[test]
@@ -279,10 +279,7 @@ mod tests {
     fn test_model_dir() {
         let config = Config::default();
         let dir = config.model_dir();
-        assert!(
-            dir.to_string_lossy()
-                .contains("intfloat-multilingual-e5-small")
-        );
+        assert!(dir.to_string_lossy().contains("BAAI-bge-base-en-v1.5"));
     }
 
     #[test]
@@ -312,6 +309,6 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, &toml_str).unwrap();
         let loaded = Config::load_from(&path).unwrap();
-        assert_eq!(loaded.model.id, "intfloat/multilingual-e5-small");
+        assert_eq!(loaded.model.id, "BAAI/bge-base-en-v1.5");
     }
 }

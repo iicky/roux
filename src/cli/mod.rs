@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 
 use crate::config::Config;
 use crate::embed::Embedder;
-use crate::embed::candle::CandleEmbedder;
+use crate::embed::candle::{CandleEmbedder, PrefixStyle};
 use crate::extract;
 use crate::extract::RawChunk;
 use crate::model;
@@ -185,10 +185,12 @@ fn cmd_add(
     // Embed + store in batches so each committed batch survives partial failures
     eprintln!("Loading embedding model...");
     let model_files = model::ensure_model(&config.model.id)?;
-    let embedder = CandleEmbedder::load(
+    let prefix_style = PrefixStyle::from_model_id(&config.model.id);
+    let embedder = CandleEmbedder::load_with_prefix(
         &model_files.model,
         &model_files.tokenizer,
         &model_files.config,
+        prefix_style,
     )?;
 
     // Split oversized chunks before embedding
@@ -266,10 +268,12 @@ fn cmd_query(
 ) -> Result<()> {
     // Load model
     let model_files = model::ensure_model(&config.model.id)?;
-    let embedder = CandleEmbedder::load(
+    let prefix_style = PrefixStyle::from_model_id(&config.model.id);
+    let embedder = CandleEmbedder::load_with_prefix(
         &model_files.model,
         &model_files.tokenizer,
         &model_files.config,
+        prefix_style,
     )?;
 
     // Embed query
