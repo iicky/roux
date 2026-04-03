@@ -30,15 +30,63 @@ fn best_device() -> Result<Device> {
     Ok(Device::Cpu)
 }
 
+/// Controls how queries and passages are prefixed before embedding.
+#[derive(Debug, Clone)]
+pub enum PrefixStyle {
+    /// E5-style: "query: " / "passage: "
+    E5,
+    /// BGE-style: "Represent this sentence: " for queries, no prefix for passages
+    Bge,
+    /// No prefix (CodeBERT, GraphCodeBERT, etc.)
+    None,
+}
+
+impl PrefixStyle {
+    pub fn from_model_id(model_id: &str) -> Self {
+        if model_id.contains("e5-") {
+            Self::E5
+        } else if model_id.contains("bge-") {
+            Self::Bge
+        } else {
+            Self::None
+        }
+    }
+
+    fn query_prefix(&self) -> &str {
+        match self {
+            Self::E5 => "query: ",
+            Self::Bge => "Represent this sentence: ",
+            Self::None => "",
+        }
+    }
+
+    fn passage_prefix(&self) -> &str {
+        match self {
+            Self::E5 => "passage: ",
+            Self::Bge | Self::None => "",
+        }
+    }
+}
+
 pub struct CandleEmbedder {
     model: BertModel,
     tokenizer: Tokenizer,
     device: Device,
     embedding_dim: usize,
+    prefix_style: PrefixStyle,
 }
 
 impl CandleEmbedder {
     pub fn load(model_path: &Path, tokenizer_path: &Path, config_path: &Path) -> Result<Self> {
+        Self::load_with_prefix(model_path, tokenizer_path, config_path, PrefixStyle::E5)
+    }
+
+    pub fn load_with_prefix(
+        model_path: &Path,
+        tokenizer_path: &Path,
+        config_path: &Path,
+        prefix_style: PrefixStyle,
+    ) -> Result<Self> {
         let device = best_device()?;
 
         // Load config
@@ -72,6 +120,7 @@ impl CandleEmbedder {
             tokenizer,
             device,
             embedding_dim,
+            prefix_style,
         })
     }
 
@@ -167,11 +216,11 @@ impl CandleEmbedder {
 
 impl Embedder for CandleEmbedder {
     fn embed_passages(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        self.embed_batch(texts, "passage: ")
+        self.embed_batch(texts, self.prefix_style.passage_prefix())
     }
 
     fn embed_query(&self, text: &str) -> Result<Vec<f32>> {
-        let results = self.embed_batch(&[text], "query: ")?;
+        let results = self.embed_batch(&[text], self.prefix_style.query_prefix())?;
         results
             .into_iter()
             .next()
