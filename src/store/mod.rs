@@ -13,7 +13,7 @@ pub struct Chunk {
     pub signature: Option<String>,
     pub doc: String,
     pub body: String,
-    pub embedding: Vec<f32>,
+    pub embedding: Option<Vec<f32>>,
     pub url: Option<String>,
     pub ingested_at: i64,
     /// Similarity score from search (1.0 = identical, 0.0 = orthogonal).
@@ -25,7 +25,7 @@ pub trait Store {
     fn upsert_chunks(&self, chunks: &[Chunk]) -> Result<()>;
     fn search(
         &self,
-        embedding: &[f32],
+        embedding: Option<&[f32]>,
         query_text: &str,
         limit: usize,
         source: Option<&str>,
