@@ -5,6 +5,7 @@ use crate::config::Config;
 use crate::embed::Embedder;
 use crate::embed::candle::CandleEmbedder;
 use crate::extract;
+use crate::extract::RawChunk;
 use crate::model;
 use crate::source::Source;
 use crate::store::sqlite::SqliteStore;
@@ -190,8 +191,11 @@ fn cmd_add(
         &model_files.config,
     )?;
 
+    // Split oversized chunks before embedding
+    let raw_chunks = split_oversized_chunks(raw_chunks, &embedder);
+
     let store_path = config.resolve_store_path(local);
-    let store = SqliteStore::open(&store_path)?;
+    let store = SqliteStore::open(&store_path, embedder.embedding_dim())?;
     let batch_size = config.ingest.batch_size;
     let total_batches = raw_chunks.len().div_ceil(batch_size);
     let mut stored = 0usize;
@@ -228,6 +232,7 @@ fn cmd_add(
                 embedding,
                 url: raw.url.clone(),
                 ingested_at: 0,
+                score: None,
             })
             .collect();
 
@@ -272,7 +277,7 @@ fn cmd_query(
 
     // Search
     let store_path = config.resolve_store_path(local);
-    let store = SqliteStore::open(&store_path)?;
+    let store = SqliteStore::open(&store_path, embedder.embedding_dim())?;
     let results = store.search(&query_embedding, top, source)?;
 
     if results.is_empty() {
@@ -293,6 +298,7 @@ fn cmd_query(
                         "signature": c.signature,
                         "doc": c.doc,
                         "url": c.url,
+                        "score": c.score,
                     })
                 })
                 .collect();
@@ -303,7 +309,14 @@ fn cmd_query(
                 if i > 0 {
                     println!();
                 }
-                println!("── {} ({}) ──", chunk.qualified_name, chunk.item_type);
+                let score_str = chunk
+                    .score
+                    .map(|s| format!(" [{:.2}]", s))
+                    .unwrap_or_default();
+                println!(
+                    "── {} ({}){} ──",
+                    chunk.qualified_name, chunk.item_type, score_str
+                );
                 println!("source: {}@{}", chunk.source_name, chunk.source_version);
                 if let Some(sig) = &chunk.signature {
                     println!("{sig}");
@@ -323,7 +336,7 @@ fn cmd_list(config: &Config, format: &str) -> Result<()> {
 
     let local_path = std::path::PathBuf::from(".roux/db.sqlite");
     if local_path.exists() {
-        let store = SqliteStore::open(&local_path)?;
+        let store = SqliteStore::open_existing(&local_path)?;
         for mut src in store.list_sources()? {
             src.name = format!("{} (local)", src.name);
             all_sources.push(src);
@@ -332,7 +345,7 @@ fn cmd_list(config: &Config, format: &str) -> Result<()> {
 
     let global_path = &config.index.global_path;
     if global_path.exists() {
-        let store = SqliteStore::open(global_path)?;
+        let store = SqliteStore::open_existing(global_path)?;
         all_sources.extend(store.list_sources()?);
     }
 
@@ -381,7 +394,7 @@ fn cmd_remove(config: &Config, source_name: &str) -> Result<()> {
         anyhow::bail!("no index found at {}", store_path.display());
     }
 
-    let store = SqliteStore::open(&store_path)?;
+    let store = SqliteStore::open_existing(&store_path)?;
     store.remove_source(source_name)?;
     eprintln!("Removed {source_name} from index");
     Ok(())
@@ -398,6 +411,109 @@ fn cmd_model_status(config: &Config) -> Result<()> {
     let status = model::status(&config.model.id)?;
     println!("{status}");
     Ok(())
+}
+
+/// Split oversized chunks into sub-chunks that fit within the model's token limit.
+fn split_oversized_chunks(raw_chunks: Vec<RawChunk>, embedder: &CandleEmbedder) -> Vec<RawChunk> {
+    let max_tokens = embedder.max_tokens();
+    // Reserve tokens for the "passage: " prefix the embedder adds
+    let effective_limit = max_tokens.saturating_sub(10);
+    let mut result = Vec::with_capacity(raw_chunks.len());
+
+    for chunk in raw_chunks {
+        let token_count = embedder.token_count(&chunk.body);
+        if token_count <= effective_limit {
+            result.push(chunk);
+            continue;
+        }
+
+        // Split on paragraph boundaries first, then sentence boundaries
+        let parts =
+            split_text_to_token_limit(&chunk.body, effective_limit, |t| embedder.token_count(t));
+
+        for (i, part) in parts.into_iter().enumerate() {
+            let mut sub = chunk.clone();
+            sub.qualified_name = format!("{} [part {}]", chunk.qualified_name, i + 1);
+            sub.body = part.clone();
+            sub.doc = part;
+            result.push(sub);
+        }
+    }
+
+    result
+}
+
+/// Split text into parts that each fit within a token limit.
+/// Tries paragraph boundaries first, then sentence boundaries, then hard split.
+fn split_text_to_token_limit(
+    text: &str,
+    limit: usize,
+    count_tokens: impl Fn(&str) -> usize,
+) -> Vec<String> {
+    // Try splitting on double newlines (paragraphs)
+    let paragraphs: Vec<&str> = text.split("\n\n").collect();
+    let mut parts = Vec::new();
+    let mut current = String::new();
+
+    for para in paragraphs {
+        let candidate = if current.is_empty() {
+            para.to_string()
+        } else {
+            format!("{current}\n\n{para}")
+        };
+
+        if count_tokens(&candidate) <= limit {
+            current = candidate;
+        } else if current.is_empty() {
+            // Single paragraph exceeds limit — split on sentences
+            let sentences = split_sentences(para);
+            let mut sent_buf = String::new();
+            for sent in sentences {
+                let sent_candidate = if sent_buf.is_empty() {
+                    sent.to_string()
+                } else {
+                    format!("{sent_buf} {sent}")
+                };
+                if count_tokens(&sent_candidate) <= limit {
+                    sent_buf = sent_candidate;
+                } else {
+                    if !sent_buf.is_empty() {
+                        parts.push(sent_buf);
+                    }
+                    sent_buf = sent.to_string();
+                }
+            }
+            if !sent_buf.is_empty() {
+                current = sent_buf;
+            }
+        } else {
+            parts.push(current);
+            current = para.to_string();
+        }
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+
+    parts
+}
+
+fn split_sentences(text: &str) -> Vec<&str> {
+    let mut sentences = Vec::new();
+    let mut start = 0;
+    for (i, _) in text.match_indices(['.', '!', '?']) {
+        let end = i + 1;
+        let s = text[start..end].trim();
+        if !s.is_empty() {
+            sentences.push(s);
+        }
+        start = end;
+    }
+    let remaining = text[start..].trim();
+    if !remaining.is_empty() {
+        sentences.push(remaining);
+    }
+    sentences
 }
 
 #[cfg(test)]
@@ -495,5 +611,47 @@ mod tests {
     #[test]
     fn test_parse_unknown_command_fails() {
         assert!(Cli::try_parse_from(["roux", "unknown"]).is_err());
+    }
+
+    #[test]
+    fn test_split_text_to_token_limit() {
+        // Simple token counter: 1 token per word
+        let count = |t: &str| t.split_whitespace().count();
+
+        let text = "Hello world. This is a test.\n\nSecond paragraph here.";
+        let parts = split_text_to_token_limit(text, 10, count);
+        assert!(!parts.is_empty());
+        for part in &parts {
+            assert!(count(part) <= 10, "part too long: {part}");
+        }
+    }
+
+    #[test]
+    fn test_split_text_short_text_not_split() {
+        let count = |t: &str| t.split_whitespace().count();
+        let text = "Short text.";
+        let parts = split_text_to_token_limit(text, 100, count);
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0], "Short text.");
+    }
+
+    #[test]
+    fn test_split_text_paragraph_boundaries() {
+        let count = |t: &str| t.split_whitespace().count();
+        let text = "First paragraph with some words.\n\nSecond paragraph with more words.\n\nThird paragraph here.";
+        let parts = split_text_to_token_limit(text, 6, count);
+        assert!(parts.len() >= 2);
+        for part in &parts {
+            assert!(count(part) <= 6, "part too long: {part}");
+        }
+    }
+
+    #[test]
+    fn test_split_sentences() {
+        let sents = split_sentences("Hello world. How are you? Fine!");
+        assert_eq!(sents.len(), 3);
+        assert_eq!(sents[0], "Hello world.");
+        assert_eq!(sents[1], "How are you?");
+        assert_eq!(sents[2], "Fine!");
     }
 }

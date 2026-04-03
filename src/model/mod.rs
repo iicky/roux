@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 
 pub const DEFAULT_MODEL_ID: &str = "intfloat/multilingual-e5-small";
-pub const EMBEDDING_DIM: usize = 384;
 
 const MODEL_FILES: &[&str] = &["model.safetensors", "tokenizer.json", "config.json"];
 

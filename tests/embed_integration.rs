@@ -18,7 +18,7 @@ fn test_embed_e5_small() {
     let query_vec = embedder
         .embed_query("how to spawn a task")
         .expect("query embed failed");
-    assert_eq!(query_vec.len(), model::EMBEDDING_DIM);
+    assert_eq!(query_vec.len(), embedder.embedding_dim());
 
     // Check it's normalized (L2 norm ≈ 1.0)
     let norm: f32 = query_vec.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -30,7 +30,7 @@ fn test_embed_e5_small() {
         .embed_passages(passages)
         .expect("passage embed failed");
     assert_eq!(passage_vecs.len(), 2);
-    assert_eq!(passage_vecs[0].len(), model::EMBEDDING_DIM);
+    assert_eq!(passage_vecs[0].len(), embedder.embedding_dim());
 
     // Query should be more similar to the first passage
     let sim0: f32 = query_vec

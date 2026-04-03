@@ -15,6 +15,9 @@ pub struct Chunk {
     pub embedding: Vec<f32>,
     pub url: Option<String>,
     pub ingested_at: i64,
+    /// Similarity score from search (1.0 = identical, 0.0 = orthogonal).
+    /// Only populated on search results.
+    pub score: Option<f32>,
 }
 
 pub trait Store {
