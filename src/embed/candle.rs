@@ -34,6 +34,7 @@ pub struct CandleEmbedder {
     model: BertModel,
     tokenizer: Tokenizer,
     device: Device,
+    embedding_dim: usize,
 }
 
 impl CandleEmbedder {
@@ -64,10 +65,13 @@ impl CandleEmbedder {
             .with_truncation(Some(truncation))
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
+        let embedding_dim = config.hidden_size;
+
         Ok(Self {
             model,
             tokenizer,
             device,
+            embedding_dim,
         })
     }
 
@@ -84,6 +88,16 @@ impl CandleEmbedder {
             .tokenizer
             .encode_batch(prefixed_refs, true)
             .map_err(|e| anyhow::anyhow!("tokenization failed: {e}"))?;
+
+        // Warn when truncation occurs
+        for (i, encoding) in encodings.iter().enumerate() {
+            if encoding.get_ids().len() >= 512 {
+                eprintln!(
+                    "warning: text {} was truncated to 512 tokens (original may lose trailing content)",
+                    i + 1
+                );
+            }
+        }
 
         let max_len = encodings
             .iter()
@@ -162,5 +176,20 @@ impl Embedder for CandleEmbedder {
             .into_iter()
             .next()
             .context("expected one embedding result")
+    }
+
+    fn embedding_dim(&self) -> usize {
+        self.embedding_dim
+    }
+
+    fn max_tokens(&self) -> usize {
+        512
+    }
+
+    fn token_count(&self, text: &str) -> usize {
+        self.tokenizer
+            .encode(text, false)
+            .map(|e| e.get_ids().len())
+            .unwrap_or(0)
     }
 }

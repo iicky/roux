@@ -6,8 +6,6 @@ use rusqlite::{Connection, ffi::sqlite3_auto_extension, params};
 
 use super::{Chunk, SourceRecord, Store};
 
-const EMBEDDING_DIM: usize = 384;
-
 #[allow(clippy::missing_transmute_annotations)]
 fn register_sqlite_vec() {
     unsafe {
@@ -19,10 +17,11 @@ fn register_sqlite_vec() {
 
 pub struct SqliteStore {
     conn: Connection,
+    embedding_dim: usize,
 }
 
 impl SqliteStore {
-    pub fn open(path: &Path) -> Result<Self> {
+    pub fn open(path: &Path, embedding_dim: usize) -> Result<Self> {
         register_sqlite_vec();
 
         if let Some(parent) = path.parent() {
@@ -35,16 +34,53 @@ impl SqliteStore {
 
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
 
-        let store = Self { conn };
+        let store = Self {
+            conn,
+            embedding_dim,
+        };
         store.create_tables()?;
+        store.validate_or_set_dim(embedding_dim)?;
         Ok(store)
     }
 
+    /// Open an existing database, reading the embedding dimension from metadata.
+    /// Use this when no embedder is available (list, remove commands).
+    pub fn open_existing(path: &Path) -> Result<Self> {
+        register_sqlite_vec();
+
+        let conn = Connection::open(path)
+            .with_context(|| format!("opening database at {}", path.display()))?;
+
+        let dim: String = conn
+            .query_row(
+                "SELECT value FROM metadata WHERE key = 'embedding_dim'",
+                [],
+                |row| row.get(0),
+            )
+            .context(
+                "database missing embedding_dim metadata — was it created by an older version?",
+            )?;
+        let embedding_dim: usize = dim.parse().context("invalid embedding_dim in metadata")?;
+
+        Ok(Self {
+            conn,
+            embedding_dim,
+        })
+    }
+
     pub fn open_in_memory() -> Result<Self> {
+        Self::open_in_memory_with_dim(384)
+    }
+
+    pub fn open_in_memory_with_dim(embedding_dim: usize) -> Result<Self> {
         register_sqlite_vec();
         let conn = Connection::open_in_memory()?;
-        let store = Self { conn };
+        let store = Self {
+            conn,
+            embedding_dim,
+        };
         store.create_tables()?;
+        store.validate_or_set_dim(embedding_dim)?;
         Ok(store)
     }
 
@@ -76,14 +112,53 @@ impl SqliteStore {
             );",
         )?;
 
+        // Metadata table for storing embedding dimension and other config
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS metadata (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );",
+        )?;
+
         // Create virtual table for vector search
         self.conn.execute_batch(&format!(
             "CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
                 id TEXT PRIMARY KEY,
-                embedding float[{EMBEDDING_DIM}]
-            );"
+                embedding float[{}]
+            );",
+            self.embedding_dim
         ))?;
 
+        Ok(())
+    }
+
+    fn validate_or_set_dim(&self, dim: usize) -> Result<()> {
+        let stored: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM metadata WHERE key = 'embedding_dim'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+
+        match stored {
+            Some(val) => {
+                let stored_dim: usize = val.parse().context("invalid embedding_dim in metadata")?;
+                if stored_dim != dim {
+                    anyhow::bail!(
+                        "embedding dimension mismatch: database has {stored_dim}-dim embeddings, \
+                         but current model produces {dim}-dim. Re-index with `roux remove` + `roux add`."
+                    );
+                }
+            }
+            None => {
+                self.conn.execute(
+                    "INSERT INTO metadata (key, value) VALUES ('embedding_dim', ?1)",
+                    params![dim.to_string()],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -160,8 +235,11 @@ impl Store for SqliteStore {
     fn search(&self, embedding: &[f32], limit: usize, source: Option<&str>) -> Result<Vec<Chunk>> {
         let query_bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
 
-        // Get nearest IDs from vec_chunks
-        let ids: Vec<String> = {
+        // Over-fetch when filtering by source to ensure we get enough results
+        let fetch_limit = if source.is_some() { limit * 4 } else { limit };
+
+        // Get nearest IDs + distances from vec_chunks
+        let id_distances: Vec<(String, f64)> = {
             let mut stmt = self.conn.prepare(
                 "SELECT id, distance
                  FROM vec_chunks
@@ -169,25 +247,31 @@ impl Store for SqliteStore {
                  ORDER BY distance
                  LIMIT ?2",
             )?;
-            stmt.query_map(params![query_bytes, limit as i64], |row| {
-                row.get::<_, String>(0)
+            stmt.query_map(params![query_bytes, fetch_limit as i64], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?
         };
 
-        if ids.is_empty() {
+        if id_distances.is_empty() {
             return Ok(vec![]);
         }
 
         // Fetch full chunk metadata for each ID, preserving distance order
-        let mut chunks = Vec::with_capacity(ids.len());
-        for id in &ids {
+        let mut chunks = Vec::with_capacity(limit);
+        for (id, distance) in &id_distances {
+            if chunks.len() >= limit {
+                break;
+            }
+
             let mut stmt = self.conn.prepare_cached(
                 "SELECT id, source_name, source_version, language, item_type,
                         qualified_name, signature, doc, body, url, ingested_at
                  FROM chunks WHERE id = ?1",
             )?;
             let chunk = stmt.query_row(params![id], |row| {
+                // Convert cosine distance to similarity: sim = 1 - distance
+                let score = (1.0 - *distance) as f32;
                 Ok(Chunk {
                     id: row.get(0)?,
                     source_name: row.get(1)?,
@@ -201,6 +285,7 @@ impl Store for SqliteStore {
                     embedding: vec![], // not loaded on search
                     url: row.get(9)?,
                     ingested_at: row.get(10)?,
+                    score: Some(score),
                 })
             })?;
 
@@ -268,6 +353,8 @@ impl Store for SqliteStore {
 mod tests {
     use super::*;
 
+    const TEST_DIM: usize = 384;
+
     fn make_chunk(name: &str, qualified: &str) -> Chunk {
         Chunk {
             id: format!("test-{qualified}"),
@@ -279,9 +366,10 @@ mod tests {
             signature: Some("fn example()".to_string()),
             doc: "A test chunk".to_string(),
             body: format!("function: {qualified}\nfn example()\nA test chunk"),
-            embedding: vec![0.0; EMBEDDING_DIM],
+            embedding: vec![0.0; TEST_DIM],
             url: None,
             ingested_at: 0,
+            score: None,
         }
     }
 
@@ -333,7 +421,7 @@ mod tests {
 
         store.upsert_chunks(&[c1, c2]).unwrap();
 
-        let mut query_vec = vec![0.0; EMBEDDING_DIM];
+        let mut query_vec = vec![0.0; TEST_DIM];
         query_vec[0] = 1.0;
 
         let results = store.search(&query_vec, 1, None).unwrap();
@@ -355,7 +443,7 @@ mod tests {
         store.upsert_chunks(&[c1]).unwrap();
         store.upsert_chunks(&[c2]).unwrap();
 
-        let mut query_vec = vec![0.0; EMBEDDING_DIM];
+        let mut query_vec = vec![0.0; TEST_DIM];
         query_vec[0] = 1.0;
 
         // Without filter: tokio::spawn is closest
@@ -371,7 +459,7 @@ mod tests {
     #[test]
     fn test_search_empty_store() {
         let store = SqliteStore::open_in_memory().unwrap();
-        let query_vec = vec![0.0; EMBEDDING_DIM];
+        let query_vec = vec![0.0; TEST_DIM];
         let results = store.search(&query_vec, 5, None).unwrap();
         assert!(results.is_empty());
     }
@@ -395,7 +483,7 @@ mod tests {
         assert_eq!(sources[0].chunk_count, 1);
 
         // Search should find the updated chunk
-        let mut query_vec = vec![0.0; EMBEDDING_DIM];
+        let mut query_vec = vec![0.0; TEST_DIM];
         query_vec[0] = 1.0;
         let results = store.search(&query_vec, 1, None).unwrap();
         assert_eq!(results[0].doc, "Updated doc");
@@ -437,15 +525,98 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("test.sqlite");
 
-        let store = SqliteStore::open(&db_path).unwrap();
+        let store = SqliteStore::open(&db_path, TEST_DIM).unwrap();
         store
             .upsert_chunks(&[make_chunk("tokio", "tokio::spawn")])
             .unwrap();
 
         // Reopen and verify persistence
         drop(store);
-        let store = SqliteStore::open(&db_path).unwrap();
+        let store = SqliteStore::open(&db_path, TEST_DIM).unwrap();
         let sources = store.list_sources().unwrap();
         assert_eq!(sources.len(), 1);
+    }
+
+    #[test]
+    fn test_dim_mismatch_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.sqlite");
+
+        // Create with dim 384
+        let store = SqliteStore::open(&db_path, 384).unwrap();
+        drop(store);
+
+        // Reopen with different dim should fail
+        let result = SqliteStore::open(&db_path, 768);
+        assert!(result.is_err());
+        let err = result.err().unwrap().to_string();
+        assert!(
+            err.contains("dimension mismatch"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_open_existing_reads_dim() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.sqlite");
+
+        let store = SqliteStore::open(&db_path, TEST_DIM).unwrap();
+        store
+            .upsert_chunks(&[make_chunk("tokio", "tokio::spawn")])
+            .unwrap();
+        drop(store);
+
+        let store = SqliteStore::open_existing(&db_path).unwrap();
+        let sources = store.list_sources().unwrap();
+        assert_eq!(sources.len(), 1);
+    }
+
+    #[test]
+    fn test_search_returns_scores() {
+        let store = SqliteStore::open_in_memory().unwrap();
+
+        let mut c1 = make_chunk("tokio", "tokio::spawn");
+        c1.embedding[0] = 1.0;
+
+        store.upsert_chunks(&[c1]).unwrap();
+
+        let mut query_vec = vec![0.0; TEST_DIM];
+        query_vec[0] = 1.0;
+
+        let results = store.search(&query_vec, 1, None).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].score.is_some());
+        // Same vector should have high similarity
+        let score = results[0].score.unwrap();
+        assert!(score > 0.5, "expected high score, got {score}");
+    }
+
+    #[test]
+    fn test_source_filter_backfill() {
+        let store = SqliteStore::open_in_memory().unwrap();
+
+        // Insert several chunks from different sources
+        for i in 0..10 {
+            let mut c = make_chunk("other", &format!("other::fn_{i}"));
+            c.id = format!("other-{i}");
+            c.embedding[i % TEST_DIM] = 1.0;
+            store.upsert_chunks(&[c]).unwrap();
+        }
+
+        let mut target = make_chunk("target", "target::find_me");
+        target.id = "target-1".to_string();
+        target.embedding[0] = 0.9;
+        target.embedding[1] = 0.1;
+        store.upsert_chunks(&[target]).unwrap();
+
+        let mut query_vec = vec![0.0; TEST_DIM];
+        query_vec[0] = 1.0;
+
+        // With source filter, should still find the target even though
+        // other chunks are closer
+        let results = store.search(&query_vec, 5, Some("target")).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].source_name, "target");
     }
 }
