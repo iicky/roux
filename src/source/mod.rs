@@ -79,6 +79,7 @@ impl Source {
                 Some("ts" | "tsx") => Some("typescript"),
                 Some("js" | "jsx") => Some("javascript"),
                 Some("go") => Some("go"),
+                Some("pl" | "pm") => Some("perl"),
                 Some("md" | "markdown") => Some("markdown"),
                 Some("html" | "htm") => Some("html"),
                 Some("yaml" | "yml" | "json") => None, // could be openapi or anything

@@ -3,6 +3,7 @@ pub mod griffe;
 pub mod html;
 pub mod markdown;
 pub mod openapi;
+pub mod perl;
 pub mod rustdoc;
 pub mod treesitter;
 pub mod typescript;
@@ -106,6 +107,7 @@ pub fn registry() -> Vec<Box<dyn Extractor>> {
         Box::new(openapi::OpenApiExtractor),
         Box::new(griffe::GriffeExtractor),
         Box::new(typescript::TypeScriptExtractor),
+        Box::new(perl::PerlExtractor),
         Box::new(godoc::GoDocExtractor),
         Box::new(treesitter::TreeSitterExtractor), // fallback, last
     ]
@@ -162,7 +164,7 @@ mod tests {
     #[test]
     fn test_registry_not_empty() {
         let r = registry();
-        assert_eq!(r.len(), 8);
+        assert_eq!(r.len(), 9);
     }
 
     #[test]

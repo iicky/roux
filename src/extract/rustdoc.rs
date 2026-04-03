@@ -228,10 +228,8 @@ fn extract_item(
             let qualified = format!("{prefix}::{name}");
             let sig = fn_signature(&f.sig);
             let doc = extract_doc_attrs(&f.attrs);
-            if doc.is_empty() {
-                return;
-            }
-            let body = RawChunk::build_body("function", &qualified, Some(&sig), &doc);
+            let doc_or_sig = if doc.is_empty() { &sig } else { &doc };
+            let body = RawChunk::build_body("function", &qualified, Some(&sig), doc_or_sig);
             chunks.push(RawChunk {
                 source_name: source_name.to_string(),
                 source_version: source_version.to_string(),
@@ -239,7 +237,7 @@ fn extract_item(
                 item_type: "function".to_string(),
                 qualified_name: qualified,
                 signature: Some(sig),
-                doc,
+                doc: doc.to_string(),
                 body,
                 url: None,
             });
@@ -251,11 +249,10 @@ fn extract_item(
             let name = s.ident.to_string();
             let qualified = format!("{prefix}::{name}");
             let doc = extract_doc_attrs(&s.attrs);
-            if doc.is_empty() {
-                return;
-            }
-            let sig = format!("struct {name}");
-            let body = RawChunk::build_body("struct", &qualified, Some(&sig), &doc);
+            let generics = generics_to_string(&s.generics);
+            let sig = format!("struct {name}{generics}");
+            let doc_or_sig = if doc.is_empty() { &sig } else { &doc };
+            let body = RawChunk::build_body("struct", &qualified, Some(&sig), doc_or_sig);
             chunks.push(RawChunk {
                 source_name: source_name.to_string(),
                 source_version: source_version.to_string(),
@@ -275,11 +272,10 @@ fn extract_item(
             let name = e.ident.to_string();
             let qualified = format!("{prefix}::{name}");
             let doc = extract_doc_attrs(&e.attrs);
-            if doc.is_empty() {
-                return;
-            }
-            let sig = format!("enum {name}");
-            let body = RawChunk::build_body("enum", &qualified, Some(&sig), &doc);
+            let generics = generics_to_string(&e.generics);
+            let sig = format!("enum {name}{generics}");
+            let doc_or_sig = if doc.is_empty() { &sig } else { &doc };
+            let body = RawChunk::build_body("enum", &qualified, Some(&sig), doc_or_sig);
             chunks.push(RawChunk {
                 source_name: source_name.to_string(),
                 source_version: source_version.to_string(),
@@ -299,11 +295,20 @@ fn extract_item(
             let name = t.ident.to_string();
             let qualified = format!("{prefix}::{name}");
             let doc = extract_doc_attrs(&t.attrs);
-            if doc.is_empty() {
-                return;
-            }
-            let sig = format!("trait {name}");
-            let body = RawChunk::build_body("trait", &qualified, Some(&sig), &doc);
+            let generics = generics_to_string(&t.generics);
+            let bounds = if t.supertraits.is_empty() {
+                String::new()
+            } else {
+                let bounds_str: Vec<String> = t
+                    .supertraits
+                    .iter()
+                    .map(|b| quote::quote!(#b).to_string())
+                    .collect();
+                format!(": {}", bounds_str.join(" + "))
+            };
+            let sig = format!("trait {name}{generics}{bounds}");
+            let doc_or_sig = if doc.is_empty() { &sig } else { &doc };
+            let body = RawChunk::build_body("trait", &qualified, Some(&sig), doc_or_sig);
             chunks.push(RawChunk {
                 source_name: source_name.to_string(),
                 source_version: source_version.to_string(),
@@ -323,14 +328,16 @@ fn extract_item(
                     let method_qualified = format!("{qualified}::{method_name}");
                     let method_sig = fn_signature(&method.sig);
                     let method_doc = extract_doc_attrs(&method.attrs);
-                    if method_doc.is_empty() {
-                        continue;
-                    }
+                    let method_doc_or_sig = if method_doc.is_empty() {
+                        &method_sig
+                    } else {
+                        &method_doc
+                    };
                     let body = RawChunk::build_body(
                         "method",
                         &method_qualified,
                         Some(&method_sig),
-                        &method_doc,
+                        method_doc_or_sig,
                     );
                     chunks.push(RawChunk {
                         source_name: source_name.to_string(),
@@ -360,14 +367,16 @@ fn extract_item(
                     let method_qualified = format!("{impl_prefix}::{method_name}");
                     let method_sig = fn_signature(&method.sig);
                     let method_doc = extract_doc_attrs(&method.attrs);
-                    if method_doc.is_empty() {
-                        continue;
-                    }
+                    let method_doc_or_sig = if method_doc.is_empty() {
+                        &method_sig
+                    } else {
+                        &method_doc
+                    };
                     let body = RawChunk::build_body(
                         "method",
                         &method_qualified,
                         Some(&method_sig),
-                        &method_doc,
+                        method_doc_or_sig,
                     );
                     chunks.push(RawChunk {
                         source_name: source_name.to_string(),
@@ -421,11 +430,10 @@ fn extract_item(
             let name = t.ident.to_string();
             let qualified = format!("{prefix}::{name}");
             let doc = extract_doc_attrs(&t.attrs);
-            if doc.is_empty() {
-                return;
-            }
-            let sig = format!("type {name}");
-            let body = RawChunk::build_body("type", &qualified, Some(&sig), &doc);
+            let generics = generics_to_string(&t.generics);
+            let sig = format!("type {name}{generics}");
+            let doc_or_sig = if doc.is_empty() { &sig } else { &doc };
+            let body = RawChunk::build_body("type", &qualified, Some(&sig), doc_or_sig);
             chunks.push(RawChunk {
                 source_name: source_name.to_string(),
                 source_version: source_version.to_string(),
@@ -445,11 +453,9 @@ fn extract_item(
             let name = c.ident.to_string();
             let qualified = format!("{prefix}::{name}");
             let doc = extract_doc_attrs(&c.attrs);
-            if doc.is_empty() {
-                return;
-            }
             let sig = format!("const {name}");
-            let body = RawChunk::build_body("const", &qualified, Some(&sig), &doc);
+            let doc_or_sig = if doc.is_empty() { &sig } else { &doc };
+            let body = RawChunk::build_body("const", &qualified, Some(&sig), doc_or_sig);
             chunks.push(RawChunk {
                 source_name: source_name.to_string(),
                 source_version: source_version.to_string(),
@@ -464,6 +470,15 @@ fn extract_item(
         }
         _ => {}
     }
+}
+
+/// Convert generics (including where clauses) to a string.
+fn generics_to_string(generics: &syn::Generics) -> String {
+    if generics.params.is_empty() && generics.where_clause.is_none() {
+        return String::new();
+    }
+    let tokens = quote::quote!(#generics);
+    tokens.to_string()
 }
 
 fn is_public(vis: &syn::Visibility) -> bool {
@@ -556,7 +571,7 @@ pub fn public_fn() {}
     }
 
     #[test]
-    fn test_skip_undocumented_items() {
+    fn test_undocumented_items_included() {
         let code = r#"
 pub fn no_docs() {}
 
@@ -564,8 +579,14 @@ pub fn no_docs() {}
 pub fn has_docs() {}
 "#;
         let chunks = parse_rust_source(code, &test_source(), "mymod").unwrap();
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0].qualified_name, "test::mymod::has_docs");
+        assert_eq!(chunks.len(), 2);
+        // Undocumented item uses signature as body
+        let no_docs = chunks
+            .iter()
+            .find(|c| c.qualified_name == "test::mymod::no_docs")
+            .unwrap();
+        assert!(no_docs.doc.is_empty());
+        assert!(no_docs.body.contains("fn no_docs"));
     }
 
     #[test]
@@ -599,6 +620,38 @@ pub trait MyTrait {
     }
 
     #[test]
+    fn test_trait_bounds_preserved() {
+        let code = r#"
+/// A bounded trait.
+pub trait Sendable: Send + Sync {
+    /// Required method.
+    fn process(&self);
+}
+"#;
+        let chunks = parse_rust_source(code, &test_source(), "mymod").unwrap();
+        let trait_chunk = chunks.iter().find(|c| c.item_type == "trait").unwrap();
+        let sig = trait_chunk.signature.as_deref().unwrap();
+        assert!(sig.contains("Send"), "signature should contain Send: {sig}");
+        assert!(sig.contains("Sync"), "signature should contain Sync: {sig}");
+    }
+
+    #[test]
+    fn test_generics_preserved() {
+        let code = r#"
+/// A generic struct.
+pub struct Container<T: Clone> {
+    inner: T,
+}
+"#;
+        let chunks = parse_rust_source(code, &test_source(), "mymod").unwrap();
+        let sig = chunks[0].signature.as_deref().unwrap();
+        assert!(
+            sig.contains("<"),
+            "signature should contain generics: {sig}"
+        );
+    }
+
+    #[test]
     fn test_extract_impl_methods() {
         let code = r#"
 pub struct Foo;
@@ -611,9 +664,9 @@ impl Foo {
 }
 "#;
         let chunks = parse_rust_source(code, &test_source(), "mymod").unwrap();
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0].item_type, "method");
-        assert_eq!(chunks[0].qualified_name, "test::mymod::Foo::new");
+        assert_eq!(chunks.len(), 2); // struct Foo (undocumented) + method new
+        let method = chunks.iter().find(|c| c.item_type == "method").unwrap();
+        assert_eq!(method.qualified_name, "test::mymod::Foo::new");
     }
 
     #[test]
