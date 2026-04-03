@@ -7,9 +7,52 @@ pub mod rustdoc;
 pub mod treesitter;
 pub mod typescript;
 
+use std::path::Path;
+
 use anyhow::Result;
 
 use crate::source::Source;
+
+/// Maximum file size to read (10 MB).
+const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
+
+/// Maximum directory walk depth to prevent infinite recursion.
+const MAX_WALK_DEPTH: usize = 100;
+
+/// Read a file with size limit. Returns None (with warning) if too large or unreadable.
+pub fn safe_read_file(path: &Path) -> Option<String> {
+    match std::fs::metadata(path) {
+        Ok(meta) => {
+            if meta.len() > MAX_FILE_SIZE {
+                eprintln!(
+                    "warning: skipping oversized file {} ({:.1} MB > {:.0} MB limit)",
+                    path.display(),
+                    meta.len() as f64 / 1_048_576.0,
+                    MAX_FILE_SIZE as f64 / 1_048_576.0
+                );
+                return None;
+            }
+        }
+        Err(e) => {
+            eprintln!("warning: skipping unreadable file {}: {e}", path.display());
+            return None;
+        }
+    }
+    match std::fs::read_to_string(path) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            eprintln!("warning: skipping unreadable file {}: {e}", path.display());
+            None
+        }
+    }
+}
+
+/// Check if a path is a symlink.
+pub fn is_symlink(path: &Path) -> bool {
+    path.symlink_metadata()
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+}
 
 #[derive(Debug, Clone)]
 pub struct RawChunk {
@@ -128,5 +171,34 @@ mod tests {
         let extractors = registry();
         let matched = extractors.iter().find(|e| e.can_handle(&source));
         assert!(matched.is_some(), "crate source should match an extractor");
+    }
+
+    #[test]
+    fn test_is_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("real.txt");
+        std::fs::write(&file, "hello").unwrap();
+        assert!(!is_symlink(&file));
+
+        #[cfg(unix)]
+        {
+            let link = dir.path().join("link.txt");
+            std::os::unix::fs::symlink(&file, &link).unwrap();
+            assert!(is_symlink(&link));
+        }
+    }
+
+    #[test]
+    fn test_safe_read_file_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "content").unwrap();
+        assert_eq!(safe_read_file(&file), Some("content".to_string()));
+    }
+
+    #[test]
+    fn test_safe_read_file_missing() {
+        let result = safe_read_file(std::path::Path::new("/nonexistent/file.txt"));
+        assert!(result.is_none());
     }
 }

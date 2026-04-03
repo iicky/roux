@@ -8,7 +8,21 @@ pub const EMBEDDING_DIM: usize = 384;
 const MODEL_FILES: &[&str] = &["model.safetensors", "tokenizer.json", "config.json"];
 
 /// Returns the local cache path for a model file, downloading it if necessary.
+/// Known safe model IDs. Warn if user configures an unknown model.
+const KNOWN_MODELS: &[&str] = &[
+    "intfloat/multilingual-e5-small",
+    "intfloat/e5-small-v2",
+    "BAAI/bge-small-en-v1.5",
+    "jinaai/jina-embeddings-v2-base-code",
+    "nomic-ai/nomic-embed-code",
+];
+
 pub fn ensure_model(model_id: &str) -> Result<ModelFiles> {
+    if !KNOWN_MODELS.contains(&model_id) {
+        eprintln!(
+            "warning: model {model_id:?} is not in the known models list — verify you trust this source"
+        );
+    }
     let api = hf_hub::api::sync::Api::new().context("failed to create HuggingFace API client")?;
     let repo = api.model(model_id.to_string());
 
