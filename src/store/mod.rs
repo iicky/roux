@@ -2,6 +2,7 @@ pub mod sqlite;
 
 use anyhow::Result;
 
+#[derive(Clone)]
 pub struct Chunk {
     pub id: String,
     pub source_name: String,
