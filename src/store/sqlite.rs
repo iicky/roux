@@ -129,6 +129,18 @@ impl SqliteStore {
             self.embedding_dim
         ))?;
 
+        // FTS5 full-text search index for keyword/identifier matching
+        self.conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks USING fts5(
+                id UNINDEXED,
+                qualified_name,
+                signature,
+                doc,
+                body,
+                tokenize='unicode61 remove_diacritics 2'
+            );",
+        )?;
+
         Ok(())
     }
 
@@ -170,6 +182,28 @@ impl SqliteStore {
     }
 }
 
+/// Escape a query string for safe use in FTS5 MATCH.
+/// Wraps each word in double quotes to prevent FTS5 syntax errors from
+/// special characters like colons, parentheses, etc.
+fn fts_query_escape(query: &str) -> String {
+    query
+        .split_whitespace()
+        .map(|word| {
+            let clean: String = word
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if clean.is_empty() {
+                String::new()
+            } else {
+                format!("\"{clean}\"")
+            }
+        })
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" OR ")
+}
+
 impl Store for SqliteStore {
     fn upsert_chunks(&self, chunks: &[Chunk]) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
@@ -183,9 +217,14 @@ impl Store for SqliteStore {
             )?;
 
             let mut vec_del_stmt = tx.prepare_cached("DELETE FROM vec_chunks WHERE id = ?1")?;
-
             let mut vec_ins_stmt =
                 tx.prepare_cached("INSERT INTO vec_chunks (id, embedding) VALUES (?1, ?2)")?;
+
+            let mut fts_del_stmt = tx.prepare_cached("DELETE FROM fts_chunks WHERE id = ?1")?;
+            let mut fts_ins_stmt = tx.prepare_cached(
+                "INSERT INTO fts_chunks (id, qualified_name, signature, doc, body)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
 
             for chunk in chunks {
                 let now = Self::now();
@@ -211,6 +250,16 @@ impl Store for SqliteStore {
                     .collect();
                 vec_del_stmt.execute(params![chunk.id])?;
                 vec_ins_stmt.execute(params![chunk.id, embedding_bytes])?;
+
+                // Update FTS index
+                fts_del_stmt.execute(params![chunk.id])?;
+                fts_ins_stmt.execute(params![
+                    chunk.id,
+                    chunk.qualified_name,
+                    chunk.signature,
+                    chunk.doc,
+                    chunk.body,
+                ])?;
             }
 
             // Update source record
@@ -232,14 +281,23 @@ impl Store for SqliteStore {
         Ok(())
     }
 
-    fn search(&self, embedding: &[f32], limit: usize, source: Option<&str>) -> Result<Vec<Chunk>> {
+    fn search(
+        &self,
+        embedding: &[f32],
+        query_text: &str,
+        limit: usize,
+        source: Option<&str>,
+    ) -> Result<Vec<Chunk>> {
+        // Over-fetch for both sources to feed into RRF
+        let fetch_limit = if source.is_some() {
+            limit * 4
+        } else {
+            limit * 2
+        };
+
+        // 1. Vector search: get ranked IDs by cosine distance
         let query_bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
-
-        // Over-fetch when filtering by source to ensure we get enough results
-        let fetch_limit = if source.is_some() { limit * 4 } else { limit };
-
-        // Get nearest IDs + distances from vec_chunks
-        let id_distances: Vec<(String, f64)> = {
+        let vec_ids: Vec<String> = {
             let mut stmt = self.conn.prepare(
                 "SELECT id, distance
                  FROM vec_chunks
@@ -248,17 +306,49 @@ impl Store for SqliteStore {
                  LIMIT ?2",
             )?;
             stmt.query_map(params![query_bytes, fetch_limit as i64], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
+                row.get::<_, String>(0)
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?
         };
 
-        if id_distances.is_empty() {
+        // 2. FTS5 keyword search: get ranked IDs by BM25 relevance
+        let fts_ids: Vec<String> = if !query_text.is_empty() {
+            let mut stmt = self.conn.prepare(
+                "SELECT id FROM fts_chunks WHERE fts_chunks MATCH ?1 ORDER BY rank LIMIT ?2",
+            )?;
+            // Escape FTS5 special characters for safe matching
+            let safe_query = fts_query_escape(query_text);
+            stmt.query_map(params![safe_query, fetch_limit as i64], |row| {
+                row.get::<_, String>(0)
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+        } else {
+            vec![]
+        };
+
+        // 3. Reciprocal Rank Fusion (k=60 is standard)
+        let k = 60.0f64;
+        let mut rrf_scores: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+
+        for (rank, id) in vec_ids.iter().enumerate() {
+            *rrf_scores.entry(id.clone()).or_default() += 1.0 / (k + rank as f64 + 1.0);
+        }
+        for (rank, id) in fts_ids.iter().enumerate() {
+            *rrf_scores.entry(id.clone()).or_default() += 1.0 / (k + rank as f64 + 1.0);
+        }
+
+        // Sort by RRF score descending
+        let mut ranked: Vec<(String, f64)> = rrf_scores.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        if ranked.is_empty() {
             return Ok(vec![]);
         }
 
-        // Build a single IN query instead of N+1 individual SELECTs
-        let placeholders: Vec<String> = (1..=id_distances.len()).map(|i| format!("?{i}")).collect();
+        // 4. Batch-fetch chunk metadata
+        let fetch_ids: Vec<&str> = ranked.iter().map(|(id, _)| id.as_str()).collect();
+        let placeholders: Vec<String> = (1..=fetch_ids.len()).map(|i| format!("?{i}")).collect();
         let in_clause = placeholders.join(", ");
 
         let sql = format!(
@@ -268,9 +358,9 @@ impl Store for SqliteStore {
         );
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let id_params: Vec<&dyn rusqlite::types::ToSql> = id_distances
+        let id_params: Vec<&dyn rusqlite::types::ToSql> = fetch_ids
             .iter()
-            .map(|(id, _)| id as &dyn rusqlite::types::ToSql)
+            .map(|id| id as &dyn rusqlite::types::ToSql)
             .collect();
 
         let rows = stmt
@@ -288,14 +378,14 @@ impl Store for SqliteStore {
                     embedding: vec![],
                     url: row.get(9)?,
                     ingested_at: row.get(10)?,
-                    score: None, // filled below
+                    score: None,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
-        // Reorder results to match distance order and apply scores + source filter
+        // 5. Reorder by RRF score, apply source filter
         let mut chunks = Vec::with_capacity(limit);
-        for (id, distance) in &id_distances {
+        for (id, rrf_score) in &ranked {
             if chunks.len() >= limit {
                 break;
             }
@@ -305,7 +395,7 @@ impl Store for SqliteStore {
                 {
                     continue;
                 }
-                chunk.score = Some((1.0 - *distance) as f32);
+                chunk.score = Some(*rrf_score as f32);
                 chunks.push(chunk);
             }
         }
@@ -351,6 +441,7 @@ impl Store for SqliteStore {
 
         for id in &ids {
             tx.execute("DELETE FROM vec_chunks WHERE id = ?1", params![id])?;
+            tx.execute("DELETE FROM fts_chunks WHERE id = ?1", params![id])?;
         }
 
         tx.execute("DELETE FROM chunks WHERE source_name = ?1", params![name])?;
@@ -436,7 +527,7 @@ mod tests {
         let mut query_vec = vec![0.0; TEST_DIM];
         query_vec[0] = 1.0;
 
-        let results = store.search(&query_vec, 1, None).unwrap();
+        let results = store.search(&query_vec, "", 1, None).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].qualified_name, "tokio::spawn");
     }
@@ -459,11 +550,11 @@ mod tests {
         query_vec[0] = 1.0;
 
         // Without filter: tokio::spawn is closest
-        let results = store.search(&query_vec, 2, None).unwrap();
+        let results = store.search(&query_vec, "", 2, None).unwrap();
         assert_eq!(results.len(), 2);
 
         // With filter: only serde results
-        let results = store.search(&query_vec, 2, Some("serde")).unwrap();
+        let results = store.search(&query_vec, "", 2, Some("serde")).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].source_name, "serde");
     }
@@ -472,7 +563,7 @@ mod tests {
     fn test_search_empty_store() {
         let store = SqliteStore::open_in_memory().unwrap();
         let query_vec = vec![0.0; TEST_DIM];
-        let results = store.search(&query_vec, 5, None).unwrap();
+        let results = store.search(&query_vec, "", 5, None).unwrap();
         assert!(results.is_empty());
     }
 
@@ -497,7 +588,7 @@ mod tests {
         // Search should find the updated chunk
         let mut query_vec = vec![0.0; TEST_DIM];
         query_vec[0] = 1.0;
-        let results = store.search(&query_vec, 1, None).unwrap();
+        let results = store.search(&query_vec, "", 1, None).unwrap();
         assert_eq!(results[0].doc, "Updated doc");
     }
 
@@ -596,12 +687,12 @@ mod tests {
         let mut query_vec = vec![0.0; TEST_DIM];
         query_vec[0] = 1.0;
 
-        let results = store.search(&query_vec, 1, None).unwrap();
+        let results = store.search(&query_vec, "", 1, None).unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].score.is_some());
         // Same vector should have high similarity
         let score = results[0].score.unwrap();
-        assert!(score > 0.5, "expected high score, got {score}");
+        assert!(score > 0.0, "expected positive score, got {score}");
     }
 
     #[test]
@@ -627,8 +718,49 @@ mod tests {
 
         // With source filter, should still find the target even though
         // other chunks are closer
-        let results = store.search(&query_vec, 5, Some("target")).unwrap();
+        let results = store.search(&query_vec, "", 5, Some("target")).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].source_name, "target");
+    }
+
+    #[test]
+    fn test_hybrid_search_keyword_boost() {
+        let store = SqliteStore::open_in_memory().unwrap();
+
+        // Two chunks with same embedding but different text
+        let mut c1 = make_chunk("lib", "lib::HashMap");
+        c1.doc = "A hash map implementation".to_string();
+        c1.embedding[0] = 1.0;
+
+        let mut c2 = make_chunk("lib", "lib::TreeMap");
+        c2.doc = "A tree-based sorted map".to_string();
+        c2.embedding[0] = 0.99;
+        c2.embedding[1] = 0.01;
+
+        store.upsert_chunks(&[c1, c2]).unwrap();
+
+        // Vector-only: both are very close
+        let mut query_vec = vec![0.0; TEST_DIM];
+        query_vec[0] = 1.0;
+
+        // Hybrid with keyword "HashMap" should boost c1
+        let results = store.search(&query_vec, "HashMap", 2, None).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(
+            results[0].qualified_name, "lib::HashMap",
+            "keyword match should be ranked first"
+        );
+    }
+
+    #[test]
+    fn test_fts_query_escape() {
+        assert_eq!(fts_query_escape("hello world"), "\"hello\" OR \"world\"");
+        assert_eq!(
+            fts_query_escape("HashMap::from_iter"),
+            "\"HashMapfrom_iter\""
+        );
+        assert_eq!(fts_query_escape(""), "");
+        // Special chars stripped
+        assert_eq!(fts_query_escape("fn() -> bool"), "\"fn\" OR \"bool\"");
     }
 }

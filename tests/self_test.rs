@@ -85,7 +85,9 @@ fn test_self_retrieval() {
 
     for (query, expected_substring) in &test_cases {
         let query_vec = embedder.embed_query(query).expect("query embed failed");
-        let results = store.search(&query_vec, 5, None).expect("search failed");
+        let results = store
+            .search(&query_vec, query, 5, None)
+            .expect("search failed");
 
         let found = results
             .iter()
