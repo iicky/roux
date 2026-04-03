@@ -55,9 +55,15 @@ fn default_device() -> String {
     "auto".to_string()
 }
 
+fn home_dir_fallback() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
 fn default_global_path() -> PathBuf {
     dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
+        .unwrap_or_else(|| home_dir_fallback().join(".local").join("share"))
         .join("roux")
         .join("db.sqlite")
 }
@@ -115,7 +121,7 @@ impl Config {
 
     pub fn config_path() -> PathBuf {
         dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("~/.config"))
+            .unwrap_or_else(|| home_dir_fallback().join(".config"))
             .join("roux")
             .join("config.toml")
     }

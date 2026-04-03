@@ -37,7 +37,19 @@ impl Extractor for RustdocExtractor {
 }
 
 /// Download a crate from crates.io and extract to a temp directory.
+fn validate_crate_name(name: &str) -> Result<()> {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        anyhow::bail!("invalid crate name: {name:?} (must match [a-zA-Z0-9_-]+)");
+    }
+    Ok(())
+}
+
 fn download_crate(name: &str, version: &str) -> Result<PathBuf> {
+    validate_crate_name(name)?;
     let url = if version == "latest" {
         // First fetch the latest version number
         let meta_url = format!("https://crates.io/api/v1/crates/{name}");
@@ -69,18 +81,14 @@ fn download_crate(name: &str, version: &str) -> Result<PathBuf> {
 
     let bytes = response.bytes()?;
 
-    // Extract .tar.gz to temp directory
-    let tmp_dir = std::env::temp_dir().join(format!("roux-crate-{name}"));
-    if tmp_dir.exists() {
-        std::fs::remove_dir_all(&tmp_dir)?;
-    }
-    std::fs::create_dir_all(&tmp_dir)?;
+    // Extract .tar.gz to a random temp directory (auto-cleaned on drop)
+    let tmp_dir = tempfile::tempdir().context("creating temp directory")?;
 
     let decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(bytes));
     let mut archive = tar::Archive::new(decoder);
 
     // Validate each entry to prevent path traversal attacks (e.g. ../../../etc/passwd)
-    let canonical_tmp = tmp_dir.canonicalize()?;
+    let canonical_tmp = tmp_dir.path().canonicalize()?;
     for entry in archive.entries()? {
         let mut entry = entry?;
         let path = entry.path()?;
@@ -99,7 +107,9 @@ fn download_crate(name: &str, version: &str) -> Result<PathBuf> {
     }
 
     // The extracted dir is usually {name}-{version}/
-    let entries: Vec<_> = std::fs::read_dir(&tmp_dir)?
+    // Persist the tempdir so it's not cleaned up when we return the path
+    let tmp_path = tmp_dir.keep();
+    let entries: Vec<_> = std::fs::read_dir(&tmp_path)?
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_dir())
         .collect();
@@ -107,7 +117,7 @@ fn download_crate(name: &str, version: &str) -> Result<PathBuf> {
     if let Some(entry) = entries.first() {
         Ok(entry.path())
     } else {
-        Ok(tmp_dir)
+        Ok(tmp_path)
     }
 }
 
@@ -122,7 +132,7 @@ fn extract_from_dir(dir: &Path, source: &Source) -> Result<Vec<RawChunk>> {
         dir.to_path_buf()
     };
 
-    walk_rs_files(&src_dir, source, &src_dir, &mut chunks)?;
+    walk_rs_files(&src_dir, source, &src_dir, &mut chunks, 0)?;
     Ok(chunks)
 }
 
@@ -131,7 +141,13 @@ fn walk_rs_files(
     source: &Source,
     base: &Path,
     chunks: &mut Vec<RawChunk>,
+    depth: usize,
 ) -> Result<()> {
+    if depth > super::MAX_WALK_DEPTH {
+        eprintln!("warning: max directory depth reached at {}", dir.display());
+        return Ok(());
+    }
+
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(e) => {
@@ -147,15 +163,17 @@ fn walk_rs_files(
         let entry = entry?;
         let path = entry.path();
 
+        if super::is_symlink(&path) {
+            eprintln!("warning: skipping symlink {}", path.display());
+            continue;
+        }
+
         if path.is_dir() {
-            walk_rs_files(&path, source, base, chunks)?;
+            walk_rs_files(&path, source, base, chunks, depth + 1)?;
         } else if path.extension().is_some_and(|e| e == "rs") {
-            let code = match std::fs::read_to_string(&path) {
-                Ok(code) => code,
-                Err(e) => {
-                    eprintln!("warning: skipping unreadable file {}: {e}", path.display());
-                    continue;
-                }
+            let code = match super::safe_read_file(&path) {
+                Some(c) => c,
+                None => continue,
             };
 
             // Build module path from file path relative to base
@@ -656,5 +674,35 @@ pub fn root_fn() {}
         // Should find some well-known items
         let has_context = chunks.iter().any(|c| c.qualified_name.contains("Context"));
         assert!(has_context, "should find Context trait in anyhow");
+    }
+
+    #[test]
+    fn test_validate_crate_name() {
+        assert!(validate_crate_name("tokio").is_ok());
+        assert!(validate_crate_name("serde-json").is_ok());
+        assert!(validate_crate_name("my_crate").is_ok());
+        assert!(validate_crate_name("").is_err());
+        assert!(validate_crate_name("../evil").is_err());
+        assert!(validate_crate_name("foo bar").is_err());
+        assert!(validate_crate_name("name;rm -rf /").is_err());
+    }
+
+    #[test]
+    fn test_symlinks_skipped_in_walk() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_file = dir.path().join("real.rs");
+        std::fs::write(&real_file, "/// Doc.\npub fn real() {}").unwrap();
+
+        #[cfg(unix)]
+        {
+            let link = dir.path().join("link.rs");
+            std::os::unix::fs::symlink(&real_file, &link).unwrap();
+
+            let source = test_source();
+            let mut chunks = Vec::new();
+            walk_rs_files(dir.path(), &source, dir.path(), &mut chunks, 0).unwrap();
+            // Should only get the real file, not the symlink
+            assert_eq!(chunks.len(), 1);
+        }
     }
 }
