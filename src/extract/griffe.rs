@@ -31,7 +31,7 @@ impl Extractor for GriffeExtractor {
 
 fn extract_from_dir(dir: &Path, source: &Source) -> Result<Vec<RawChunk>> {
     let mut chunks = Vec::new();
-    walk_py_files(dir, source, dir, &mut chunks)?;
+    walk_py_files(dir, source, dir, &mut chunks, 0)?;
     Ok(chunks)
 }
 
@@ -40,7 +40,13 @@ fn walk_py_files(
     source: &Source,
     base: &Path,
     chunks: &mut Vec<RawChunk>,
+    depth: usize,
 ) -> Result<()> {
+    if depth > super::MAX_WALK_DEPTH {
+        eprintln!("warning: max directory depth reached at {}", dir.display());
+        return Ok(());
+    }
+
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(e) => {
@@ -56,18 +62,20 @@ fn walk_py_files(
         let entry = entry?;
         let path = entry.path();
 
+        if super::is_symlink(&path) {
+            eprintln!("warning: skipping symlink {}", path.display());
+            continue;
+        }
+
         if path.is_dir() {
             // Only recurse into Python packages (dirs with __init__.py)
             if path.join("__init__.py").exists() {
-                walk_py_files(&path, source, base, chunks)?;
+                walk_py_files(&path, source, base, chunks, depth + 1)?;
             }
         } else if path.extension().is_some_and(|e| e == "py") {
-            let code = match std::fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("warning: skipping unreadable file {}: {e}", path.display());
-                    continue;
-                }
+            let code = match super::safe_read_file(&path) {
+                Some(c) => c,
+                None => continue,
             };
 
             let rel = path.strip_prefix(base).unwrap_or(&path);

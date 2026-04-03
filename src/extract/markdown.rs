@@ -27,11 +27,21 @@ impl Extractor for MarkdownExtractor {
 
 fn extract_from_dir(dir: &Path, source: &Source) -> Result<Vec<RawChunk>> {
     let mut chunks = Vec::new();
-    walk_md_files(dir, source, &mut chunks)?;
+    walk_md_files(dir, source, &mut chunks, 0)?;
     Ok(chunks)
 }
 
-fn walk_md_files(dir: &Path, source: &Source, chunks: &mut Vec<RawChunk>) -> Result<()> {
+fn walk_md_files(
+    dir: &Path,
+    source: &Source,
+    chunks: &mut Vec<RawChunk>,
+    depth: usize,
+) -> Result<()> {
+    if depth > super::MAX_WALK_DEPTH {
+        eprintln!("warning: max directory depth reached at {}", dir.display());
+        return Ok(());
+    }
+
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(e) => {
@@ -47,18 +57,20 @@ fn walk_md_files(dir: &Path, source: &Source, chunks: &mut Vec<RawChunk>) -> Res
         let entry = entry?;
         let path = entry.path();
 
+        if super::is_symlink(&path) {
+            eprintln!("warning: skipping symlink {}", path.display());
+            continue;
+        }
+
         if path.is_dir() {
-            walk_md_files(&path, source, chunks)?;
+            walk_md_files(&path, source, chunks, depth + 1)?;
         } else if path
             .extension()
             .is_some_and(|e| e == "md" || e == "markdown")
         {
-            let content = match std::fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("warning: skipping unreadable file {}: {e}", path.display());
-                    continue;
-                }
+            let content = match super::safe_read_file(&path) {
+                Some(c) => c,
+                None => continue,
             };
             chunks.extend(parse_markdown(&content, source));
         }
