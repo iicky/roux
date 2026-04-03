@@ -17,11 +17,13 @@ fn register_sqlite_vec() {
 
 pub struct SqliteStore {
     conn: Connection,
-    embedding_dim: usize,
+    embedding_dim: Option<usize>,
 }
 
 impl SqliteStore {
-    pub fn open(path: &Path, embedding_dim: usize) -> Result<Self> {
+    /// Open a store with optional embedding support.
+    /// Pass `Some(dim)` to enable vector search, `None` for FTS-only.
+    pub fn open(path: &Path, embedding_dim: Option<usize>) -> Result<Self> {
         register_sqlite_vec();
 
         if let Some(parent) = path.parent() {
@@ -39,28 +41,27 @@ impl SqliteStore {
             embedding_dim,
         };
         store.create_tables()?;
-        store.validate_or_set_dim(embedding_dim)?;
+        if let Some(dim) = embedding_dim {
+            store.validate_or_set_dim(dim)?;
+        }
         Ok(store)
     }
 
-    /// Open an existing database, reading the embedding dimension from metadata.
-    /// Use this when no embedder is available (list, remove commands).
+    /// Open an existing database, reading the embedding dimension from metadata if present.
     pub fn open_existing(path: &Path) -> Result<Self> {
         register_sqlite_vec();
 
         let conn = Connection::open(path)
             .with_context(|| format!("opening database at {}", path.display()))?;
 
-        let dim: String = conn
+        let embedding_dim: Option<usize> = conn
             .query_row(
                 "SELECT value FROM metadata WHERE key = 'embedding_dim'",
                 [],
-                |row| row.get(0),
+                |row| row.get::<_, String>(0),
             )
-            .context(
-                "database missing embedding_dim metadata — was it created by an older version?",
-            )?;
-        let embedding_dim: usize = dim.parse().context("invalid embedding_dim in metadata")?;
+            .ok()
+            .and_then(|s| s.parse().ok());
 
         Ok(Self {
             conn,
@@ -69,10 +70,10 @@ impl SqliteStore {
     }
 
     pub fn open_in_memory() -> Result<Self> {
-        Self::open_in_memory_with_dim(384)
+        Self::open_in_memory_with_dim(Some(384))
     }
 
-    pub fn open_in_memory_with_dim(embedding_dim: usize) -> Result<Self> {
+    pub fn open_in_memory_with_dim(embedding_dim: Option<usize>) -> Result<Self> {
         register_sqlite_vec();
         let conn = Connection::open_in_memory()?;
         let store = Self {
@@ -80,7 +81,9 @@ impl SqliteStore {
             embedding_dim,
         };
         store.create_tables()?;
-        store.validate_or_set_dim(embedding_dim)?;
+        if let Some(dim) = embedding_dim {
+            store.validate_or_set_dim(dim)?;
+        }
         Ok(store)
     }
 
@@ -120,14 +123,15 @@ impl SqliteStore {
             );",
         )?;
 
-        // Create virtual table for vector search
-        self.conn.execute_batch(&format!(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
-                id TEXT PRIMARY KEY,
-                embedding float[{}]
-            );",
-            self.embedding_dim
-        ))?;
+        // Create virtual table for vector search (only if embedding dim is known)
+        if let Some(dim) = self.embedding_dim {
+            self.conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
+                    id TEXT PRIMARY KEY,
+                    embedding float[{dim}]
+                );"
+            ))?;
+        }
 
         // FTS5 full-text search index for keyword/identifier matching
         self.conn.execute_batch(
@@ -174,6 +178,11 @@ impl SqliteStore {
         Ok(())
     }
 
+    /// Check if this store has embeddings enabled.
+    pub fn has_embeddings(&self) -> bool {
+        self.embedding_dim.is_some()
+    }
+
     fn now() -> i64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -216,15 +225,24 @@ impl Store for SqliteStore {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             )?;
 
-            let mut vec_del_stmt = tx.prepare_cached("DELETE FROM vec_chunks WHERE id = ?1")?;
-            let mut vec_ins_stmt =
-                tx.prepare_cached("INSERT INTO vec_chunks (id, embedding) VALUES (?1, ?2)")?;
-
             let mut fts_del_stmt = tx.prepare_cached("DELETE FROM fts_chunks WHERE id = ?1")?;
             let mut fts_ins_stmt = tx.prepare_cached(
                 "INSERT INTO fts_chunks (id, qualified_name, signature, doc, body)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
             )?;
+
+            // Only prepare vec statements if we have embeddings support
+            let has_vec = self.embedding_dim.is_some();
+            let mut vec_del_stmt = if has_vec {
+                Some(tx.prepare_cached("DELETE FROM vec_chunks WHERE id = ?1")?)
+            } else {
+                None
+            };
+            let mut vec_ins_stmt = if has_vec {
+                Some(tx.prepare_cached("INSERT INTO vec_chunks (id, embedding) VALUES (?1, ?2)")?)
+            } else {
+                None
+            };
 
             for chunk in chunks {
                 let now = Self::now();
@@ -242,14 +260,17 @@ impl Store for SqliteStore {
                     now,
                 ])?;
 
-                // sqlite-vec expects raw f32 bytes
-                let embedding_bytes: Vec<u8> = chunk
-                    .embedding
-                    .iter()
-                    .flat_map(|f| f.to_le_bytes())
-                    .collect();
-                vec_del_stmt.execute(params![chunk.id])?;
-                vec_ins_stmt.execute(params![chunk.id, embedding_bytes])?;
+                // Insert embedding if present
+                if let Some(ref embedding) = chunk.embedding {
+                    let embedding_bytes: Vec<u8> =
+                        embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+                    if let Some(ref mut del) = vec_del_stmt {
+                        del.execute(params![chunk.id])?;
+                    }
+                    if let Some(ref mut ins) = vec_ins_stmt {
+                        ins.execute(params![chunk.id, embedding_bytes])?;
+                    }
+                }
 
                 // Update FTS index
                 fts_del_stmt.execute(params![chunk.id])?;
@@ -283,7 +304,7 @@ impl Store for SqliteStore {
 
     fn search(
         &self,
-        embedding: &[f32],
+        embedding: Option<&[f32]>,
         query_text: &str,
         limit: usize,
         source: Option<&str>,
@@ -295,9 +316,9 @@ impl Store for SqliteStore {
             limit * 2
         };
 
-        // 1. Vector search: get ranked IDs by cosine distance
-        let query_bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
-        let vec_ids: Vec<String> = {
+        // 1. Vector search: get ranked IDs by cosine distance (if embeddings available)
+        let vec_ids: Vec<String> = if let Some(emb) = embedding {
+            let query_bytes: Vec<u8> = emb.iter().flat_map(|f| f.to_le_bytes()).collect();
             let mut stmt = self.conn.prepare(
                 "SELECT id, distance
                  FROM vec_chunks
@@ -309,6 +330,8 @@ impl Store for SqliteStore {
                 row.get::<_, String>(0)
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?
+        } else {
+            vec![]
         };
 
         // 2. FTS5 keyword search: get ranked IDs by BM25 relevance
@@ -375,7 +398,7 @@ impl Store for SqliteStore {
                     signature: row.get(6)?,
                     doc: row.get(7)?,
                     body: row.get(8)?,
-                    embedding: vec![],
+                    embedding: None,
                     url: row.get(9)?,
                     ingested_at: row.get(10)?,
                     score: None,
@@ -440,7 +463,9 @@ impl Store for SqliteStore {
         };
 
         for id in &ids {
-            tx.execute("DELETE FROM vec_chunks WHERE id = ?1", params![id])?;
+            if self.embedding_dim.is_some() {
+                let _ = tx.execute("DELETE FROM vec_chunks WHERE id = ?1", params![id]);
+            }
             tx.execute("DELETE FROM fts_chunks WHERE id = ?1", params![id])?;
         }
 
@@ -469,7 +494,7 @@ mod tests {
             signature: Some("fn example()".to_string()),
             doc: "A test chunk".to_string(),
             body: format!("function: {qualified}\nfn example()\nA test chunk"),
-            embedding: vec![0.0; TEST_DIM],
+            embedding: Some(vec![0.0; TEST_DIM]),
             url: None,
             ingested_at: 0,
             score: None,
@@ -517,17 +542,17 @@ mod tests {
         let store = SqliteStore::open_in_memory().unwrap();
 
         let mut c1 = make_chunk("tokio", "tokio::spawn");
-        c1.embedding[0] = 1.0;
+        c1.embedding.as_mut().unwrap()[0] = 1.0;
 
         let mut c2 = make_chunk("tokio", "tokio::sleep");
-        c2.embedding[1] = 1.0;
+        c2.embedding.as_mut().unwrap()[1] = 1.0;
 
         store.upsert_chunks(&[c1, c2]).unwrap();
 
         let mut query_vec = vec![0.0; TEST_DIM];
         query_vec[0] = 1.0;
 
-        let results = store.search(&query_vec, "", 1, None).unwrap();
+        let results = store.search(Some(&query_vec), "", 1, None).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].qualified_name, "tokio::spawn");
     }
@@ -537,11 +562,11 @@ mod tests {
         let store = SqliteStore::open_in_memory().unwrap();
 
         let mut c1 = make_chunk("tokio", "tokio::spawn");
-        c1.embedding[0] = 1.0;
+        c1.embedding.as_mut().unwrap()[0] = 1.0;
 
         let mut c2 = make_chunk("serde", "serde::Serialize");
-        c2.embedding[0] = 0.9;
-        c2.embedding[1] = 0.1;
+        c2.embedding.as_mut().unwrap()[0] = 0.9;
+        c2.embedding.as_mut().unwrap()[1] = 0.1;
 
         store.upsert_chunks(&[c1]).unwrap();
         store.upsert_chunks(&[c2]).unwrap();
@@ -550,11 +575,13 @@ mod tests {
         query_vec[0] = 1.0;
 
         // Without filter: tokio::spawn is closest
-        let results = store.search(&query_vec, "", 2, None).unwrap();
+        let results = store.search(Some(&query_vec), "", 2, None).unwrap();
         assert_eq!(results.len(), 2);
 
         // With filter: only serde results
-        let results = store.search(&query_vec, "", 2, Some("serde")).unwrap();
+        let results = store
+            .search(Some(&query_vec), "", 2, Some("serde"))
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].source_name, "serde");
     }
@@ -563,7 +590,7 @@ mod tests {
     fn test_search_empty_store() {
         let store = SqliteStore::open_in_memory().unwrap();
         let query_vec = vec![0.0; TEST_DIM];
-        let results = store.search(&query_vec, "", 5, None).unwrap();
+        let results = store.search(Some(&query_vec), "", 5, None).unwrap();
         assert!(results.is_empty());
     }
 
@@ -578,7 +605,7 @@ mod tests {
         // Upsert same ID with different doc
         let mut c2 = make_chunk("tokio", "tokio::spawn");
         c2.doc = "Updated doc".to_string();
-        c2.embedding[0] = 1.0;
+        c2.embedding.as_mut().unwrap()[0] = 1.0;
         store.upsert_chunks(&[c2]).unwrap();
 
         // Should still be 1 chunk, not 2
@@ -588,7 +615,7 @@ mod tests {
         // Search should find the updated chunk
         let mut query_vec = vec![0.0; TEST_DIM];
         query_vec[0] = 1.0;
-        let results = store.search(&query_vec, "", 1, None).unwrap();
+        let results = store.search(Some(&query_vec), "", 1, None).unwrap();
         assert_eq!(results[0].doc, "Updated doc");
     }
 
@@ -628,14 +655,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("test.sqlite");
 
-        let store = SqliteStore::open(&db_path, TEST_DIM).unwrap();
+        let store = SqliteStore::open(&db_path, Some(TEST_DIM)).unwrap();
         store
             .upsert_chunks(&[make_chunk("tokio", "tokio::spawn")])
             .unwrap();
 
         // Reopen and verify persistence
         drop(store);
-        let store = SqliteStore::open(&db_path, TEST_DIM).unwrap();
+        let store = SqliteStore::open(&db_path, Some(TEST_DIM)).unwrap();
         let sources = store.list_sources().unwrap();
         assert_eq!(sources.len(), 1);
     }
@@ -646,11 +673,11 @@ mod tests {
         let db_path = dir.path().join("test.sqlite");
 
         // Create with dim 384
-        let store = SqliteStore::open(&db_path, 384).unwrap();
+        let store = SqliteStore::open(&db_path, Some(384)).unwrap();
         drop(store);
 
         // Reopen with different dim should fail
-        let result = SqliteStore::open(&db_path, 768);
+        let result = SqliteStore::open(&db_path, Some(768));
         assert!(result.is_err());
         let err = result.err().unwrap().to_string();
         assert!(
@@ -664,7 +691,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("test.sqlite");
 
-        let store = SqliteStore::open(&db_path, TEST_DIM).unwrap();
+        let store = SqliteStore::open(&db_path, Some(TEST_DIM)).unwrap();
         store
             .upsert_chunks(&[make_chunk("tokio", "tokio::spawn")])
             .unwrap();
@@ -680,14 +707,14 @@ mod tests {
         let store = SqliteStore::open_in_memory().unwrap();
 
         let mut c1 = make_chunk("tokio", "tokio::spawn");
-        c1.embedding[0] = 1.0;
+        c1.embedding.as_mut().unwrap()[0] = 1.0;
 
         store.upsert_chunks(&[c1]).unwrap();
 
         let mut query_vec = vec![0.0; TEST_DIM];
         query_vec[0] = 1.0;
 
-        let results = store.search(&query_vec, "", 1, None).unwrap();
+        let results = store.search(Some(&query_vec), "", 1, None).unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].score.is_some());
         // Same vector should have high similarity
@@ -703,14 +730,14 @@ mod tests {
         for i in 0..10 {
             let mut c = make_chunk("other", &format!("other::fn_{i}"));
             c.id = format!("other-{i}");
-            c.embedding[i % TEST_DIM] = 1.0;
+            c.embedding.as_mut().unwrap()[i % TEST_DIM] = 1.0;
             store.upsert_chunks(&[c]).unwrap();
         }
 
         let mut target = make_chunk("target", "target::find_me");
         target.id = "target-1".to_string();
-        target.embedding[0] = 0.9;
-        target.embedding[1] = 0.1;
+        target.embedding.as_mut().unwrap()[0] = 0.9;
+        target.embedding.as_mut().unwrap()[1] = 0.1;
         store.upsert_chunks(&[target]).unwrap();
 
         let mut query_vec = vec![0.0; TEST_DIM];
@@ -718,7 +745,9 @@ mod tests {
 
         // With source filter, should still find the target even though
         // other chunks are closer
-        let results = store.search(&query_vec, "", 5, Some("target")).unwrap();
+        let results = store
+            .search(Some(&query_vec), "", 5, Some("target"))
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].source_name, "target");
     }
@@ -730,12 +759,12 @@ mod tests {
         // Two chunks with same embedding but different text
         let mut c1 = make_chunk("lib", "lib::HashMap");
         c1.doc = "A hash map implementation".to_string();
-        c1.embedding[0] = 1.0;
+        c1.embedding.as_mut().unwrap()[0] = 1.0;
 
         let mut c2 = make_chunk("lib", "lib::TreeMap");
         c2.doc = "A tree-based sorted map".to_string();
-        c2.embedding[0] = 0.99;
-        c2.embedding[1] = 0.01;
+        c2.embedding.as_mut().unwrap()[0] = 0.99;
+        c2.embedding.as_mut().unwrap()[1] = 0.01;
 
         store.upsert_chunks(&[c1, c2]).unwrap();
 
@@ -744,7 +773,7 @@ mod tests {
         query_vec[0] = 1.0;
 
         // Hybrid with keyword "HashMap" should boost c1
-        let results = store.search(&query_vec, "HashMap", 2, None).unwrap();
+        let results = store.search(Some(&query_vec), "HashMap", 2, None).unwrap();
         assert_eq!(results.len(), 2);
         assert_eq!(
             results[0].qualified_name, "lib::HashMap",

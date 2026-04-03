@@ -45,6 +45,9 @@ enum Command {
         /// Override display name for the source
         #[arg(long)]
         name: Option<String>,
+        /// Also compute embeddings (slower, enables semantic search)
+        #[arg(long)]
+        embed: bool,
     },
     /// Retrieve relevant chunks for a query
     Query {
@@ -126,6 +129,7 @@ impl Cli {
                 local,
                 version,
                 name,
+                embed,
             } => cmd_add(
                 &config,
                 source,
@@ -133,6 +137,7 @@ impl Cli {
                 lang.clone(),
                 version.clone(),
                 *local,
+                *embed,
             ),
             Command::Query {
                 query,
@@ -169,6 +174,7 @@ fn cmd_add(
     lang: Option<String>,
     version: Option<String>,
     local: bool,
+    embed: bool,
 ) -> Result<()> {
     let source = Source::from_raw(raw_source, name, lang, version);
     eprintln!("Extracting chunks from {}...", source.name);
@@ -182,46 +188,85 @@ fn cmd_add(
         return Ok(());
     }
 
-    // Embed + store in batches so each committed batch survives partial failures
-    eprintln!("Loading embedding model...");
-    let model_files = model::ensure_model(&config.model.id)?;
-    let prefix_style = PrefixStyle::from_model_id(&config.model.id);
-    let embedder = CandleEmbedder::load_with_prefix(
-        &model_files.model,
-        &model_files.tokenizer,
-        &model_files.config,
-        prefix_style,
-    )?;
+    if embed {
+        // Full pipeline: embed + store with vectors
+        eprintln!("Loading embedding model...");
+        let model_files = model::ensure_model(&config.model.id)?;
+        let prefix_style = PrefixStyle::from_model_id(&config.model.id);
+        let embedder = CandleEmbedder::load_with_prefix(
+            &model_files.model,
+            &model_files.tokenizer,
+            &model_files.config,
+            prefix_style,
+        )?;
 
-    // Split oversized chunks before embedding
-    let raw_chunks = split_oversized_chunks(raw_chunks, &embedder);
+        let raw_chunks = split_oversized_chunks(raw_chunks, &embedder);
+        let store_path = config.resolve_store_path(local);
+        let store = SqliteStore::open(&store_path, Some(embedder.embedding_dim()))?;
+        let batch_size = config.ingest.batch_size;
+        let total_batches = raw_chunks.len().div_ceil(batch_size);
+        let mut stored = 0usize;
 
-    let store_path = config.resolve_store_path(local);
-    let store = SqliteStore::open(&store_path, embedder.embedding_dim())?;
-    let batch_size = config.ingest.batch_size;
-    let total_batches = raw_chunks.len().div_ceil(batch_size);
-    let mut stored = 0usize;
+        eprintln!(
+            "Embedding and storing {} chunks in {} batches...",
+            raw_chunks.len(),
+            total_batches
+        );
 
-    eprintln!(
-        "Embedding and storing {} chunks in {} batches...",
-        raw_chunks.len(),
-        total_batches
-    );
+        for (i, batch) in raw_chunks.chunks(batch_size).enumerate() {
+            let texts: Vec<&str> = batch.iter().map(|c| c.body.as_str()).collect();
+            let embeddings = embedder.embed_passages(&texts).with_context(|| {
+                format!(
+                    "embedding batch {}/{} failed ({stored} chunks already stored)",
+                    i + 1,
+                    total_batches
+                )
+            })?;
 
-    for (i, batch) in raw_chunks.chunks(batch_size).enumerate() {
-        let texts: Vec<&str> = batch.iter().map(|c| c.body.as_str()).collect();
-        let embeddings = embedder.embed_passages(&texts).with_context(|| {
-            format!(
-                "embedding batch {}/{} failed ({stored} chunks already stored)",
+            let chunks: Vec<Chunk> = batch
+                .iter()
+                .zip(embeddings)
+                .map(|(raw, embedding)| Chunk {
+                    id: raw.id(),
+                    source_name: raw.source_name.clone(),
+                    source_version: raw.source_version.clone(),
+                    language: raw.language.clone(),
+                    item_type: raw.item_type.clone(),
+                    qualified_name: raw.qualified_name.clone(),
+                    signature: raw.signature.clone(),
+                    doc: raw.doc.clone(),
+                    body: raw.body.clone(),
+                    embedding: Some(embedding),
+                    url: raw.url.clone(),
+                    ingested_at: 0,
+                    score: None,
+                })
+                .collect();
+
+            store.upsert_chunks(&chunks)?;
+            stored += chunks.len();
+            eprintln!(
+                "  batch {}/{}: stored {} chunks",
                 i + 1,
-                total_batches
-            )
-        })?;
+                total_batches,
+                stored
+            );
+        }
 
-        let chunks: Vec<Chunk> = batch
+        eprintln!(
+            "Indexed {} chunks from {} into {}",
+            stored,
+            source.name,
+            store_path.display()
+        );
+    } else {
+        // FTS-only: instant ingestion, no model loading
+        let store_path = config.resolve_store_path(local);
+        let store = SqliteStore::open(&store_path, None)?;
+
+        let chunks: Vec<Chunk> = raw_chunks
             .iter()
-            .zip(embeddings)
-            .map(|(raw, embedding)| Chunk {
+            .map(|raw| Chunk {
                 id: raw.id(),
                 source_name: raw.source_name.clone(),
                 source_version: raw.source_version.clone(),
@@ -231,7 +276,7 @@ fn cmd_add(
                 signature: raw.signature.clone(),
                 doc: raw.doc.clone(),
                 body: raw.body.clone(),
-                embedding,
+                embedding: None,
                 url: raw.url.clone(),
                 ingested_at: 0,
                 score: None,
@@ -239,21 +284,14 @@ fn cmd_add(
             .collect();
 
         store.upsert_chunks(&chunks)?;
-        stored += chunks.len();
         eprintln!(
-            "  batch {}/{}: stored {} chunks",
-            i + 1,
-            total_batches,
-            stored
+            "Indexed {} chunks from {} into {}",
+            chunks.len(),
+            source.name,
+            store_path.display()
         );
     }
 
-    eprintln!(
-        "Indexed {} chunks from {} into {}",
-        stored,
-        source.name,
-        store_path.display()
-    );
     Ok(())
 }
 
@@ -266,23 +304,30 @@ fn cmd_query(
     local: bool,
     _global: bool,
 ) -> Result<()> {
-    // Load model
-    let model_files = model::ensure_model(&config.model.id)?;
-    let prefix_style = PrefixStyle::from_model_id(&config.model.id);
-    let embedder = CandleEmbedder::load_with_prefix(
-        &model_files.model,
-        &model_files.tokenizer,
-        &model_files.config,
-        prefix_style,
-    )?;
-
-    // Embed query
-    let query_embedding = embedder.embed_query(query)?;
-
-    // Search
     let store_path = config.resolve_store_path(local);
-    let store = SqliteStore::open(&store_path, embedder.embedding_dim())?;
-    let results = store.search(&query_embedding, query, top, source)?;
+    if !store_path.exists() {
+        anyhow::bail!("no index found at {}", store_path.display());
+    }
+
+    let store = SqliteStore::open_existing(&store_path)?;
+
+    // Only load embedder if store has embeddings
+    let query_embedding = if store.has_embeddings() {
+        eprintln!("Loading embedding model...");
+        let model_files = model::ensure_model(&config.model.id)?;
+        let prefix_style = PrefixStyle::from_model_id(&config.model.id);
+        let embedder = CandleEmbedder::load_with_prefix(
+            &model_files.model,
+            &model_files.tokenizer,
+            &model_files.config,
+            prefix_style,
+        )?;
+        Some(embedder.embed_query(query)?)
+    } else {
+        None
+    };
+
+    let results = store.search(query_embedding.as_deref(), query, top, source)?;
 
     if results.is_empty() {
         eprintln!("No results found.");

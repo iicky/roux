@@ -31,7 +31,7 @@ fn test_self_retrieval() {
     let embedder =
         CandleEmbedder::load(&files.model, &files.tokenizer, &files.config).expect("load failed");
 
-    let store = SqliteStore::open_in_memory_with_dim(embedder.embedding_dim()).unwrap();
+    let store = SqliteStore::open_in_memory_with_dim(Some(embedder.embedding_dim())).unwrap();
 
     // Embed and store in batches
     for batch in raw_chunks.chunks(32) {
@@ -51,7 +51,7 @@ fn test_self_retrieval() {
                 signature: raw.signature.clone(),
                 doc: raw.doc.clone(),
                 body: raw.body.clone(),
-                embedding,
+                embedding: Some(embedding),
                 url: raw.url.clone(),
                 ingested_at: 0,
                 score: None,
@@ -86,7 +86,7 @@ fn test_self_retrieval() {
     for (query, expected_substring) in &test_cases {
         let query_vec = embedder.embed_query(query).expect("query embed failed");
         let results = store
-            .search(&query_vec, query, 5, None)
+            .search(Some(&query_vec), query, 5, None)
             .expect("search failed");
 
         let found = results
