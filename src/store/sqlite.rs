@@ -257,21 +257,24 @@ impl Store for SqliteStore {
             return Ok(vec![]);
         }
 
-        // Fetch full chunk metadata for each ID, preserving distance order
-        let mut chunks = Vec::with_capacity(limit);
-        for (id, distance) in &id_distances {
-            if chunks.len() >= limit {
-                break;
-            }
+        // Build a single IN query instead of N+1 individual SELECTs
+        let placeholders: Vec<String> = (1..=id_distances.len()).map(|i| format!("?{i}")).collect();
+        let in_clause = placeholders.join(", ");
 
-            let mut stmt = self.conn.prepare_cached(
-                "SELECT id, source_name, source_version, language, item_type,
-                        qualified_name, signature, doc, body, url, ingested_at
-                 FROM chunks WHERE id = ?1",
-            )?;
-            let chunk = stmt.query_row(params![id], |row| {
-                // Convert cosine distance to similarity: sim = 1 - distance
-                let score = (1.0 - *distance) as f32;
+        let sql = format!(
+            "SELECT id, source_name, source_version, language, item_type,
+                    qualified_name, signature, doc, body, url, ingested_at
+             FROM chunks WHERE id IN ({in_clause})"
+        );
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let id_params: Vec<&dyn rusqlite::types::ToSql> = id_distances
+            .iter()
+            .map(|(id, _)| id as &dyn rusqlite::types::ToSql)
+            .collect();
+
+        let rows = stmt
+            .query_map(id_params.as_slice(), |row| {
                 Ok(Chunk {
                     id: row.get(0)?,
                     source_name: row.get(1)?,
@@ -282,18 +285,27 @@ impl Store for SqliteStore {
                     signature: row.get(6)?,
                     doc: row.get(7)?,
                     body: row.get(8)?,
-                    embedding: vec![], // not loaded on search
+                    embedding: vec![],
                     url: row.get(9)?,
                     ingested_at: row.get(10)?,
-                    score: Some(score),
+                    score: None, // filled below
                 })
-            })?;
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
 
-            if let Some(src) = source {
-                if chunk.source_name == src {
-                    chunks.push(chunk);
+        // Reorder results to match distance order and apply scores + source filter
+        let mut chunks = Vec::with_capacity(limit);
+        for (id, distance) in &id_distances {
+            if chunks.len() >= limit {
+                break;
+            }
+            if let Some(mut chunk) = rows.iter().find(|c| c.id == *id).cloned() {
+                if let Some(src) = source
+                    && chunk.source_name != src
+                {
+                    continue;
                 }
-            } else {
+                chunk.score = Some((1.0 - *distance) as f32);
                 chunks.push(chunk);
             }
         }
