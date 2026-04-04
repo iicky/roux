@@ -1,3 +1,5 @@
+pub mod crate_download;
+
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]

@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, params};
 
-use super::{Edge, Symbol};
+use super::{Edge, Node};
 
 pub struct GraphStore {
     conn: Connection,
@@ -19,92 +19,136 @@ impl GraphStore {
         let conn = Connection::open(path)
             .with_context(|| format!("opening database at {}", path.display()))?;
 
-        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
 
         let store = Self { conn };
-        store.create_tables()?;
+        store.migrate()?;
         Ok(store)
     }
 
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;")?;
         let store = Self { conn };
-        store.create_tables()?;
+        store.migrate()?;
         Ok(store)
     }
 
-    fn create_tables(&self) -> Result<()> {
+    fn migrate(&self) -> Result<()> {
+        // Check schema version
         self.conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS symbols (
-                id             TEXT PRIMARY KEY,
-                kind           TEXT NOT NULL,
-                name           TEXT NOT NULL,
-                qualified_name TEXT NOT NULL,
-                source_name    TEXT NOT NULL,
-                source_version TEXT NOT NULL,
-                language       TEXT NOT NULL,
-                file_path      TEXT NOT NULL,
-                line           INTEGER NOT NULL,
-                signature      TEXT,
-                doc            TEXT,
-                body           TEXT NOT NULL,
-                parent_id      TEXT REFERENCES symbols(id)
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_symbols_source ON symbols(source_name);
-            CREATE INDEX IF NOT EXISTS idx_symbols_parent ON symbols(parent_id);
-            CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
-
-            CREATE TABLE IF NOT EXISTS edges (
-                from_id TEXT NOT NULL REFERENCES symbols(id),
-                to_id   TEXT NOT NULL REFERENCES symbols(id),
-                kind    TEXT NOT NULL,
-                PRIMARY KEY (from_id, to_id, kind)
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_id);
-            CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_id);
-
-            CREATE TABLE IF NOT EXISTS sources (
-                name        TEXT PRIMARY KEY,
-                version     TEXT NOT NULL,
-                language    TEXT NOT NULL,
-                ingested_at INTEGER NOT NULL
-            );
-
-            CREATE VIRTUAL TABLE IF NOT EXISTS fts_symbols USING fts5(
-                id UNINDEXED,
-                name,
-                qualified_name,
-                signature,
-                doc,
-                body,
-                tokenize='unicode61 remove_diacritics 2'
-            );
-
-            CREATE TABLE IF NOT EXISTS metadata (
-                key   TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );",
+            "CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
         )?;
+
+        let version: i64 = self
+            .conn
+            .query_row(
+                "SELECT CAST(value AS INTEGER) FROM metadata WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        if version < 1 {
+            // Drop old tables if they exist (pre-v1 data)
+            self.conn.execute_batch(
+                "DROP TABLE IF EXISTS fts_symbols;
+                 DROP TABLE IF EXISTS fts_nodes;
+                 DROP TABLE IF EXISTS fts_chunks;
+                 DROP TABLE IF EXISTS vec_chunks;
+                 DROP TABLE IF EXISTS edges;
+                 DROP TABLE IF EXISTS symbols;
+                 DROP TABLE IF EXISTS nodes;
+                 DROP TABLE IF EXISTS chunks;
+                 DROP TABLE IF EXISTS sources;",
+            )?;
+
+            self.conn.execute_batch(
+                "CREATE TABLE sources (
+                    name        TEXT PRIMARY KEY,
+                    version     TEXT NOT NULL,
+                    language    TEXT NOT NULL,
+                    ingested_at INTEGER NOT NULL
+                );
+
+                CREATE TABLE nodes (
+                    id             TEXT PRIMARY KEY,
+                    kind           TEXT NOT NULL,
+                    name           TEXT NOT NULL,
+                    qualified_name TEXT NOT NULL,
+                    source_name    TEXT NOT NULL REFERENCES sources(name),
+                    language       TEXT NOT NULL,
+                    file_path      TEXT NOT NULL,
+                    start_line     INTEGER NOT NULL,
+                    start_col      INTEGER NOT NULL DEFAULT 0,
+                    end_line       INTEGER NOT NULL DEFAULT 0,
+                    visibility     TEXT NOT NULL DEFAULT '',
+                    signature      TEXT,
+                    doc            TEXT,
+                    body           TEXT NOT NULL DEFAULT '',
+                    parent_id      TEXT REFERENCES nodes(id)
+                );
+
+                CREATE INDEX idx_nodes_source    ON nodes(source_name);
+                CREATE INDEX idx_nodes_name      ON nodes(name);
+                CREATE INDEX idx_nodes_kind      ON nodes(kind);
+                CREATE INDEX idx_nodes_file_path ON nodes(file_path);
+                CREATE INDEX idx_nodes_parent    ON nodes(parent_id);
+
+                CREATE TABLE edges (
+                    from_id TEXT NOT NULL REFERENCES nodes(id),
+                    to_id   TEXT NOT NULL REFERENCES nodes(id),
+                    kind    TEXT NOT NULL,
+                    PRIMARY KEY (from_id, to_id, kind)
+                );
+
+                CREATE INDEX idx_edges_from ON edges(from_id);
+                CREATE INDEX idx_edges_to   ON edges(to_id);
+                CREATE INDEX idx_edges_kind ON edges(kind);
+
+                CREATE VIRTUAL TABLE fts_nodes USING fts5(
+                    id UNINDEXED,
+                    name,
+                    qualified_name,
+                    file_path,
+                    signature,
+                    doc,
+                    body,
+                    tokenize='unicode61 remove_diacritics 2'
+                );",
+            )?;
+
+            self.conn.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '1')",
+                [],
+            )?;
+        }
+
         Ok(())
     }
 
-    /// Insert symbols and edges for a source, replacing any existing data.
+    /// Insert nodes and edges for a source, replacing any existing data.
     pub fn upsert_source(
         &self,
         source_name: &str,
         source_version: &str,
         language: &str,
-        symbols: &[Symbol],
+        nodes: &[Node],
         edges: &[Edge],
     ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
 
+        // Ensure source record exists (before FK-constrained node inserts)
+        tx.execute(
+            "INSERT OR REPLACE INTO sources (name, version, language, ingested_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![source_name, source_version, language, now()],
+        )?;
+
         // Remove old data for this source
         {
             let ids: Vec<String> = {
-                let mut stmt = tx.prepare("SELECT id FROM symbols WHERE source_name = ?1")?;
+                let mut stmt = tx.prepare("SELECT id FROM nodes WHERE source_name = ?1")?;
                 stmt.query_map(params![source_name], |row| row.get(0))?
                     .collect::<rusqlite::Result<Vec<_>>>()?
             };
@@ -114,50 +158,54 @@ impl GraphStore {
                     "DELETE FROM edges WHERE from_id = ?1 OR to_id = ?1",
                     params![id],
                 )?;
-                tx.execute("DELETE FROM fts_symbols WHERE id = ?1", params![id])?;
+                tx.execute("DELETE FROM fts_nodes WHERE id = ?1", params![id])?;
             }
             tx.execute(
-                "DELETE FROM symbols WHERE source_name = ?1",
+                "DELETE FROM nodes WHERE source_name = ?1",
                 params![source_name],
             )?;
         }
 
-        // Insert symbols
+        // Insert nodes
         {
-            let mut sym_stmt = tx.prepare_cached(
-                "INSERT OR REPLACE INTO symbols
-                    (id, kind, name, qualified_name, source_name, source_version,
-                     language, file_path, line, signature, doc, body, parent_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            let mut node_stmt = tx.prepare_cached(
+                "INSERT OR REPLACE INTO nodes
+                    (id, kind, name, qualified_name, source_name, language,
+                     file_path, start_line, start_col, end_line, visibility,
+                     signature, doc, body, parent_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             )?;
             let mut fts_stmt = tx.prepare_cached(
-                "INSERT INTO fts_symbols (id, name, qualified_name, signature, doc, body)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO fts_nodes (id, name, qualified_name, file_path, signature, doc, body)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             )?;
 
-            for sym in symbols {
-                sym_stmt.execute(params![
-                    sym.id,
-                    sym.kind,
-                    sym.name,
-                    sym.qualified_name,
-                    sym.source_name,
-                    sym.source_version,
-                    sym.language,
-                    sym.file_path,
-                    sym.line,
-                    sym.signature,
-                    sym.doc,
-                    sym.body,
-                    sym.parent_id,
+            for node in nodes {
+                node_stmt.execute(params![
+                    node.id,
+                    node.kind,
+                    node.name,
+                    node.qualified_name,
+                    node.source_name,
+                    node.language,
+                    node.file_path,
+                    node.start_line,
+                    node.start_col,
+                    node.end_line,
+                    node.visibility,
+                    node.signature,
+                    node.doc,
+                    node.body,
+                    node.parent_id,
                 ])?;
                 fts_stmt.execute(params![
-                    sym.id,
-                    sym.name,
-                    sym.qualified_name,
-                    sym.signature,
-                    sym.doc,
-                    sym.body,
+                    node.id,
+                    node.name,
+                    node.qualified_name,
+                    node.file_path,
+                    node.signature,
+                    node.doc,
+                    node.body,
                 ])?;
             }
         }
@@ -172,26 +220,11 @@ impl GraphStore {
             }
         }
 
-        // Update source record
-        tx.execute(
-            "INSERT OR REPLACE INTO sources (name, version, language, ingested_at)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![
-                source_name,
-                source_version,
-                language,
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs() as i64,
-            ],
-        )?;
-
         tx.commit()?;
         Ok(())
     }
 
-    /// Search by keyword, return matching symbols + their graph neighborhood.
+    /// Search by keyword, return matching nodes + their graph neighborhood.
     pub fn search(&self, query: &str, limit: usize) -> Result<SearchResult> {
         let safe_query = fts_query_escape(query);
         if safe_query.is_empty() {
@@ -201,7 +234,7 @@ impl GraphStore {
         // BM25 search on FTS index
         let matched_ids: Vec<String> = {
             let mut stmt = self.conn.prepare(
-                "SELECT id FROM fts_symbols WHERE fts_symbols MATCH ?1 ORDER BY rank LIMIT ?2",
+                "SELECT id FROM fts_nodes WHERE fts_nodes MATCH ?1 ORDER BY rank LIMIT ?2",
             )?;
             stmt.query_map(params![safe_query, limit as i64], |row| {
                 row.get::<_, String>(0)
@@ -213,11 +246,11 @@ impl GraphStore {
             return Ok(SearchResult::default());
         }
 
-        // Expand: get the matched symbols + 1-hop neighborhood
+        // Expand: matched nodes + 1-hop via edges + children via parent_id + parents
         let mut all_ids: Vec<String> = matched_ids.clone();
 
-        // Get neighbors via edges (both directions)
         for id in &matched_ids {
+            // Edge neighbors (both directions)
             let mut stmt = self.conn.prepare_cached(
                 "SELECT to_id FROM edges WHERE from_id = ?1
                  UNION
@@ -227,14 +260,12 @@ impl GraphStore {
                 .query_map(params![id], |row| row.get(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             all_ids.extend(neighbors);
-        }
 
-        // Also include parents of matched symbols
-        for id in &matched_ids {
+            // Parent
             let parent: Option<String> = self
                 .conn
                 .query_row(
-                    "SELECT parent_id FROM symbols WHERE id = ?1 AND parent_id IS NOT NULL",
+                    "SELECT parent_id FROM nodes WHERE id = ?1 AND parent_id IS NOT NULL",
                     params![id],
                     |row| row.get(0),
                 )
@@ -242,35 +273,41 @@ impl GraphStore {
             if let Some(pid) = parent {
                 all_ids.push(pid);
             }
+
+            // Children
+            let mut stmt = self
+                .conn
+                .prepare_cached("SELECT id FROM nodes WHERE parent_id = ?1")?;
+            let children: Vec<String> = stmt
+                .query_map(params![id], |row| row.get(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            all_ids.extend(children);
         }
 
-        // Deduplicate
         all_ids.sort();
         all_ids.dedup();
 
-        // Fetch all symbols
-        let symbols = self.fetch_symbols(&all_ids)?;
-
-        // Fetch edges between these symbols
+        let nodes = self.fetch_nodes(&all_ids)?;
         let edges = self.fetch_edges(&all_ids)?;
 
         Ok(SearchResult {
             matched_ids,
-            symbols,
+            nodes,
             edges,
         })
     }
 
-    fn fetch_symbols(&self, ids: &[String]) -> Result<Vec<Symbol>> {
+    fn fetch_nodes(&self, ids: &[String]) -> Result<Vec<Node>> {
         if ids.is_empty() {
             return Ok(vec![]);
         }
 
         let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{i}")).collect();
         let sql = format!(
-            "SELECT id, kind, name, qualified_name, source_name, source_version,
-                    language, file_path, line, signature, doc, body, parent_id
-             FROM symbols WHERE id IN ({})",
+            "SELECT id, kind, name, qualified_name, source_name, language,
+                    file_path, start_line, start_col, end_line, visibility,
+                    signature, doc, body, parent_id
+             FROM nodes WHERE id IN ({})",
             placeholders.join(", ")
         );
 
@@ -280,27 +317,29 @@ impl GraphStore {
             .map(|id| id as &dyn rusqlite::types::ToSql)
             .collect();
 
-        let symbols = stmt
+        let nodes = stmt
             .query_map(params.as_slice(), |row| {
-                Ok(Symbol {
+                Ok(Node {
                     id: row.get(0)?,
                     kind: row.get(1)?,
                     name: row.get(2)?,
                     qualified_name: row.get(3)?,
                     source_name: row.get(4)?,
-                    source_version: row.get(5)?,
-                    language: row.get(6)?,
-                    file_path: row.get(7)?,
-                    line: row.get(8)?,
-                    signature: row.get(9)?,
-                    doc: row.get(10)?,
-                    body: row.get(11)?,
-                    parent_id: row.get(12)?,
+                    language: row.get(5)?,
+                    file_path: row.get(6)?,
+                    start_line: row.get(7)?,
+                    start_col: row.get(8)?,
+                    end_line: row.get(9)?,
+                    visibility: row.get(10)?,
+                    signature: row.get(11)?,
+                    doc: row.get(12)?,
+                    body: row.get(13)?,
+                    parent_id: row.get(14)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
-        Ok(symbols)
+        Ok(nodes)
     }
 
     fn fetch_edges(&self, ids: &[String]) -> Result<Vec<Edge>> {
@@ -344,7 +383,7 @@ impl GraphStore {
         let tx = self.conn.unchecked_transaction()?;
 
         let ids: Vec<String> = {
-            let mut stmt = tx.prepare("SELECT id FROM symbols WHERE source_name = ?1")?;
+            let mut stmt = tx.prepare("SELECT id FROM nodes WHERE source_name = ?1")?;
             stmt.query_map(params![name], |row| row.get(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?
         };
@@ -354,9 +393,9 @@ impl GraphStore {
                 "DELETE FROM edges WHERE from_id = ?1 OR to_id = ?1",
                 params![id],
             )?;
-            tx.execute("DELETE FROM fts_symbols WHERE id = ?1", params![id])?;
+            tx.execute("DELETE FROM fts_nodes WHERE id = ?1", params![id])?;
         }
-        tx.execute("DELETE FROM symbols WHERE source_name = ?1", params![name])?;
+        tx.execute("DELETE FROM nodes WHERE source_name = ?1", params![name])?;
         tx.execute("DELETE FROM sources WHERE name = ?1", params![name])?;
 
         tx.commit()?;
@@ -366,9 +405,9 @@ impl GraphStore {
     pub fn list_sources(&self) -> Result<Vec<SourceRecord>> {
         let mut stmt = self.conn.prepare(
             "SELECT s.name, s.version, s.language, s.ingested_at,
-                    COUNT(sym.id) as symbol_count
+                    COUNT(n.id) as node_count
              FROM sources s
-             LEFT JOIN symbols sym ON sym.source_name = s.name
+             LEFT JOIN nodes n ON n.source_name = s.name
              GROUP BY s.name
              ORDER BY s.name",
         )?;
@@ -380,7 +419,7 @@ impl GraphStore {
                     version: row.get(1)?,
                     language: row.get(2)?,
                     ingested_at: row.get(3)?,
-                    symbol_count: row.get(4)?,
+                    node_count: row.get(4)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -389,13 +428,17 @@ impl GraphStore {
     }
 }
 
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
+
 #[derive(Debug, Default)]
 pub struct SearchResult {
-    /// IDs of symbols that directly matched the query
     pub matched_ids: Vec<String>,
-    /// All symbols in the result subgraph (matches + neighborhood)
-    pub symbols: Vec<Symbol>,
-    /// All edges between symbols in the subgraph
+    pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
 }
 
@@ -404,7 +447,7 @@ pub struct SourceRecord {
     pub version: String,
     pub language: String,
     pub ingested_at: i64,
-    pub symbol_count: usize,
+    pub node_count: usize,
 }
 
 fn fts_query_escape(query: &str) -> String {
@@ -430,18 +473,20 @@ fn fts_query_escape(query: &str) -> String {
 mod tests {
     use super::*;
 
-    fn make_symbol(name: &str, kind: &str, qualified: &str) -> Symbol {
-        let id = Symbol::id_for("test", qualified);
-        Symbol {
-            id: id.clone(),
+    fn make_node(name: &str, kind: &str, qualified: &str) -> Node {
+        let id = Node::id_for("test", qualified);
+        Node {
+            id,
             kind: kind.to_string(),
             name: name.to_string(),
             qualified_name: qualified.to_string(),
             source_name: "test".to_string(),
-            source_version: "1.0.0".to_string(),
             language: "rust".to_string(),
             file_path: "src/lib.rs".to_string(),
-            line: 1,
+            start_line: 1,
+            start_col: 0,
+            end_line: 10,
+            visibility: "pub".to_string(),
             signature: Some(format!("fn {name}()")),
             doc: Some(format!("Does {name} things.")),
             body: format!("function: {qualified}\nfn {name}()\nDoes {name} things."),
@@ -452,25 +497,24 @@ mod tests {
     #[test]
     fn test_upsert_and_search() {
         let store = GraphStore::open_in_memory().unwrap();
-
-        let sym = make_symbol("spawn", "function", "tokio::spawn");
+        let node = make_node("spawn", "function", "tokio::spawn");
         store
-            .upsert_source("test", "1.0.0", "rust", &[sym], &[])
+            .upsert_source("test", "1.0.0", "rust", &[node], &[])
             .unwrap();
 
         let result = store.search("spawn", 5).unwrap();
         assert_eq!(result.matched_ids.len(), 1);
-        assert_eq!(result.symbols.len(), 1);
-        assert_eq!(result.symbols[0].name, "spawn");
+        assert_eq!(result.nodes.len(), 1);
+        assert_eq!(result.nodes[0].name, "spawn");
     }
 
     #[test]
     fn test_graph_expansion() {
         let store = GraphStore::open_in_memory().unwrap();
 
-        let auth = make_symbol("authenticate", "function", "auth::authenticate");
-        let validate = make_symbol("validate_token", "function", "auth::validate_token");
-        let hash = make_symbol("hash_password", "function", "auth::hash_password");
+        let auth = make_node("authenticate", "function", "auth::authenticate");
+        let validate = make_node("validate_token", "function", "auth::validate_token");
+        let hash = make_node("hash_password", "function", "auth::hash_password");
 
         let edges = vec![
             Edge {
@@ -489,14 +533,9 @@ mod tests {
             .upsert_source("test", "1.0.0", "rust", &[auth, validate, hash], &edges)
             .unwrap();
 
-        // Search for authenticate — should also return validate_token and hash_password
         let result = store.search("authenticate", 5).unwrap();
         assert_eq!(result.matched_ids.len(), 1);
-        assert_eq!(
-            result.symbols.len(),
-            3,
-            "should expand to include called symbols"
-        );
+        assert_eq!(result.nodes.len(), 3, "should expand to called nodes");
         assert_eq!(result.edges.len(), 2);
     }
 
@@ -504,69 +543,111 @@ mod tests {
     fn test_parent_expansion() {
         let store = GraphStore::open_in_memory().unwrap();
 
-        let module = make_symbol("auth", "module", "myapp::auth");
-        let mut func = make_symbol("login", "function", "myapp::auth::login");
-        func.parent_id = Some(module.id.clone());
+        let file_node = Node {
+            id: Node::id_for("test", "test::src/auth.rs"),
+            kind: "file".to_string(),
+            name: "auth.rs".to_string(),
+            qualified_name: "test::src/auth.rs".to_string(),
+            source_name: "test".to_string(),
+            language: "rust".to_string(),
+            file_path: "src/auth.rs".to_string(),
+            start_line: 0,
+            start_col: 0,
+            end_line: 0,
+            visibility: String::new(),
+            signature: None,
+            doc: None,
+            body: "file: src/auth.rs".to_string(),
+            parent_id: None,
+        };
+
+        let mut func = make_node("login", "function", "test::login");
+        func.parent_id = Some(file_node.id.clone());
 
         store
-            .upsert_source("test", "1.0.0", "rust", &[module, func], &[])
+            .upsert_source("test", "1.0.0", "rust", &[file_node, func], &[])
             .unwrap();
 
-        // Search for login — should also return the parent module
         let result = store.search("login", 5).unwrap();
         assert_eq!(result.matched_ids.len(), 1);
+        assert!(
+            result.nodes.len() >= 2,
+            "should expand to include parent file node"
+        );
+    }
+
+    #[test]
+    fn test_children_expansion() {
+        let store = GraphStore::open_in_memory().unwrap();
+
+        let class = make_node("MyClass", "class", "test::MyClass");
+        let mut method = make_node("do_thing", "method", "test::MyClass::do_thing");
+        method.parent_id = Some(class.id.clone());
+
+        store
+            .upsert_source("test", "1.0.0", "rust", &[class, method], &[])
+            .unwrap();
+
+        // Search for class — should also return its methods
+        let result = store.search("MyClass", 5).unwrap();
         assert_eq!(
-            result.symbols.len(),
+            result.nodes.len(),
             2,
-            "should expand to include parent module"
+            "should expand to include child method"
         );
     }
 
     #[test]
     fn test_remove_source() {
         let store = GraphStore::open_in_memory().unwrap();
-
-        let sym = make_symbol("foo", "function", "lib::foo");
+        let node = make_node("foo", "function", "lib::foo");
         store
-            .upsert_source("test", "1.0.0", "rust", &[sym], &[])
+            .upsert_source("test", "1.0.0", "rust", &[node], &[])
             .unwrap();
 
         store.remove_source("test").unwrap();
-
         let result = store.search("foo", 5).unwrap();
-        assert!(result.symbols.is_empty());
+        assert!(result.nodes.is_empty());
     }
 
     #[test]
     fn test_list_sources() {
         let store = GraphStore::open_in_memory().unwrap();
-
-        let syms = vec![
-            make_symbol("foo", "function", "mylib::foo"),
-            make_symbol("bar", "function", "mylib::bar"),
+        let mut nodes = vec![
+            make_node("foo", "function", "mylib::foo"),
+            make_node("bar", "function", "mylib::bar"),
         ];
-        // make_symbol uses "test" as source_name — override for this test
-        let syms: Vec<_> = syms
-            .into_iter()
-            .map(|mut s| {
-                s.source_name = "mylib".to_string();
-                s
-            })
-            .collect();
+        for n in &mut nodes {
+            n.source_name = "mylib".to_string();
+        }
         store
-            .upsert_source("mylib", "2.0.0", "rust", &syms, &[])
+            .upsert_source("mylib", "2.0.0", "rust", &nodes, &[])
             .unwrap();
 
         let sources = store.list_sources().unwrap();
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].name, "mylib");
-        assert_eq!(sources[0].symbol_count, 2);
+        assert_eq!(sources[0].node_count, 2);
     }
 
     #[test]
     fn test_empty_search() {
         let store = GraphStore::open_in_memory().unwrap();
         let result = store.search("nonexistent", 5).unwrap();
-        assert!(result.symbols.is_empty());
+        assert!(result.nodes.is_empty());
+    }
+
+    #[test]
+    fn test_schema_version() {
+        let store = GraphStore::open_in_memory().unwrap();
+        let version: String = store
+            .conn
+            .query_row(
+                "SELECT value FROM metadata WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, "1");
     }
 }

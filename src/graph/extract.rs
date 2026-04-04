@@ -1,24 +1,24 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use tree_sitter::{Language, Node, Parser};
+use tree_sitter::{Language, Node as TsNode, Parser};
 
-use super::{Edge, Symbol};
+use super::{Edge, Node};
 
 /// Extraction result from a single file.
 pub struct FileGraph {
-    pub symbols: Vec<Symbol>,
+    pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
 }
 
-/// Extract symbols and edges from a source directory.
+/// Extract nodes and edges from a source directory.
 pub fn extract_dir(
     dir: &Path,
     source_name: &str,
     source_version: &str,
     language_hint: Option<&str>,
 ) -> Result<FileGraph> {
-    let mut all_symbols = Vec::new();
+    let mut all_nodes = Vec::new();
     let mut all_edges = Vec::new();
 
     walk_dir(
@@ -27,21 +27,21 @@ pub fn extract_dir(
         source_name,
         source_version,
         language_hint,
-        &mut all_symbols,
+        &mut all_nodes,
         &mut all_edges,
         0,
     )?;
 
     // Build cross-file reference edges
-    resolve_references(&mut all_edges, &all_symbols);
+    resolve_references(&mut all_edges, &all_nodes);
 
     Ok(FileGraph {
-        symbols: all_symbols,
+        nodes: all_nodes,
         edges: all_edges,
     })
 }
 
-/// Extract symbols and edges from a single file.
+/// Extract nodes and edges from a single file.
 pub fn extract_file(
     path: &Path,
     source_name: &str,
@@ -62,7 +62,7 @@ pub fn extract_file(
         .map(|f| f.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    let mut symbols = Vec::new();
+    let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
     extract_from_source(
@@ -72,11 +72,11 @@ pub fn extract_file(
         &rel_path,
         source_name,
         source_version,
-        &mut symbols,
+        &mut nodes,
         &mut edges,
     )?;
 
-    Ok(FileGraph { symbols, edges })
+    Ok(FileGraph { nodes, edges })
 }
 
 fn walk_dir(
@@ -85,7 +85,7 @@ fn walk_dir(
     source_name: &str,
     source_version: &str,
     language_hint: Option<&str>,
-    symbols: &mut Vec<Symbol>,
+    nodes: &mut Vec<Node>,
     edges: &mut Vec<Edge>,
     depth: usize,
 ) -> Result<()> {
@@ -130,7 +130,7 @@ fn walk_dir(
                 source_name,
                 source_version,
                 language_hint,
-                symbols,
+                nodes,
                 edges,
                 depth + 1,
             )?;
@@ -171,7 +171,7 @@ fn walk_dir(
             &rel_path,
             source_name,
             source_version,
-            symbols,
+            nodes,
             edges,
         );
     }
@@ -201,7 +201,7 @@ fn get_ts_language(lang: &str) -> Option<Language> {
     }
 }
 
-/// Core extraction: parse source code and emit symbols + edges.
+/// Core extraction: parse source code and emit nodes + edges.
 fn extract_from_source(
     code: &str,
     ts_lang: Language,
@@ -209,7 +209,7 @@ fn extract_from_source(
     file_path: &str,
     source_name: &str,
     source_version: &str,
-    symbols: &mut Vec<Symbol>,
+    nodes: &mut Vec<Node>,
     edges: &mut Vec<Edge>,
 ) -> Result<()> {
     let mut parser = Parser::new();
@@ -229,7 +229,7 @@ fn extract_from_source(
         file_path,
         source_name,
         source_version,
-        symbols,
+        nodes,
         edges,
         None, // no parent
         "",   // no prefix
@@ -238,27 +238,27 @@ fn extract_from_source(
     Ok(())
 }
 
-/// Recursively extract symbols from a tree-sitter node.
+/// Recursively extract nodes from a tree-sitter node.
 fn extract_node(
-    node: &Node,
+    node: &TsNode,
     code: &[u8],
     lang: &str,
     file_path: &str,
     source_name: &str,
     source_version: &str,
-    symbols: &mut Vec<Symbol>,
+    nodes: &mut Vec<Node>,
     edges: &mut Vec<Edge>,
     parent_id: Option<&str>,
     prefix: &str,
 ) {
     let kind = node.kind();
 
-    // Try to extract a symbol from this node
+    // Try to extract a node from this node
     if let Some(mut sym) = match lang {
-        "rust" => extract_rust_symbol(node, code, kind),
-        "python" => extract_python_symbol(node, code, kind),
-        "javascript" | "typescript" | "tsx" => extract_js_symbol(node, code, kind),
-        "go" => extract_go_symbol(node, code, kind),
+        "rust" => extract_rust_node(node, code, kind),
+        "python" => extract_python_node(node, code, kind),
+        "javascript" | "typescript" | "tsx" => extract_js_node(node, code, kind),
+        "go" => extract_go_node(node, code, kind),
         _ => None,
     } {
         // Build qualified name
@@ -269,29 +269,21 @@ fn extract_node(
         };
         sym.qualified_name = qualified.clone();
         sym.source_name = source_name.to_string();
-        sym.source_version = source_version.to_string();
         sym.language = lang.to_string();
         sym.file_path = file_path.to_string();
-        sym.line = node.start_position().row + 1;
-        sym.id = Symbol::id_for(source_name, &sym.qualified_name);
+        sym.start_line = node.start_position().row + 1;
+        sym.start_col = node.start_position().column;
+        sym.end_line = node.end_position().row + 1;
+        sym.id = Node::id_for(source_name, &sym.qualified_name);
         sym.parent_id = parent_id.map(|s| s.to_string());
         sym.body = sym.build_body();
 
         let sym_id = sym.id.clone();
         let sym_kind = sym.kind.clone();
 
-        // Add "contains" edge from parent
-        if let Some(pid) = parent_id {
-            edges.push(Edge {
-                from_id: pid.to_string(),
-                to_id: sym_id.clone(),
-                kind: "contains".to_string(),
-            });
-        }
+        nodes.push(sym);
 
-        symbols.push(sym);
-
-        // Recurse into children with this symbol as parent
+        // Recurse into children with this node as parent
         let new_prefix = qualified;
         let child_parent = if matches!(
             sym_kind.as_str(),
@@ -316,14 +308,14 @@ fn extract_node(
                 file_path,
                 source_name,
                 source_version,
-                symbols,
+                nodes,
                 edges,
                 child_parent,
                 &new_prefix,
             );
         }
     } else {
-        // Not a symbol node — recurse into children
+        // Not a node node — recurse into children
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             extract_node(
@@ -333,7 +325,7 @@ fn extract_node(
                 file_path,
                 source_name,
                 source_version,
-                symbols,
+                nodes,
                 edges,
                 parent_id,
                 prefix,
@@ -343,13 +335,13 @@ fn extract_node(
 }
 
 /// Extract identifier references from a function body as potential "calls" edges.
-fn extract_call_references(node: &Node, code: &[u8], caller_id: &str, edges: &mut Vec<Edge>) {
+fn extract_call_references(node: &TsNode, code: &[u8], caller_id: &str, edges: &mut Vec<Edge>) {
     let mut cursor = node.walk();
     extract_calls_recursive(node, &mut cursor, code, caller_id, edges);
 }
 
 fn extract_calls_recursive(
-    node: &Node,
+    node: &TsNode,
     cursor: &mut tree_sitter::TreeCursor,
     code: &[u8],
     caller_id: &str,
@@ -368,7 +360,7 @@ fn extract_calls_recursive(
         {
             let callee_name = node_text(&func_node, code).to_string();
             if !callee_name.is_empty() && callee_name.len() < 200 {
-                // Store as an unresolved reference — we'll resolve to actual symbol IDs later
+                // Store as an unresolved reference — we'll resolve to actual node IDs later
                 edges.push(Edge {
                     from_id: caller_id.to_string(),
                     to_id: format!("__unresolved::{callee_name}"),
@@ -385,12 +377,12 @@ fn extract_calls_recursive(
     }
 }
 
-/// Resolve unresolved reference edges to actual symbol IDs.
-fn resolve_references(edges: &mut Vec<Edge>, symbols: &[Symbol]) {
+/// Resolve unresolved reference edges to actual node IDs.
+fn resolve_references(edges: &mut Vec<Edge>, nodes: &[Node]) {
     for edge in edges.iter_mut() {
         if let Some(ref_name) = edge.to_id.strip_prefix("__unresolved::") {
-            // Try to find a matching symbol by name
-            if let Some(target) = symbols.iter().find(|s| {
+            // Try to find a matching node by name
+            if let Some(target) = nodes.iter().find(|s| {
                 s.name == ref_name || s.qualified_name.ends_with(&format!("::{ref_name}"))
             }) {
                 edge.to_id = target.id.clone();
@@ -402,18 +394,18 @@ fn resolve_references(edges: &mut Vec<Edge>, symbols: &[Symbol]) {
     edges.retain(|e| !e.to_id.starts_with("__unresolved::"));
 }
 
-// ─── Language-specific symbol extraction ───────────────────────────────
+// ─── Language-specific node extraction ───────────────────────────────
 
-fn node_text<'a>(node: &Node, code: &'a [u8]) -> &'a str {
+fn node_text<'a>(node: &TsNode, code: &'a [u8]) -> &'a str {
     node.utf8_text(code).unwrap_or("")
 }
 
-fn find_child_by_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
+fn find_child_by_kind<'a>(node: &TsNode<'a>, kind: &str) -> Option<TsNode<'a>> {
     let mut cursor = node.walk();
     node.children(&mut cursor).find(|c| c.kind() == kind)
 }
 
-fn extract_doc_comment(node: &Node, code: &[u8]) -> Option<String> {
+fn extract_doc_comment(node: &TsNode, code: &[u8]) -> Option<String> {
     // Look for comment siblings immediately before this node
     let mut comments = Vec::new();
     let mut sibling = node.prev_sibling();
@@ -450,7 +442,7 @@ fn extract_doc_comment(node: &Node, code: &[u8]) -> Option<String> {
     Some(comments.join("\n"))
 }
 
-fn extract_python_docstring(node: &Node, code: &[u8]) -> Option<String> {
+fn extract_python_docstring(node: &TsNode, code: &[u8]) -> Option<String> {
     // Python docstrings are the first expression_statement in a function/class body
     let body = find_child_by_kind(node, "block")?;
     let mut cursor = body.walk();
@@ -490,18 +482,18 @@ fn clean_block_comment(text: &str) -> String {
         .join("\n")
 }
 
-fn extract_rust_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
+fn extract_rust_node(node: &TsNode, code: &[u8], kind: &str) -> Option<Node> {
     match kind {
         "function_item" | "function_signature_item" => {
             let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
             let sig = extract_signature_text(node, code);
             let doc = extract_doc_comment(node, code);
-            Some(make_symbol(&name, "function", sig, doc))
+            Some(make_node(&name, "function", sig, doc))
         }
         "struct_item" => {
             let name = node_text(&find_child_by_kind(node, "type_identifier")?, code).to_string();
             let doc = extract_doc_comment(node, code);
-            Some(make_symbol(
+            Some(make_node(
                 &name,
                 "struct",
                 Some(format!("struct {}", &name)),
@@ -511,7 +503,7 @@ fn extract_rust_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
         "enum_item" => {
             let name = node_text(&find_child_by_kind(node, "type_identifier")?, code).to_string();
             let doc = extract_doc_comment(node, code);
-            Some(make_symbol(
+            Some(make_node(
                 &name,
                 "enum",
                 Some(format!("enum {}", &name)),
@@ -521,7 +513,7 @@ fn extract_rust_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
         "trait_item" => {
             let name = node_text(&find_child_by_kind(node, "type_identifier")?, code).to_string();
             let doc = extract_doc_comment(node, code);
-            Some(make_symbol(
+            Some(make_node(
                 &name,
                 "trait",
                 Some(format!("trait {}", &name)),
@@ -532,17 +524,17 @@ fn extract_rust_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
             let type_node = find_child_by_kind(node, "type_identifier")
                 .or_else(|| find_child_by_kind(node, "generic_type"))?;
             let name = node_text(&type_node, code).to_string();
-            Some(make_symbol(&name, "impl", None, None))
+            Some(make_node(&name, "impl", None, None))
         }
         "mod_item" => {
             let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
             let doc = extract_doc_comment(node, code);
-            Some(make_symbol(&name, "module", None, doc))
+            Some(make_node(&name, "module", None, doc))
         }
         "const_item" | "static_item" => {
             let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
             let doc = extract_doc_comment(node, code);
-            Some(make_symbol(
+            Some(make_node(
                 &name,
                 "const",
                 Some(format!("const {name}")),
@@ -552,18 +544,13 @@ fn extract_rust_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
         "type_item" => {
             let name = node_text(&find_child_by_kind(node, "type_identifier")?, code).to_string();
             let doc = extract_doc_comment(node, code);
-            Some(make_symbol(
-                &name,
-                "type",
-                Some(format!("type {name}")),
-                doc,
-            ))
+            Some(make_node(&name, "type", Some(format!("type {name}")), doc))
         }
         _ => None,
     }
 }
 
-fn extract_python_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
+fn extract_python_node(node: &TsNode, code: &[u8], kind: &str) -> Option<Node> {
     match kind {
         "function_definition" => {
             let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
@@ -573,13 +560,13 @@ fn extract_python_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol>
             let sig = extract_signature_text(node, code);
             let doc =
                 extract_python_docstring(node, code).or_else(|| extract_doc_comment(node, code));
-            Some(make_symbol(&name, "function", sig, doc))
+            Some(make_node(&name, "function", sig, doc))
         }
         "class_definition" => {
             let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
             let doc =
                 extract_python_docstring(node, code).or_else(|| extract_doc_comment(node, code));
-            Some(make_symbol(
+            Some(make_node(
                 &name,
                 "class",
                 Some(format!("class {name}")),
@@ -590,13 +577,13 @@ fn extract_python_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol>
     }
 }
 
-fn extract_js_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
+fn extract_js_node(node: &TsNode, code: &[u8], kind: &str) -> Option<Node> {
     match kind {
         "function_declaration" => {
             let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
             let sig = extract_signature_text(node, code);
             let doc = extract_doc_comment(node, code);
-            Some(make_symbol(&name, "function", sig, doc))
+            Some(make_node(&name, "function", sig, doc))
         }
         "class_declaration" => {
             let name = node_text(
@@ -606,7 +593,7 @@ fn extract_js_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
             )
             .to_string();
             let doc = extract_doc_comment(node, code);
-            Some(make_symbol(
+            Some(make_node(
                 &name,
                 "class",
                 Some(format!("class {name}")),
@@ -617,7 +604,7 @@ fn extract_js_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
             // Check if it's exporting a declaration
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                if let Some(sym) = extract_js_symbol(&child, code, child.kind()) {
+                if let Some(sym) = extract_js_node(&child, code, child.kind()) {
                     return Some(sym);
                 }
             }
@@ -628,7 +615,7 @@ fn extract_js_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
                 node_text(&find_child_by_kind(node, "property_identifier")?, code).to_string();
             let sig = extract_signature_text(node, code);
             let doc = extract_doc_comment(node, code);
-            Some(make_symbol(&name, "method", sig, doc))
+            Some(make_node(&name, "method", sig, doc))
         }
         "lexical_declaration" => {
             // export const foo = (...) => ...
@@ -637,7 +624,7 @@ fn extract_js_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
             let value = decl.child_by_field_name("value")?;
             if value.kind() == "arrow_function" || value.kind() == "function" {
                 let doc = extract_doc_comment(node, code);
-                Some(make_symbol(&name, "function", None, doc))
+                Some(make_node(&name, "function", None, doc))
             } else {
                 None
             }
@@ -646,7 +633,7 @@ fn extract_js_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
     }
 }
 
-fn extract_go_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
+fn extract_go_node(node: &TsNode, code: &[u8], kind: &str) -> Option<Node> {
     match kind {
         "function_declaration" => {
             let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
@@ -656,7 +643,7 @@ fn extract_go_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
             }
             let sig = extract_signature_text(node, code);
             let doc = extract_doc_comment(node, code);
-            Some(make_symbol(&name, "function", sig, doc))
+            Some(make_node(&name, "function", sig, doc))
         }
         "method_declaration" => {
             let name = node_text(&find_child_by_kind(node, "field_identifier")?, code).to_string();
@@ -665,7 +652,7 @@ fn extract_go_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
             }
             let sig = extract_signature_text(node, code);
             let doc = extract_doc_comment(node, code);
-            Some(make_symbol(&name, "method", sig, doc))
+            Some(make_node(&name, "method", sig, doc))
         }
         "type_declaration" => {
             let spec = find_child_by_kind(node, "type_spec")?;
@@ -681,24 +668,26 @@ fn extract_go_symbol(node: &Node, code: &[u8], kind: &str) -> Option<Symbol> {
             } else {
                 "type"
             };
-            Some(make_symbol(&name, type_kind, None, doc))
+            Some(make_node(&name, type_kind, None, doc))
         }
         _ => None,
     }
 }
 
-fn make_symbol(name: &str, kind: &str, signature: Option<String>, doc: Option<String>) -> Symbol {
+fn make_node(name: &str, kind: &str, signature: Option<String>, doc: Option<String>) -> Node {
     let name = name.to_string();
-    Symbol {
-        id: String::new(), // filled in by extract_node
+    Node {
+        id: String::new(),
         kind: kind.to_string(),
         name,
-        qualified_name: String::new(), // filled in by extract_node
+        qualified_name: String::new(),
         source_name: String::new(),
-        source_version: String::new(),
         language: String::new(),
         file_path: String::new(),
-        line: 0,
+        start_line: 0,
+        start_col: 0,
+        end_line: 0,
+        visibility: String::new(),
         signature,
         doc,
         body: String::new(),
@@ -707,7 +696,7 @@ fn make_symbol(name: &str, kind: &str, signature: Option<String>, doc: Option<St
 }
 
 /// Extract the signature line(s) from a node — everything up to the body.
-fn extract_signature_text(node: &Node, code: &[u8]) -> Option<String> {
+fn extract_signature_text(node: &TsNode, code: &[u8]) -> Option<String> {
     let start = node.start_byte();
     // Find the body block (first { or : in the node)
     let body_node = find_child_by_kind(node, "block")
@@ -731,7 +720,7 @@ mod tests {
     use super::*;
 
     fn extract_rust(code: &str) -> FileGraph {
-        let mut symbols = Vec::new();
+        let mut nodes = Vec::new();
         let mut edges = Vec::new();
         extract_from_source(
             code,
@@ -740,16 +729,16 @@ mod tests {
             "test.rs",
             "test",
             "1.0.0",
-            &mut symbols,
+            &mut nodes,
             &mut edges,
         )
         .unwrap();
-        resolve_references(&mut edges, &symbols);
-        FileGraph { symbols, edges }
+        resolve_references(&mut edges, &nodes);
+        FileGraph { nodes, edges }
     }
 
     fn extract_python(code: &str) -> FileGraph {
-        let mut symbols = Vec::new();
+        let mut nodes = Vec::new();
         let mut edges = Vec::new();
         extract_from_source(
             code,
@@ -758,16 +747,16 @@ mod tests {
             "test.py",
             "test",
             "1.0.0",
-            &mut symbols,
+            &mut nodes,
             &mut edges,
         )
         .unwrap();
-        resolve_references(&mut edges, &symbols);
-        FileGraph { symbols, edges }
+        resolve_references(&mut edges, &nodes);
+        FileGraph { nodes, edges }
     }
 
     fn extract_js(code: &str) -> FileGraph {
-        let mut symbols = Vec::new();
+        let mut nodes = Vec::new();
         let mut edges = Vec::new();
         extract_from_source(
             code,
@@ -776,20 +765,20 @@ mod tests {
             "test.js",
             "test",
             "1.0.0",
-            &mut symbols,
+            &mut nodes,
             &mut edges,
         )
         .unwrap();
-        resolve_references(&mut edges, &symbols);
-        FileGraph { symbols, edges }
+        resolve_references(&mut edges, &nodes);
+        FileGraph { nodes, edges }
     }
 
     #[test]
     fn test_rust_function() {
         let g = extract_rust("pub fn spawn() {}");
-        assert_eq!(g.symbols.len(), 1);
-        assert_eq!(g.symbols[0].name, "spawn");
-        assert_eq!(g.symbols[0].kind, "function");
+        assert_eq!(g.nodes.len(), 1);
+        assert_eq!(g.nodes[0].name, "spawn");
+        assert_eq!(g.nodes[0].kind, "function");
     }
 
     #[test]
@@ -802,7 +791,7 @@ mod tests {
             }
             "#,
         );
-        let names: Vec<&str> = g.symbols.iter().map(|s| s.name.as_str()).collect();
+        let names: Vec<&str> = g.nodes.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"Foo"));
         assert!(names.contains(&"new"));
     }
@@ -816,7 +805,7 @@ mod tests {
             }
             "#,
         );
-        let kinds: Vec<&str> = g.symbols.iter().map(|s| s.kind.as_str()).collect();
+        let kinds: Vec<&str> = g.nodes.iter().map(|s| s.kind.as_str()).collect();
         assert!(kinds.contains(&"trait"));
     }
 
@@ -828,15 +817,15 @@ mod tests {
             pub fn spawn() {}
             "#,
         );
-        assert_eq!(g.symbols.len(), 1);
+        assert_eq!(g.nodes.len(), 1);
         assert!(
-            g.symbols[0]
+            g.nodes[0]
                 .doc
                 .as_deref()
                 .unwrap()
                 .contains("Spawns a new task"),
             "doc: {:?}",
-            g.symbols[0].doc
+            g.nodes[0].doc
         );
     }
 
@@ -867,9 +856,9 @@ def greet(name):
     print(f"hello {name}")
             "#,
         );
-        assert_eq!(g.symbols.len(), 1);
-        assert_eq!(g.symbols[0].name, "greet");
-        assert!(g.symbols[0].doc.as_deref().unwrap().contains("Say hello"));
+        assert_eq!(g.nodes.len(), 1);
+        assert_eq!(g.nodes[0].name, "greet");
+        assert!(g.nodes[0].doc.as_deref().unwrap().contains("Say hello"));
     }
 
     #[test]
@@ -884,7 +873,7 @@ class MyModel:
         return x
             "#,
         );
-        let names: Vec<&str> = g.symbols.iter().map(|s| s.name.as_str()).collect();
+        let names: Vec<&str> = g.nodes.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"MyModel"));
         assert!(names.contains(&"predict"));
     }
@@ -898,8 +887,8 @@ class MyModel:
             }
             "#,
         );
-        assert_eq!(g.symbols.len(), 1);
-        assert_eq!(g.symbols[0].name, "greet");
+        assert_eq!(g.nodes.len(), 1);
+        assert_eq!(g.nodes[0].name, "greet");
     }
 
     #[test]
@@ -913,7 +902,7 @@ class MyModel:
             }
             "#,
         );
-        let names: Vec<&str> = g.symbols.iter().map(|s| s.name.as_str()).collect();
+        let names: Vec<&str> = g.nodes.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"App"));
         assert!(names.contains(&"render"));
     }
@@ -927,11 +916,11 @@ class MyModel:
             }
             "#,
         );
-        let login = g.symbols.iter().find(|s| s.name == "login").unwrap();
-        assert!(login.parent_id.is_some());
-
-        let contains_edges: Vec<_> = g.edges.iter().filter(|e| e.kind == "contains").collect();
-        assert!(!contains_edges.is_empty());
+        let login = g.nodes.iter().find(|s| s.name == "login").unwrap();
+        assert!(
+            login.parent_id.is_some(),
+            "login should have a parent (the auth module)"
+        );
     }
 
     #[test]
@@ -943,7 +932,7 @@ class MyModel:
             }
             "#,
         );
-        let login = g.symbols.iter().find(|s| s.name == "login").unwrap();
+        let login = g.nodes.iter().find(|s| s.name == "login").unwrap();
         assert!(
             login.qualified_name.contains("auth::login"),
             "got: {}",
@@ -961,6 +950,6 @@ class MyModel:
         .unwrap();
 
         let g = extract_dir(dir.path(), "mylib", "1.0.0", Some("rust")).unwrap();
-        assert!(g.symbols.len() >= 2);
+        assert!(g.nodes.len() >= 2);
     }
 }
