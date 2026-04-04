@@ -291,6 +291,109 @@ fn extract_from_source(
     Ok(())
 }
 
+/// Extract implements/inherits edges from class/impl/struct declarations.
+fn extract_relationship_edges(
+    node: &TsNode,
+    code: &[u8],
+    lang: &str,
+    sym_id: &str,
+    edges: &mut Vec<Edge>,
+) {
+    let kind = node.kind();
+    match lang {
+        "rust" => {
+            // impl Trait for Type → implements edge
+            if kind == "impl_item" {
+                // Check for "for" keyword indicating trait impl
+                let full_text = node_text(node, code);
+                if full_text.contains(" for ") {
+                    // The trait is before "for", the type is after
+                    // Tree-sitter structure: impl <trait> for <type> { ... }
+                    let mut cursor = node.walk();
+                    let children: Vec<_> = node.children(&mut cursor).collect();
+                    // Find trait name — it's a type_identifier before the "for" keyword
+                    let mut found_trait = None;
+                    for child in &children {
+                        if child.kind() == "type_identifier"
+                            || child.kind() == "generic_type"
+                            || child.kind() == "scoped_type_identifier"
+                        {
+                            if found_trait.is_none() {
+                                found_trait = Some(node_text(child, code).to_string());
+                            }
+                        }
+                    }
+                    if let Some(trait_name) = found_trait {
+                        edges.push(Edge {
+                            from_id: sym_id.to_string(),
+                            to_id: format!("__unresolved::{trait_name}"),
+                            kind: "implements".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+        "python" => {
+            // class Foo(Bar, Baz): → inherits edges
+            if kind == "class_definition" {
+                if let Some(args) = find_child_by_kind(node, "argument_list") {
+                    let mut cursor = args.walk();
+                    for child in args.children(&mut cursor) {
+                        if child.kind() == "identifier" {
+                            let parent_name = node_text(&child, code).to_string();
+                            edges.push(Edge {
+                                from_id: sym_id.to_string(),
+                                to_id: format!("__unresolved::{parent_name}"),
+                                kind: "inherits".to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        "javascript" | "typescript" | "tsx" => {
+            // class Foo extends Bar → inherits
+            // class Foo implements Bar → implements (TS only)
+            if kind == "class_declaration" {
+                if let Some(heritage) = find_child_by_kind(node, "class_heritage") {
+                    let text = node_text(&heritage, code);
+                    if text.contains("extends") {
+                        // Extract the parent class name
+                        if let Some(id) = find_child_by_kind(&heritage, "identifier") {
+                            let parent_name = node_text(&id, code).to_string();
+                            edges.push(Edge {
+                                from_id: sym_id.to_string(),
+                                to_id: format!("__unresolved::{parent_name}"),
+                                kind: "inherits".to_string(),
+                            });
+                        }
+                    }
+                }
+                // TypeScript implements clause
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    let child_text = node_text(&child, code);
+                    if child_text.starts_with("implements") {
+                        // Extract interface names
+                        let mut inner_cursor = child.walk();
+                        for inner in child.children(&mut inner_cursor) {
+                            if inner.kind() == "type_identifier" || inner.kind() == "identifier" {
+                                let iface_name = node_text(&inner, code).to_string();
+                                edges.push(Edge {
+                                    from_id: sym_id.to_string(),
+                                    to_id: format!("__unresolved::{iface_name}"),
+                                    kind: "implements".to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Extract import/use statements as edges.
 fn extract_imports(
     root: &TsNode,
@@ -415,6 +518,9 @@ fn extract_node(
         let sym_kind = sym.kind.clone();
 
         nodes.push(sym);
+
+        // Extract inheritance/implementation edges
+        extract_relationship_edges(node, code, lang, &sym_id, edges);
 
         // Recurse into children with this node as parent
         let new_prefix = qualified;
@@ -1159,6 +1265,59 @@ class MyModel:
 
         let private = g.nodes.iter().find(|n| n.name == "private_fn").unwrap();
         assert_eq!(private.visibility, "private");
+    }
+
+    #[test]
+    fn test_rust_implements_edge() {
+        let g = extract_rust(
+            r#"
+            pub trait Serialize {}
+            pub struct Foo {}
+            impl Serialize for Foo {}
+            "#,
+        );
+        let impl_edges: Vec<_> = g.edges.iter().filter(|e| e.kind == "implements").collect();
+        assert!(
+            !impl_edges.is_empty(),
+            "should have implements edge from impl Serialize for Foo"
+        );
+    }
+
+    #[test]
+    fn test_python_inherits_edge() {
+        let g = extract_python(
+            r#"
+class Base:
+    """Base class."""
+    pass
+
+class Child(Base):
+    """Child class."""
+    pass
+            "#,
+        );
+        let inherits: Vec<_> = g.edges.iter().filter(|e| e.kind == "inherits").collect();
+        assert!(
+            !inherits.is_empty(),
+            "should have inherits edge from Child to Base"
+        );
+    }
+
+    #[test]
+    fn test_js_extends_edge() {
+        let g = extract_js(
+            r#"
+            class Animal {}
+            class Dog extends Animal {
+                bark() {}
+            }
+            "#,
+        );
+        let inherits: Vec<_> = g.edges.iter().filter(|e| e.kind == "inherits").collect();
+        assert!(
+            !inherits.is_empty(),
+            "should have inherits edge from Dog to Animal"
+        );
     }
 
     #[test]
