@@ -67,6 +67,9 @@ enum Command {
         /// Output format: text or json
         #[arg(long, default_value = "text")]
         format: String,
+        /// List local index only
+        #[arg(long)]
+        local: bool,
     },
     /// Re-read lockfile and re-ingest changed dependencies
     Sync {
@@ -128,7 +131,7 @@ impl Cli {
                 *local,
                 *global,
             ),
-            Command::List { format } => cmd_list(&config, format),
+            Command::List { format, local } => cmd_list(&config, format, *local),
             Command::Sync { .. } => todo!("sync"),
             Command::Remove { source } => cmd_remove(&config, source),
         }
@@ -144,7 +147,10 @@ fn cmd_add(
     local: bool,
 ) -> Result<()> {
     let source = Source::from_raw(raw_source, name, lang, version);
-    let source_version = source.version.as_deref().unwrap_or("unknown");
+    let mut source_version = source
+        .version
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
     let language = source.detected_language().unwrap_or("unknown").to_string();
 
     eprintln!("Extracting graph from {}...", source.name);
@@ -152,16 +158,17 @@ fn cmd_add(
     // Use tree-sitter graph extraction
     let file_graph = match &source.kind {
         SourceKind::LocalPath(path) => {
-            graph::extract::extract_dir(path, &source.name, source_version, Some(&language))?
+            graph::extract::extract_dir(path, &source.name, &source_version, Some(&language))?
         }
         SourceKind::File(path) => {
-            graph::extract::extract_file(path, &source.name, source_version, Some(&language))?
+            graph::extract::extract_file(path, &source.name, &source_version, Some(&language))?
         }
         SourceKind::Crate(crate_name) => {
-            // Download crate, then extract
             let version_str = source.version.as_deref().unwrap_or("latest");
-            let dir = crate::source::crate_download::download_crate(crate_name, version_str)?;
-            graph::extract::extract_dir(&dir, &source.name, source_version, Some("rust"))?
+            let (dir, resolved_version) =
+                crate::source::crate_download::download_crate(crate_name, version_str)?;
+            source_version = resolved_version;
+            graph::extract::extract_dir(&dir, &source.name, &source_version, Some("rust"))?
         }
         SourceKind::Url(_) => anyhow::bail!("URL sources not yet supported for graph extraction"),
     };
@@ -182,7 +189,7 @@ fn cmd_add(
     let store = GraphStore::open(&store_path)?;
     store.upsert_source(
         &source.name,
-        source_version,
+        &source_version,
         &language,
         &file_graph.nodes,
         &file_graph.edges,
@@ -295,7 +302,8 @@ fn cmd_query(
     Ok(())
 }
 
-fn cmd_list(config: &Config, format: &str) -> Result<()> {
+fn cmd_list(config: &Config, format: &str, local: bool) -> Result<()> {
+    let _ = local; // TODO: use to filter local vs global
     let store_path = config.resolve_store_path(false);
     let local_path = std::path::PathBuf::from(".roux/db.sqlite");
 

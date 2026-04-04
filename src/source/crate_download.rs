@@ -14,8 +14,10 @@ fn validate_crate_name(name: &str) -> Result<()> {
 }
 
 /// Download a crate from crates.io and extract to a temp directory.
-pub fn download_crate(name: &str, version: &str) -> Result<PathBuf> {
+/// Returns (extracted_dir_path, resolved_version).
+pub fn download_crate(name: &str, version: &str) -> Result<(PathBuf, String)> {
     validate_crate_name(name)?;
+    let resolved_version;
     let url = if version == "latest" {
         let meta_url = format!("https://crates.io/api/v1/crates/{name}");
         let client = reqwest::blocking::Client::builder()
@@ -26,8 +28,10 @@ pub fn download_crate(name: &str, version: &str) -> Result<PathBuf> {
             .as_str()
             .or_else(|| meta["crate"]["max_version"].as_str())
             .context("could not determine latest version")?;
+        resolved_version = ver.to_string();
         format!("https://crates.io/api/v1/crates/{name}/{ver}/download")
     } else {
+        resolved_version = version.to_string();
         format!("https://crates.io/api/v1/crates/{name}/{version}/download")
     };
 
@@ -80,8 +84,8 @@ pub fn download_crate(name: &str, version: &str) -> Result<PathBuf> {
         .collect();
 
     if let Some(entry) = entries.first() {
-        Ok(entry.path())
+        Ok((entry.path(), resolved_version))
     } else {
-        Ok(tmp_path)
+        Ok((tmp_path, resolved_version))
     }
 }
