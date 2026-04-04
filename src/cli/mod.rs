@@ -1,18 +1,11 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::config::Config;
-use crate::embed::Embedder;
-use crate::embed::candle::{CandleEmbedder, PrefixStyle};
-use crate::extract;
-use crate::extract::RawChunk;
 use crate::graph;
 use crate::graph::store::GraphStore;
-use crate::model;
 use crate::source::Source;
 use crate::source::SourceKind;
-use crate::store::sqlite::SqliteStore;
-use crate::store::{Chunk, Store};
 
 #[derive(Parser)]
 #[command(name = "roux", about = "Prep fresh docs for your agents")]
@@ -48,9 +41,6 @@ enum Command {
         /// Override display name for the source
         #[arg(long)]
         name: Option<String>,
-        /// Also compute embeddings (slower, enables semantic search)
-        #[arg(long)]
-        embed: bool,
     },
     /// Retrieve relevant chunks for a query
     Query {
@@ -91,24 +81,6 @@ enum Command {
         /// Source name to remove
         source: String,
     },
-    /// Manage the local embedding model
-    Model {
-        #[command(subcommand)]
-        action: ModelAction,
-    },
-}
-
-#[derive(Subcommand)]
-enum ModelAction {
-    /// Download the default embedding model
-    Download,
-    /// Show loaded model info
-    Status,
-    /// Switch to a different model
-    Set {
-        /// Model identifier
-        model_id: String,
-    },
 }
 
 impl Cli {
@@ -132,7 +104,6 @@ impl Cli {
                 local,
                 version,
                 name,
-                embed,
             } => cmd_add(
                 &config,
                 source,
@@ -140,7 +111,6 @@ impl Cli {
                 lang.clone(),
                 version.clone(),
                 *local,
-                *embed,
             ),
             Command::Query {
                 query,
@@ -161,11 +131,6 @@ impl Cli {
             Command::List { format } => cmd_list(&config, format),
             Command::Sync { .. } => todo!("sync"),
             Command::Remove { source } => cmd_remove(&config, source),
-            Command::Model { action } => match action {
-                ModelAction::Download => cmd_model_download(&config),
-                ModelAction::Status => cmd_model_status(&config),
-                ModelAction::Set { .. } => todo!("model set"),
-            },
         }
     }
 }
@@ -177,7 +142,6 @@ fn cmd_add(
     lang: Option<String>,
     version: Option<String>,
     local: bool,
-    _embed: bool,
 ) -> Result<()> {
     let source = Source::from_raw(raw_source, name, lang, version);
     let source_version = source.version.as_deref().unwrap_or("unknown");
@@ -196,7 +160,7 @@ fn cmd_add(
         SourceKind::Crate(crate_name) => {
             // Download crate, then extract
             let version_str = source.version.as_deref().unwrap_or("latest");
-            let dir = crate::extract::rustdoc::download_crate(crate_name, version_str)?;
+            let dir = crate::source::crate_download::download_crate(crate_name, version_str)?;
             graph::extract::extract_dir(&dir, &source.name, source_version, Some("rust"))?
         }
         SourceKind::Url(_) => anyhow::bail!("URL sources not yet supported for graph extraction"),
@@ -204,11 +168,11 @@ fn cmd_add(
 
     eprintln!(
         "Extracted {} symbols, {} edges",
-        file_graph.symbols.len(),
+        file_graph.nodes.len(),
         file_graph.edges.len()
     );
 
-    if file_graph.symbols.is_empty() {
+    if file_graph.nodes.is_empty() {
         eprintln!("No symbols found.");
         return Ok(());
     }
@@ -220,13 +184,13 @@ fn cmd_add(
         &source.name,
         source_version,
         &language,
-        &file_graph.symbols,
+        &file_graph.nodes,
         &file_graph.edges,
     )?;
 
     eprintln!(
         "Indexed {} symbols from {} into {}",
-        file_graph.symbols.len(),
+        file_graph.nodes.len(),
         source.name,
         store_path.display()
     );
@@ -257,7 +221,7 @@ fn cmd_query(
     let store = GraphStore::open(&store_path)?;
     let result = store.search(query, top)?;
 
-    if result.symbols.is_empty() {
+    if result.nodes.is_empty() {
         eprintln!("No results found.");
         return Ok(());
     }
@@ -266,14 +230,14 @@ fn cmd_query(
         "json" => {
             let json_result = serde_json::json!({
                 "matched": result.matched_ids,
-                "symbols": result.symbols.iter().map(|s| {
+                "symbols": result.nodes.iter().map(|s| {
                     serde_json::json!({
                         "id": s.id,
                         "kind": s.kind,
                         "name": s.name,
                         "qualified_name": s.qualified_name,
                         "file": s.file_path,
-                        "line": s.line,
+                        "line": s.start_line,
                         "signature": s.signature,
                         "doc": s.doc,
                         "parent_id": s.parent_id,
@@ -292,14 +256,14 @@ fn cmd_query(
         }
         _ => {
             // Print matched symbols first, then neighborhood
-            for sym in &result.symbols {
+            for sym in &result.nodes {
                 let is_match = result.matched_ids.contains(&sym.id);
                 let marker = if is_match { "●" } else { "○" };
                 let kind_str = &sym.kind;
 
                 println!(
                     "{marker} {} ({kind_str}) {}:{}",
-                    sym.qualified_name, sym.file_path, sym.line
+                    sym.qualified_name, sym.file_path, sym.start_line
                 );
 
                 if let Some(ref sig) = sym.signature {
@@ -319,7 +283,7 @@ fn cmd_query(
                     .filter(|e| e.from_id == sym.id)
                     .collect();
                 for edge in &outgoing {
-                    if let Some(target) = result.symbols.iter().find(|s| s.id == edge.to_id) {
+                    if let Some(target) = result.nodes.iter().find(|s| s.id == edge.to_id) {
                         println!("  → {} {} ({})", edge.kind, target.name, target.kind);
                     }
                 }
@@ -364,7 +328,7 @@ fn cmd_list(config: &Config, format: &str) -> Result<()> {
                         "name": s.name,
                         "version": s.version,
                         "language": s.language,
-                        "symbols": s.symbol_count,
+                        "symbols": s.node_count,
                         "ingested_at": s.ingested_at,
                     })
                 })
@@ -380,7 +344,7 @@ fn cmd_list(config: &Config, format: &str) -> Result<()> {
             for src in &all_sources {
                 println!(
                     "{:<20} {:<12} {:<10} {:>8}",
-                    src.name, src.version, src.language, src.symbol_count
+                    src.name, src.version, src.language, src.node_count
                 );
             }
         }
@@ -399,122 +363,6 @@ fn cmd_remove(config: &Config, source_name: &str) -> Result<()> {
     store.remove_source(source_name)?;
     eprintln!("Removed {source_name} from index");
     Ok(())
-}
-
-fn cmd_model_download(config: &Config) -> Result<()> {
-    eprintln!("Downloading model {}...", config.model.id);
-    let files = model::ensure_model(&config.model.id)?;
-    eprintln!("Model ready at {}", files.model.display());
-    Ok(())
-}
-
-fn cmd_model_status(config: &Config) -> Result<()> {
-    let status = model::status(&config.model.id)?;
-    println!("{status}");
-    Ok(())
-}
-
-/// Split oversized chunks into sub-chunks that fit within the model's token limit.
-fn split_oversized_chunks(raw_chunks: Vec<RawChunk>, embedder: &CandleEmbedder) -> Vec<RawChunk> {
-    let max_tokens = embedder.max_tokens();
-    // Reserve tokens for the "passage: " prefix the embedder adds
-    let effective_limit = max_tokens.saturating_sub(10);
-    let mut result = Vec::with_capacity(raw_chunks.len());
-
-    for chunk in raw_chunks {
-        let token_count = embedder.token_count(&chunk.body);
-        if token_count <= effective_limit {
-            result.push(chunk);
-            continue;
-        }
-
-        // Split on paragraph boundaries first, then sentence boundaries
-        let parts =
-            split_text_to_token_limit(&chunk.body, effective_limit, |t| embedder.token_count(t));
-
-        for (i, part) in parts.into_iter().enumerate() {
-            let mut sub = chunk.clone();
-            sub.qualified_name = format!("{} [part {}]", chunk.qualified_name, i + 1);
-            sub.body = part.clone();
-            sub.doc = part;
-            result.push(sub);
-        }
-    }
-
-    result
-}
-
-/// Split text into parts that each fit within a token limit.
-/// Tries paragraph boundaries first, then sentence boundaries, then hard split.
-fn split_text_to_token_limit(
-    text: &str,
-    limit: usize,
-    count_tokens: impl Fn(&str) -> usize,
-) -> Vec<String> {
-    // Try splitting on double newlines (paragraphs)
-    let paragraphs: Vec<&str> = text.split("\n\n").collect();
-    let mut parts = Vec::new();
-    let mut current = String::new();
-
-    for para in paragraphs {
-        let candidate = if current.is_empty() {
-            para.to_string()
-        } else {
-            format!("{current}\n\n{para}")
-        };
-
-        if count_tokens(&candidate) <= limit {
-            current = candidate;
-        } else if current.is_empty() {
-            // Single paragraph exceeds limit — split on sentences
-            let sentences = split_sentences(para);
-            let mut sent_buf = String::new();
-            for sent in sentences {
-                let sent_candidate = if sent_buf.is_empty() {
-                    sent.to_string()
-                } else {
-                    format!("{sent_buf} {sent}")
-                };
-                if count_tokens(&sent_candidate) <= limit {
-                    sent_buf = sent_candidate;
-                } else {
-                    if !sent_buf.is_empty() {
-                        parts.push(sent_buf);
-                    }
-                    sent_buf = sent.to_string();
-                }
-            }
-            if !sent_buf.is_empty() {
-                current = sent_buf;
-            }
-        } else {
-            parts.push(current);
-            current = para.to_string();
-        }
-    }
-    if !current.is_empty() {
-        parts.push(current);
-    }
-
-    parts
-}
-
-fn split_sentences(text: &str) -> Vec<&str> {
-    let mut sentences = Vec::new();
-    let mut start = 0;
-    for (i, _) in text.match_indices(['.', '!', '?']) {
-        let end = i + 1;
-        let s = text[start..end].trim();
-        if !s.is_empty() {
-            sentences.push(s);
-        }
-        start = end;
-    }
-    let remaining = text[start..].trim();
-    if !remaining.is_empty() {
-        sentences.push(remaining);
-    }
-    sentences
 }
 
 #[cfg(test)]
@@ -590,21 +438,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_model_download() {
-        Cli::try_parse_from(["roux", "model", "download"]).unwrap();
-    }
-
-    #[test]
-    fn test_parse_model_status() {
-        Cli::try_parse_from(["roux", "model", "status"]).unwrap();
-    }
-
-    #[test]
-    fn test_parse_model_set() {
-        Cli::try_parse_from(["roux", "model", "set", "BAAI/bge-small-en-v1.5"]).unwrap();
-    }
-
-    #[test]
     fn test_parse_no_args_fails() {
         assert!(Cli::try_parse_from(["roux"]).is_err());
     }
@@ -612,47 +445,5 @@ mod tests {
     #[test]
     fn test_parse_unknown_command_fails() {
         assert!(Cli::try_parse_from(["roux", "unknown"]).is_err());
-    }
-
-    #[test]
-    fn test_split_text_to_token_limit() {
-        // Simple token counter: 1 token per word
-        let count = |t: &str| t.split_whitespace().count();
-
-        let text = "Hello world. This is a test.\n\nSecond paragraph here.";
-        let parts = split_text_to_token_limit(text, 10, count);
-        assert!(!parts.is_empty());
-        for part in &parts {
-            assert!(count(part) <= 10, "part too long: {part}");
-        }
-    }
-
-    #[test]
-    fn test_split_text_short_text_not_split() {
-        let count = |t: &str| t.split_whitespace().count();
-        let text = "Short text.";
-        let parts = split_text_to_token_limit(text, 100, count);
-        assert_eq!(parts.len(), 1);
-        assert_eq!(parts[0], "Short text.");
-    }
-
-    #[test]
-    fn test_split_text_paragraph_boundaries() {
-        let count = |t: &str| t.split_whitespace().count();
-        let text = "First paragraph with some words.\n\nSecond paragraph with more words.\n\nThird paragraph here.";
-        let parts = split_text_to_token_limit(text, 6, count);
-        assert!(parts.len() >= 2);
-        for part in &parts {
-            assert!(count(part) <= 6, "part too long: {part}");
-        }
-    }
-
-    #[test]
-    fn test_split_sentences() {
-        let sents = split_sentences("Hello world. How are you? Fine!");
-        assert_eq!(sents.len(), 3);
-        assert_eq!(sents[0], "Hello world.");
-        assert_eq!(sents[1], "How are you?");
-        assert_eq!(sents[2], "Fine!");
     }
 }
