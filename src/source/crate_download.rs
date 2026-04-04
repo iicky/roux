@@ -67,6 +67,9 @@ pub fn download_crate(name: &str, version: &str) -> Result<PathBuf> {
             );
         }
         let dest = canonical_tmp.join(&path);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         entry.unpack(&dest)?;
     }
 
