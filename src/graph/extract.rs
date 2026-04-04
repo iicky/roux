@@ -231,14 +231,14 @@ fn extract_from_source(
         source_version,
         nodes,
         edges,
-        None, // no parent
-        "",   // no prefix
+        None,
+        "",
     );
 
     Ok(())
 }
 
-/// Recursively extract nodes from a tree-sitter node.
+/// Iterative AST traversal — avoids stack overflow on deeply nested code.
 fn extract_node(
     node: &TsNode,
     code: &[u8],
