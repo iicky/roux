@@ -48,7 +48,7 @@ fn validate_crate_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-fn download_crate(name: &str, version: &str) -> Result<PathBuf> {
+pub fn download_crate(name: &str, version: &str) -> Result<PathBuf> {
     validate_crate_name(name)?;
     let url = if version == "latest" {
         // First fetch the latest version number
