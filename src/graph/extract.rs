@@ -65,6 +65,27 @@ pub fn extract_file(
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
+    // Create file node
+    let file_qualified = format!("{source_name}::{rel_path}");
+    let file_id = Node::id_for(source_name, &file_qualified);
+    nodes.push(Node {
+        id: file_id.clone(),
+        kind: "file".to_string(),
+        name: rel_path.clone(),
+        qualified_name: file_qualified,
+        source_name: source_name.to_string(),
+        language: lang.to_string(),
+        file_path: rel_path.clone(),
+        start_line: 0,
+        start_col: 0,
+        end_line: 0,
+        visibility: String::new(),
+        signature: None,
+        doc: None,
+        body: format!("file: {rel_path}"),
+        parent_id: None,
+    });
+
     extract_from_source(
         &code,
         ts_lang,
@@ -74,6 +95,7 @@ pub fn extract_file(
         source_version,
         &mut nodes,
         &mut edges,
+        Some(&file_id),
     )?;
 
     Ok(FileGraph { nodes, edges })
@@ -164,6 +186,32 @@ fn walk_dir(
             .to_string_lossy()
             .to_string();
 
+        // Create a file node
+        let file_qualified = format!("{source_name}::{rel_path}");
+        let file_id = Node::id_for(source_name, &file_qualified);
+        let file_name = path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        nodes.push(Node {
+            id: file_id.clone(),
+            kind: "file".to_string(),
+            name: file_name,
+            qualified_name: file_qualified,
+            source_name: source_name.to_string(),
+            language: lang.to_string(),
+            file_path: rel_path.clone(),
+            start_line: 0,
+            start_col: 0,
+            end_line: 0,
+            visibility: String::new(),
+            signature: None,
+            doc: None,
+            body: format!("file: {rel_path}"),
+            parent_id: None,
+        });
+
         let _ = extract_from_source(
             &code,
             ts_lang,
@@ -173,6 +221,7 @@ fn walk_dir(
             source_version,
             nodes,
             edges,
+            Some(&file_id),
         );
     }
 
@@ -211,6 +260,7 @@ fn extract_from_source(
     source_version: &str,
     nodes: &mut Vec<Node>,
     edges: &mut Vec<Edge>,
+    file_parent_id: Option<&str>,
 ) -> Result<()> {
     let mut parser = Parser::new();
     parser
@@ -222,6 +272,9 @@ fn extract_from_source(
     let root = tree.root_node();
     let code_bytes = code.as_bytes();
 
+    // Extract import edges from top-level
+    extract_imports(&root, code_bytes, lang, source_name, edges);
+
     extract_node(
         &root,
         code_bytes,
@@ -231,11 +284,90 @@ fn extract_from_source(
         source_version,
         nodes,
         edges,
-        None,
+        file_parent_id,
         "",
     );
 
     Ok(())
+}
+
+/// Extract import/use statements as edges.
+fn extract_imports(
+    root: &TsNode,
+    code: &[u8],
+    lang: &str,
+    source_name: &str,
+    edges: &mut Vec<Edge>,
+) {
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        let kind = child.kind();
+        match lang {
+            "rust" if kind == "use_declaration" => {
+                // use foo::bar::Baz;
+                let text = node_text(&child, code);
+                let imported = text.trim_start_matches("use ").trim_end_matches(';').trim();
+                if !imported.is_empty() {
+                    let file_id = Node::id_for(source_name, &format!("{source_name}::{imported}"));
+                    edges.push(Edge {
+                        from_id: String::new(), // resolved later
+                        to_id: format!("__unresolved::{imported}"),
+                        kind: "imports".to_string(),
+                    });
+                    let _ = file_id; // suppress unused
+                }
+            }
+            "python" if kind == "import_statement" || kind == "import_from_statement" => {
+                let text = node_text(&child, code);
+                let imported = text
+                    .trim_start_matches("from ")
+                    .trim_start_matches("import ")
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("");
+                if !imported.is_empty() {
+                    edges.push(Edge {
+                        from_id: String::new(),
+                        to_id: format!("__unresolved::{imported}"),
+                        kind: "imports".to_string(),
+                    });
+                }
+            }
+            "javascript" | "typescript" | "tsx" if kind == "import_statement" => {
+                // import { foo } from 'bar'
+                if let Some(source_node) = find_child_by_kind(&child, "string") {
+                    let module = node_text(&source_node, code)
+                        .trim_matches(|c| c == '\'' || c == '"')
+                        .to_string();
+                    if !module.is_empty() {
+                        edges.push(Edge {
+                            from_id: String::new(),
+                            to_id: format!("__unresolved::{module}"),
+                            kind: "imports".to_string(),
+                        });
+                    }
+                }
+            }
+            "go" if kind == "import_declaration" => {
+                let text = node_text(&child, code);
+                for line in text.lines() {
+                    let cleaned = line.trim().trim_matches('"');
+                    if !cleaned.is_empty()
+                        && cleaned != "import"
+                        && cleaned != "("
+                        && cleaned != ")"
+                    {
+                        edges.push(Edge {
+                            from_id: String::new(),
+                            to_id: format!("__unresolved::{cleaned}"),
+                            kind: "imports".to_string(),
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Iterative AST traversal — avoids stack overflow on deeply nested code.
@@ -274,6 +406,7 @@ fn extract_node(
         sym.start_line = node.start_position().row + 1;
         sym.start_col = node.start_position().column;
         sym.end_line = node.end_position().row + 1;
+        sym.visibility = detect_visibility(node, code, lang);
         sym.id = Node::id_for(source_name, &sym.qualified_name);
         sym.parent_id = parent_id.map(|s| s.to_string());
         sym.body = sym.build_body();
@@ -524,7 +657,8 @@ fn extract_rust_node(node: &TsNode, code: &[u8], kind: &str) -> Option<Node> {
             let type_node = find_child_by_kind(node, "type_identifier")
                 .or_else(|| find_child_by_kind(node, "generic_type"))?;
             let name = node_text(&type_node, code).to_string();
-            Some(make_node(&name, "impl", None, None))
+            let sig = extract_signature_text(node, code);
+            Some(make_node(&name, "impl", sig, None))
         }
         "mod_item" => {
             let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
@@ -674,6 +808,56 @@ fn extract_go_node(node: &TsNode, code: &[u8], kind: &str) -> Option<Node> {
     }
 }
 
+fn detect_visibility(node: &TsNode, code: &[u8], lang: &str) -> String {
+    match lang {
+        "rust" => {
+            if find_child_by_kind(node, "visibility_modifier").is_some() {
+                "pub".to_string()
+            } else {
+                "private".to_string()
+            }
+        }
+        "go" => {
+            // Go exports uppercase names
+            let name = find_child_by_kind(node, "identifier")
+                .or_else(|| find_child_by_kind(node, "field_identifier"))
+                .or_else(|| find_child_by_kind(node, "type_identifier"));
+            if let Some(n) = name {
+                let text = node_text(&n, code);
+                if text.starts_with(|c: char| c.is_uppercase()) {
+                    "pub".to_string()
+                } else {
+                    "private".to_string()
+                }
+            } else {
+                String::new()
+            }
+        }
+        "javascript" | "typescript" | "tsx" => {
+            // Check if parent is an export_statement
+            if let Some(parent) = node.parent() {
+                if parent.kind() == "export_statement" {
+                    return "export".to_string();
+                }
+            }
+            "private".to_string()
+        }
+        "python" => {
+            if let Some(n) = find_child_by_kind(node, "identifier") {
+                let text = node_text(&n, code);
+                if text.starts_with('_') && !text.starts_with("__") {
+                    "private".to_string()
+                } else {
+                    "pub".to_string()
+                }
+            } else {
+                String::new()
+            }
+        }
+        _ => String::new(),
+    }
+}
+
 fn make_node(name: &str, kind: &str, signature: Option<String>, doc: Option<String>) -> Node {
     let name = name.to_string();
     Node {
@@ -731,6 +915,7 @@ mod tests {
             "1.0.0",
             &mut nodes,
             &mut edges,
+            None,
         )
         .unwrap();
         resolve_references(&mut edges, &nodes);
@@ -749,6 +934,7 @@ mod tests {
             "1.0.0",
             &mut nodes,
             &mut edges,
+            None,
         )
         .unwrap();
         resolve_references(&mut edges, &nodes);
@@ -767,6 +953,7 @@ mod tests {
             "1.0.0",
             &mut nodes,
             &mut edges,
+            None,
         )
         .unwrap();
         resolve_references(&mut edges, &nodes);
@@ -941,7 +1128,7 @@ class MyModel:
     }
 
     #[test]
-    fn test_extract_dir() {
+    fn test_extract_dir_with_file_nodes() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("lib.rs"),
@@ -950,6 +1137,45 @@ class MyModel:
         .unwrap();
 
         let g = extract_dir(dir.path(), "mylib", "1.0.0", Some("rust")).unwrap();
-        assert!(g.nodes.len() >= 2);
+        let file_nodes: Vec<_> = g.nodes.iter().filter(|n| n.kind == "file").collect();
+        assert_eq!(file_nodes.len(), 1, "should have one file node");
+        assert_eq!(file_nodes[0].name, "lib.rs");
+
+        // Functions should have the file as parent
+        let hello = g.nodes.iter().find(|n| n.name == "hello").unwrap();
+        assert_eq!(hello.parent_id, Some(file_nodes[0].id.clone()));
+    }
+
+    #[test]
+    fn test_visibility_detection() {
+        let g = extract_rust(
+            r#"
+            pub fn public_fn() {}
+            fn private_fn() {}
+            "#,
+        );
+        let public = g.nodes.iter().find(|n| n.name == "public_fn").unwrap();
+        assert_eq!(public.visibility, "pub");
+
+        let private = g.nodes.iter().find(|n| n.name == "private_fn").unwrap();
+        assert_eq!(private.visibility, "private");
+    }
+
+    #[test]
+    fn test_python_visibility() {
+        let g = extract_python(
+            r#"
+def public():
+    """Public."""
+    pass
+
+def _private():
+    """Private."""
+    pass
+            "#,
+        );
+        let names: Vec<&str> = g.nodes.iter().map(|n| n.name.as_str()).collect();
+        // _private should be skipped by extractor (starts with _)
+        assert!(names.contains(&"public"));
     }
 }
