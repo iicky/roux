@@ -6,8 +6,11 @@ use crate::embed::Embedder;
 use crate::embed::candle::{CandleEmbedder, PrefixStyle};
 use crate::extract;
 use crate::extract::RawChunk;
+use crate::graph;
+use crate::graph::store::GraphStore;
 use crate::model;
 use crate::source::Source;
+use crate::source::SourceKind;
 use crate::store::sqlite::SqliteStore;
 use crate::store::{Chunk, Store};
 
@@ -174,204 +177,153 @@ fn cmd_add(
     lang: Option<String>,
     version: Option<String>,
     local: bool,
-    embed: bool,
+    _embed: bool,
 ) -> Result<()> {
     let source = Source::from_raw(raw_source, name, lang, version);
-    eprintln!("Extracting chunks from {}...", source.name);
+    let source_version = source.version.as_deref().unwrap_or("unknown");
+    let language = source.detected_language().unwrap_or("unknown").to_string();
 
-    // Extract
-    let raw_chunks = extract::extract(&source)?;
-    eprintln!("Extracted {} chunks", raw_chunks.len());
+    eprintln!("Extracting graph from {}...", source.name);
 
-    if raw_chunks.is_empty() {
-        eprintln!("No documented items found.");
+    // Use tree-sitter graph extraction
+    let file_graph = match &source.kind {
+        SourceKind::LocalPath(path) => {
+            graph::extract::extract_dir(path, &source.name, source_version, Some(&language))?
+        }
+        SourceKind::File(path) => {
+            graph::extract::extract_file(path, &source.name, source_version, Some(&language))?
+        }
+        SourceKind::Crate(crate_name) => {
+            // Download crate, then extract
+            let version_str = source.version.as_deref().unwrap_or("latest");
+            let dir = crate::extract::rustdoc::download_crate(crate_name, version_str)?;
+            graph::extract::extract_dir(&dir, &source.name, source_version, Some("rust"))?
+        }
+        SourceKind::Url(_) => anyhow::bail!("URL sources not yet supported for graph extraction"),
+    };
+
+    eprintln!(
+        "Extracted {} symbols, {} edges",
+        file_graph.symbols.len(),
+        file_graph.edges.len()
+    );
+
+    if file_graph.symbols.is_empty() {
+        eprintln!("No symbols found.");
         return Ok(());
     }
 
-    if embed {
-        // Full pipeline: embed + store with vectors
-        eprintln!("Loading embedding model...");
-        let model_files = model::ensure_model(&config.model.id)?;
-        let prefix_style = PrefixStyle::from_model_id(&config.model.id);
-        let embedder = CandleEmbedder::load_with_prefix(
-            &model_files.model,
-            &model_files.tokenizer,
-            &model_files.config,
-            prefix_style,
-        )?;
+    // Store in graph database
+    let store_path = config.resolve_store_path(local);
+    let store = GraphStore::open(&store_path)?;
+    store.upsert_source(
+        &source.name,
+        source_version,
+        &language,
+        &file_graph.symbols,
+        &file_graph.edges,
+    )?;
 
-        let raw_chunks = split_oversized_chunks(raw_chunks, &embedder);
-        let store_path = config.resolve_store_path(local);
-        let store = SqliteStore::open(&store_path, Some(embedder.embedding_dim()))?;
-        let batch_size = config.ingest.batch_size;
-        let total_batches = raw_chunks.len().div_ceil(batch_size);
-        let mut stored = 0usize;
-
-        eprintln!(
-            "Embedding and storing {} chunks in {} batches...",
-            raw_chunks.len(),
-            total_batches
-        );
-
-        for (i, batch) in raw_chunks.chunks(batch_size).enumerate() {
-            let texts: Vec<&str> = batch.iter().map(|c| c.body.as_str()).collect();
-            let embeddings = embedder.embed_passages(&texts).with_context(|| {
-                format!(
-                    "embedding batch {}/{} failed ({stored} chunks already stored)",
-                    i + 1,
-                    total_batches
-                )
-            })?;
-
-            let chunks: Vec<Chunk> = batch
-                .iter()
-                .zip(embeddings)
-                .map(|(raw, embedding)| Chunk {
-                    id: raw.id(),
-                    source_name: raw.source_name.clone(),
-                    source_version: raw.source_version.clone(),
-                    language: raw.language.clone(),
-                    item_type: raw.item_type.clone(),
-                    qualified_name: raw.qualified_name.clone(),
-                    signature: raw.signature.clone(),
-                    doc: raw.doc.clone(),
-                    body: raw.body.clone(),
-                    embedding: Some(embedding),
-                    url: raw.url.clone(),
-                    ingested_at: 0,
-                    score: None,
-                })
-                .collect();
-
-            store.upsert_chunks(&chunks)?;
-            stored += chunks.len();
-            eprintln!(
-                "  batch {}/{}: stored {} chunks",
-                i + 1,
-                total_batches,
-                stored
-            );
-        }
-
-        eprintln!(
-            "Indexed {} chunks from {} into {}",
-            stored,
-            source.name,
-            store_path.display()
-        );
-    } else {
-        // FTS-only: instant ingestion, no model loading
-        let store_path = config.resolve_store_path(local);
-        let store = SqliteStore::open(&store_path, None)?;
-
-        let chunks: Vec<Chunk> = raw_chunks
-            .iter()
-            .map(|raw| Chunk {
-                id: raw.id(),
-                source_name: raw.source_name.clone(),
-                source_version: raw.source_version.clone(),
-                language: raw.language.clone(),
-                item_type: raw.item_type.clone(),
-                qualified_name: raw.qualified_name.clone(),
-                signature: raw.signature.clone(),
-                doc: raw.doc.clone(),
-                body: raw.body.clone(),
-                embedding: None,
-                url: raw.url.clone(),
-                ingested_at: 0,
-                score: None,
-            })
-            .collect();
-
-        store.upsert_chunks(&chunks)?;
-        eprintln!(
-            "Indexed {} chunks from {} into {}",
-            chunks.len(),
-            source.name,
-            store_path.display()
-        );
-    }
+    eprintln!(
+        "Indexed {} symbols from {} into {}",
+        file_graph.symbols.len(),
+        source.name,
+        store_path.display()
+    );
 
     Ok(())
 }
 
 fn cmd_query(
-    config: &Config,
+    _config: &Config,
     query: &str,
     top: usize,
-    source: Option<&str>,
+    _source: Option<&str>,
     format: &str,
     local: bool,
     _global: bool,
 ) -> Result<()> {
-    let store_path = config.resolve_store_path(local);
+    let store_path = if local {
+        std::path::PathBuf::from(".roux/db.sqlite")
+    } else {
+        let config = Config::load()?;
+        config.resolve_store_path(false)
+    };
+
     if !store_path.exists() {
         anyhow::bail!("no index found at {}", store_path.display());
     }
 
-    let store = SqliteStore::open_existing(&store_path)?;
+    let store = GraphStore::open(&store_path)?;
+    let result = store.search(query, top)?;
 
-    // Only load embedder if store has embeddings
-    let query_embedding = if store.has_embeddings() {
-        eprintln!("Loading embedding model...");
-        let model_files = model::ensure_model(&config.model.id)?;
-        let prefix_style = PrefixStyle::from_model_id(&config.model.id);
-        let embedder = CandleEmbedder::load_with_prefix(
-            &model_files.model,
-            &model_files.tokenizer,
-            &model_files.config,
-            prefix_style,
-        )?;
-        Some(embedder.embed_query(query)?)
-    } else {
-        None
-    };
-
-    let results = store.search(query_embedding.as_deref(), query, top, source)?;
-
-    if results.is_empty() {
+    if result.symbols.is_empty() {
         eprintln!("No results found.");
         return Ok(());
     }
 
     match format {
         "json" => {
-            let json_results: Vec<serde_json::Value> = results
-                .iter()
-                .map(|c| {
+            let json_result = serde_json::json!({
+                "matched": result.matched_ids,
+                "symbols": result.symbols.iter().map(|s| {
                     serde_json::json!({
-                        "qualified_name": c.qualified_name,
-                        "item_type": c.item_type,
-                        "source_name": c.source_name,
-                        "source_version": c.source_version,
-                        "signature": c.signature,
-                        "doc": c.doc,
-                        "url": c.url,
-                        "score": c.score,
+                        "id": s.id,
+                        "kind": s.kind,
+                        "name": s.name,
+                        "qualified_name": s.qualified_name,
+                        "file": s.file_path,
+                        "line": s.line,
+                        "signature": s.signature,
+                        "doc": s.doc,
+                        "parent_id": s.parent_id,
+                        "matched": result.matched_ids.contains(&s.id),
                     })
-                })
-                .collect();
-            println!("{}", serde_json::to_string_pretty(&json_results)?);
+                }).collect::<Vec<_>>(),
+                "edges": result.edges.iter().map(|e| {
+                    serde_json::json!({
+                        "from": e.from_id,
+                        "to": e.to_id,
+                        "kind": e.kind,
+                    })
+                }).collect::<Vec<_>>(),
+            });
+            println!("{}", serde_json::to_string_pretty(&json_result)?);
         }
         _ => {
-            for (i, chunk) in results.iter().enumerate() {
-                if i > 0 {
-                    println!();
-                }
-                let score_str = chunk
-                    .score
-                    .map(|s| format!(" [{:.2}]", s))
-                    .unwrap_or_default();
+            // Print matched symbols first, then neighborhood
+            for sym in &result.symbols {
+                let is_match = result.matched_ids.contains(&sym.id);
+                let marker = if is_match { "●" } else { "○" };
+                let kind_str = &sym.kind;
+
                 println!(
-                    "── {} ({}){} ──",
-                    chunk.qualified_name, chunk.item_type, score_str
+                    "{marker} {} ({kind_str}) {}:{}",
+                    sym.qualified_name, sym.file_path, sym.line
                 );
-                println!("source: {}@{}", chunk.source_name, chunk.source_version);
-                if let Some(sig) = &chunk.signature {
-                    println!("{sig}");
+
+                if let Some(ref sig) = sym.signature {
+                    println!("  {sig}");
+                }
+                if let Some(ref doc) = sym.doc {
+                    let first_line = doc.lines().next().unwrap_or("");
+                    if !first_line.is_empty() {
+                        println!("  {first_line}");
+                    }
+                }
+
+                // Show edges from this symbol
+                let outgoing: Vec<_> = result
+                    .edges
+                    .iter()
+                    .filter(|e| e.from_id == sym.id)
+                    .collect();
+                for edge in &outgoing {
+                    if let Some(target) = result.symbols.iter().find(|s| s.id == edge.to_id) {
+                        println!("  → {} {} ({})", edge.kind, target.name, target.kind);
+                    }
                 }
                 println!();
-                println!("{}", chunk.doc);
             }
         }
     }
@@ -380,21 +332,21 @@ fn cmd_query(
 }
 
 fn cmd_list(config: &Config, format: &str) -> Result<()> {
-    // Check both local and global
+    let store_path = config.resolve_store_path(false);
+    let local_path = std::path::PathBuf::from(".roux/db.sqlite");
+
     let mut all_sources = Vec::new();
 
-    let local_path = std::path::PathBuf::from(".roux/db.sqlite");
     if local_path.exists() {
-        let store = SqliteStore::open_existing(&local_path)?;
+        let store = GraphStore::open(&local_path)?;
         for mut src in store.list_sources()? {
             src.name = format!("{} (local)", src.name);
             all_sources.push(src);
         }
     }
 
-    let global_path = &config.index.global_path;
-    if global_path.exists() {
-        let store = SqliteStore::open_existing(global_path)?;
+    if store_path.exists() && store_path != local_path {
+        let store = GraphStore::open(&store_path)?;
         all_sources.extend(store.list_sources()?);
     }
 
@@ -412,7 +364,7 @@ fn cmd_list(config: &Config, format: &str) -> Result<()> {
                         "name": s.name,
                         "version": s.version,
                         "language": s.language,
-                        "chunks": s.chunk_count,
+                        "symbols": s.symbol_count,
                         "ingested_at": s.ingested_at,
                     })
                 })
@@ -421,14 +373,14 @@ fn cmd_list(config: &Config, format: &str) -> Result<()> {
         }
         _ => {
             println!(
-                "{:<20} {:<12} {:<10} {:>6}",
-                "SOURCE", "VERSION", "LANGUAGE", "CHUNKS"
+                "{:<20} {:<12} {:<10} {:>8}",
+                "SOURCE", "VERSION", "LANGUAGE", "SYMBOLS"
             );
-            println!("{}", "─".repeat(52));
+            println!("{}", "─".repeat(54));
             for src in &all_sources {
                 println!(
-                    "{:<20} {:<12} {:<10} {:>6}",
-                    src.name, src.version, src.language, src.chunk_count
+                    "{:<20} {:<12} {:<10} {:>8}",
+                    src.name, src.version, src.language, src.symbol_count
                 );
             }
         }
@@ -443,7 +395,7 @@ fn cmd_remove(config: &Config, source_name: &str) -> Result<()> {
         anyhow::bail!("no index found at {}", store_path.display());
     }
 
-    let store = SqliteStore::open_existing(&store_path)?;
+    let store = GraphStore::open(&store_path)?;
     store.remove_source(source_name)?;
     eprintln!("Removed {source_name} from index");
     Ok(())
