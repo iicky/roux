@@ -35,6 +35,20 @@ pub fn extract_dir(
     // Build cross-file reference edges
     resolve_references(&mut all_edges, &all_nodes);
 
+    // Post-processing passes for convention-based edges
+    let pre = all_edges.len();
+    infer_test_edges(&all_nodes, &mut all_edges);
+    let post_tests = all_edges.len() - pre;
+    infer_override_edges(&all_nodes, &mut all_edges);
+    let post_overrides = all_edges.len() - pre - post_tests;
+    infer_export_edges(&all_nodes, &mut all_edges);
+    let post_exports = all_edges.len() - pre - post_tests - post_overrides;
+    if post_tests + post_overrides + post_exports > 0 {
+        eprintln!(
+            "  inferred: {post_tests} test, {post_overrides} override, {post_exports} export edges"
+        );
+    }
+
     Ok(FileGraph {
         nodes: all_nodes,
         edges: all_edges,
@@ -528,6 +542,340 @@ fn is_primitive_type(name: &str) -> bool {
     )
 }
 
+/// Extract decorator edges from preceding decorator nodes.
+fn extract_decorator_edges(
+    node: &TsNode,
+    code: &[u8],
+    lang: &str,
+    sym_id: &str,
+    edges: &mut Vec<Edge>,
+) {
+    match lang {
+        "python" => {
+            // Look for decorator siblings before the function/class
+            let mut sibling = node.prev_sibling();
+            while let Some(sib) = sibling {
+                if sib.kind() == "decorator" {
+                    let text = node_text(&sib, code);
+                    let decorator_name = text
+                        .trim_start_matches('@')
+                        .split('(')
+                        .next()
+                        .unwrap_or("")
+                        .trim();
+                    if !decorator_name.is_empty() {
+                        edges.push(Edge {
+                            from_id: format!("__unresolved::{decorator_name}"),
+                            to_id: sym_id.to_string(),
+                            kind: "decorates".to_string(),
+                        });
+                        // Check for route decorators
+                        if decorator_name.contains("route")
+                            || decorator_name.contains(".get")
+                            || decorator_name.contains(".post")
+                            || decorator_name.contains(".put")
+                            || decorator_name.contains(".delete")
+                        {
+                            let route_path =
+                                text.split(|c| c == '\'' || c == '"').nth(1).unwrap_or("");
+                            if !route_path.is_empty() {
+                                edges.push(Edge {
+                                    from_id: sym_id.to_string(),
+                                    to_id: format!("__route::{route_path}"),
+                                    kind: "routes".to_string(),
+                                });
+                            }
+                        }
+                    }
+                } else if sib.kind() != "comment" {
+                    break;
+                }
+                sibling = sib.prev_sibling();
+            }
+        }
+        "javascript" | "typescript" | "tsx" => {
+            // TS/JS decorators: @Decorator before class/method
+            let mut sibling = node.prev_sibling();
+            while let Some(sib) = sibling {
+                if sib.kind() == "decorator" {
+                    let text = node_text(&sib, code);
+                    let name = text
+                        .trim_start_matches('@')
+                        .split('(')
+                        .next()
+                        .unwrap_or("")
+                        .trim();
+                    if !name.is_empty() {
+                        edges.push(Edge {
+                            from_id: format!("__unresolved::{name}"),
+                            to_id: sym_id.to_string(),
+                            kind: "decorates".to_string(),
+                        });
+                    }
+                } else {
+                    break;
+                }
+                sibling = sib.prev_sibling();
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Extract raise/throw/panic as edges from function to error type.
+fn extract_raise_edges(
+    node: &TsNode,
+    code: &[u8],
+    lang: &str,
+    sym_id: &str,
+    edges: &mut Vec<Edge>,
+) {
+    let raise_kinds: &[&str] = match lang {
+        "python" => &["raise_statement"],
+        "javascript" | "typescript" | "tsx" => &["throw_statement"],
+        "rust" => &["macro_invocation"], // bail!, panic!, anyhow!
+        "go" => &["call_expression"],    // panic()
+        _ => return,
+    };
+
+    let mut cursor = node.walk();
+    extract_raises_recursive(node, &mut cursor, code, lang, sym_id, edges, raise_kinds);
+}
+
+fn extract_raises_recursive(
+    node: &TsNode,
+    _cursor: &mut tree_sitter::TreeCursor,
+    code: &[u8],
+    lang: &str,
+    sym_id: &str,
+    edges: &mut Vec<Edge>,
+    raise_kinds: &[&str],
+) {
+    if raise_kinds.contains(&node.kind()) {
+        let text = node_text(node, code);
+
+        let error_name = match lang {
+            "python" => {
+                // raise FooError(...) or raise FooError
+                text.strip_prefix("raise ")
+                    .and_then(|r| r.split(|c: char| c == '(' || c.is_whitespace()).next())
+                    .map(|s| s.trim().to_string())
+            }
+            "javascript" | "typescript" | "tsx" => {
+                // throw new FooError(...)
+                text.strip_prefix("throw ")
+                    .and_then(|r| r.strip_prefix("new "))
+                    .and_then(|r| r.split('(').next())
+                    .map(|s| s.trim().to_string())
+            }
+            "rust" => {
+                // bail!(...) or panic!(...)
+                let macro_name = text.split('!').next().unwrap_or("");
+                if matches!(macro_name, "bail" | "panic" | "anyhow") {
+                    Some(macro_name.to_string())
+                } else {
+                    None
+                }
+            }
+            "go" => {
+                // panic("...")
+                if text.starts_with("panic(") {
+                    Some("panic".to_string())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
+        if let Some(name) = error_name {
+            if !name.is_empty() {
+                edges.push(Edge {
+                    from_id: sym_id.to_string(),
+                    to_id: format!("__unresolved::{name}"),
+                    kind: "raises".to_string(),
+                });
+            }
+        }
+        return; // Don't recurse into raise/throw children
+    }
+
+    let mut child_cursor = node.walk();
+    for child in node.children(&mut child_cursor) {
+        extract_raises_recursive(
+            &child,
+            &mut node.walk(),
+            code,
+            lang,
+            sym_id,
+            edges,
+            raise_kinds,
+        );
+    }
+}
+
+/// Extract Go/JS route registrations: router.GET("/path", handler)
+fn extract_route_registrations(
+    node: &TsNode,
+    code: &[u8],
+    lang: &str,
+    sym_id: &str,
+    edges: &mut Vec<Edge>,
+) {
+    if !matches!(lang, "go" | "javascript" | "typescript" | "tsx") {
+        return;
+    }
+
+    // Look for method calls like router.GET("/path", handler) or app.get("/path", fn)
+    let text = node_text(node, code);
+    let http_methods = [
+        "GET", "POST", "PUT", "DELETE", "PATCH", "get", "post", "put", "delete", "patch",
+    ];
+
+    for method in &http_methods {
+        let pattern = format!(".{method}(");
+        if text.contains(&pattern) {
+            // Extract the route path from the first string argument
+            let route = text
+                .split(&pattern)
+                .nth(1)
+                .and_then(|r| r.split(|c| c == '\'' || c == '"').nth(1));
+            if let Some(path) = route {
+                edges.push(Edge {
+                    from_id: sym_id.to_string(),
+                    to_id: format!("__route::{path}"),
+                    kind: "routes".to_string(),
+                });
+            }
+        }
+    }
+}
+
+// ─── Post-processing passes ──────────────────────────────────────────
+
+/// Infer test edges by convention: test_foo → foo, TestFoo → Foo.
+fn infer_test_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
+    let non_test_nodes: Vec<&Node> = nodes.iter().filter(|n| !is_test_node(n)).collect();
+
+    for node in nodes {
+        if !is_test_node(node) {
+            continue;
+        }
+
+        // Try to find what this test tests
+        let tested_name = extract_tested_name(&node.name);
+        if let Some(name) = tested_name {
+            // Find matching non-test symbol
+            if let Some(target) = non_test_nodes
+                .iter()
+                .find(|n| n.name == name || n.name.eq_ignore_ascii_case(&name))
+            {
+                edges.push(Edge {
+                    from_id: node.id.clone(),
+                    to_id: target.id.clone(),
+                    kind: "tests".to_string(),
+                });
+            }
+        }
+    }
+}
+
+fn is_test_node(node: &Node) -> bool {
+    node.name.starts_with("test_")
+        || node.name.starts_with("Test")
+        || node.name.starts_with("test")
+        || node.file_path.contains("test")
+        || node.file_path.contains("spec")
+}
+
+fn extract_tested_name(test_name: &str) -> Option<String> {
+    // test_foo → foo
+    if let Some(name) = test_name.strip_prefix("test_") {
+        return Some(name.to_string());
+    }
+    // TestFoo → Foo
+    if let Some(name) = test_name.strip_prefix("Test") {
+        if name.starts_with(|c: char| c.is_uppercase()) {
+            return Some(name.to_string());
+        }
+    }
+    // testFoo → Foo (JS convention)
+    if let Some(name) = test_name.strip_prefix("test") {
+        if name.starts_with(|c: char| c.is_uppercase()) {
+            return Some(name.to_string());
+        }
+    }
+    None
+}
+
+/// Infer override edges: if a child class has a method with the same name as parent.
+fn infer_override_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
+    // Collect inherits relationships (clone IDs to avoid borrow conflict)
+    let inherits: Vec<(String, String)> = edges
+        .iter()
+        .filter(|e| e.kind == "inherits")
+        .map(|e| (e.from_id.clone(), e.to_id.clone()))
+        .collect();
+
+    for (child_id, parent_id) in &inherits {
+        let child_methods: Vec<&Node> = nodes
+            .iter()
+            .filter(|n| {
+                n.parent_id.as_deref() == Some(child_id.as_str())
+                    && matches!(n.kind.as_str(), "function" | "method")
+            })
+            .collect();
+
+        let parent_methods: Vec<&Node> = nodes
+            .iter()
+            .filter(|n| {
+                n.parent_id.as_deref() == Some(parent_id.as_str())
+                    && matches!(n.kind.as_str(), "function" | "method")
+            })
+            .collect();
+
+        for child_method in &child_methods {
+            if parent_methods.iter().any(|pm| pm.name == child_method.name) {
+                edges.push(Edge {
+                    from_id: child_method.id.clone(),
+                    to_id: parent_methods
+                        .iter()
+                        .find(|pm| pm.name == child_method.name)
+                        .unwrap()
+                        .id
+                        .clone(),
+                    kind: "overrides".to_string(),
+                });
+            }
+        }
+    }
+}
+
+/// Infer export edges from visibility and re-export patterns.
+fn infer_export_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
+    for node in nodes {
+        if node.kind == "file" {
+            continue;
+        }
+
+        // Publicly visible symbols get an "exports" edge from their file
+        if matches!(node.visibility.as_str(), "pub" | "export") {
+            if let Some(ref parent_id) = node.parent_id {
+                // Check if parent is a file node
+                if let Some(parent) = nodes.iter().find(|n| n.id == *parent_id) {
+                    if parent.kind == "file" {
+                        edges.push(Edge {
+                            from_id: parent.id.clone(),
+                            to_id: node.id.clone(),
+                            kind: "exports".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Extract import/use statements as edges.
 fn extract_imports(
     root: &TsNode,
@@ -653,8 +1001,15 @@ fn extract_node(
 
         nodes.push(sym);
 
-        // Extract inheritance/implementation edges
+        // Extract relationship edges
         extract_relationship_edges(node, code, lang, &sym_id, edges);
+        extract_decorator_edges(node, code, lang, &sym_id, edges);
+
+        // For functions/methods: extract raises and route registrations
+        if matches!(sym_kind.as_str(), "function" | "method") {
+            extract_raise_edges(node, code, lang, &sym_id, edges);
+            extract_route_registrations(node, code, lang, &sym_id, edges);
+        }
 
         // Recurse into children with this node as parent
         let new_prefix = qualified;
@@ -1710,6 +2065,62 @@ def _private():
         let refs = extract_backtick_refs("Use `spawn` to create tasks. See `tokio::Runtime`.");
         assert!(refs.contains(&"spawn".to_string()));
         assert!(refs.contains(&"Runtime".to_string()));
+    }
+
+    #[test]
+    fn test_python_decorator_edge() {
+        let g = extract_python(
+            r#"
+def cache(fn):
+    """Cache decorator."""
+    pass
+
+@cache
+def expensive():
+    """Expensive computation."""
+    pass
+            "#,
+        );
+        let decorates: Vec<_> = g.edges.iter().filter(|e| e.kind == "decorates").collect();
+        assert!(
+            !decorates.is_empty(),
+            "should have decorates edge: {:?}",
+            g.edges
+        );
+    }
+
+    #[test]
+    fn test_test_edges_inferred() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("lib.rs"),
+            "pub fn spawn() {}\npub fn test_spawn() {}\n",
+        )
+        .unwrap();
+
+        let g = extract_dir(dir.path(), "mylib", "1.0.0", Some("rust")).unwrap();
+        let test_edges: Vec<_> = g.edges.iter().filter(|e| e.kind == "tests").collect();
+        assert!(
+            !test_edges.is_empty(),
+            "should infer test_spawn tests spawn"
+        );
+    }
+
+    #[test]
+    fn test_export_edges_inferred() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("lib.rs"),
+            "pub fn public_api() {}\nfn private_impl() {}\n",
+        )
+        .unwrap();
+
+        let g = extract_dir(dir.path(), "mylib", "1.0.0", Some("rust")).unwrap();
+        let exports: Vec<_> = g.edges.iter().filter(|e| e.kind == "exports").collect();
+        assert!(
+            !exports.is_empty(),
+            "pub functions should get exports edges from file"
+        );
     }
 
     #[test]
