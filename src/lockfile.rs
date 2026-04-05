@@ -45,6 +45,7 @@ pub fn detect_project(dir: &Path) -> Option<ProjectInfo> {
     let checks: &[(&str, ProjectKind, fn(&Path) -> Result<Vec<Dependency>>)] = &[
         ("Cargo.lock", ProjectKind::Rust, parse_cargo_lock),
         ("package-lock.json", ProjectKind::Node, parse_package_lock),
+        ("pnpm-lock.yaml", ProjectKind::Node, parse_pnpm_lock),
         ("yarn.lock", ProjectKind::Node, parse_yarn_lock),
         ("poetry.lock", ProjectKind::Python, parse_poetry_lock),
         ("go.sum", ProjectKind::Go, parse_go_sum),
@@ -175,6 +176,48 @@ fn parse_package_lock(path: &Path) -> Result<Vec<Dependency>> {
 }
 
 /// Parse yarn.lock — simplified extraction.
+/// Parse pnpm-lock.yaml for Node.js dependencies.
+fn parse_pnpm_lock(path: &Path) -> Result<Vec<Dependency>> {
+    let content = std::fs::read_to_string(path).context("reading pnpm-lock.yaml")?;
+    let mut deps = Vec::new();
+    let mut in_packages = false;
+
+    for line in content.lines() {
+        if line == "packages:" {
+            in_packages = true;
+            continue;
+        }
+        if in_packages && !line.starts_with(' ') && !line.is_empty() {
+            break; // left the packages section
+        }
+        if !in_packages {
+            continue;
+        }
+
+        // Match lines like: '  @scope/name@1.2.3':  or  'name@1.2.3':
+        let trimmed = line.trim();
+        if let Some(entry) = trimmed
+            .strip_prefix('\'')
+            .and_then(|s| s.strip_suffix("':"))
+        {
+            // Split on last '@' to separate name from version
+            if let Some(at_pos) = entry.rfind('@') {
+                let name = &entry[..at_pos];
+                let version = &entry[at_pos + 1..];
+                if !name.is_empty() {
+                    deps.push(Dependency {
+                        name: name.to_string(),
+                        version: Some(version.to_string()),
+                        direct: true, // pnpm-lock doesn't easily distinguish
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(deps)
+}
+
 fn parse_yarn_lock(path: &Path) -> Result<Vec<Dependency>> {
     let content = std::fs::read_to_string(path).context("reading yarn.lock")?;
     let mut deps = Vec::new();
