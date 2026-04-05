@@ -319,28 +319,38 @@ fn extract_from_source(
     };
 
     if use_tags && !tag_symbols.is_empty() {
-        // Tags-based path: convert TaggedSymbols to Nodes
+        // Tags-based path: convert TaggedSymbols to Nodes, enriched via AST
+
+        // Collect node metadata for parent_id resolution
+        struct NodeMeta {
+            id: String,
+            kind: String,
+            start_byte: usize,
+            end_byte: usize,
+        }
+        let mut metas: Vec<NodeMeta> = Vec::new();
+
         for sym in &tag_symbols {
             let qualified = format!("{source_name}::{}", sym.name);
             let id = Node::id_for(source_name, &qualified);
 
-            // Extract source text for this symbol for hashing and body
-            let sym_source = &code[sym.start_byte..sym.end_byte.min(code.len())];
-            let content_hash = blake3::hash(sym_source.as_bytes()).to_hex().to_string();
+            // Recover the tree-sitter AST node for enrichment
+            let ts_node = root.descendant_for_byte_range(sym.start_byte, sym.end_byte);
 
-            // Build a signature from the first line of the symbol
-            let sig = sym_source.lines().next().map(|l| l.to_string());
+            // Content hash from symbol source text
+            let source_text = &code_bytes[sym.start_byte..sym.end_byte.min(code_bytes.len())];
+            let content_hash = blake3::hash(source_text).to_hex().to_string();
 
-            // Build body text for FTS indexing
-            let mut body = format!("{}: {}", sym.kind.as_str(), qualified);
-            if let Some(ref s) = sig {
-                body.push('\n');
-                body.push_str(s);
-            }
-            if let Some(ref doc) = sym.doc {
-                body.push('\n');
-                body.push_str(doc);
-            }
+            // Enrich with AST-derived metadata
+            let (visibility, signature, doc) = if let Some(ref n) = ts_node {
+                (
+                    detect_visibility(n, code_bytes, lang),
+                    extract_signature_text(n, code_bytes),
+                    extract_doc_comment(n, code_bytes).or(sym.doc.clone()),
+                )
+            } else {
+                (String::new(), None, sym.doc.clone())
+            };
 
             let mut node = Node {
                 id: id.clone(),
@@ -353,10 +363,10 @@ fn extract_from_source(
                 start_line: sym.start_line,
                 start_col: sym.start_col,
                 end_line: sym.end_line,
-                visibility: String::new(),
-                signature: sig,
-                doc: sym.doc.clone(),
-                body,
+                visibility,
+                signature,
+                doc,
+                body: String::new(),
                 parent_id: file_parent_id.map(|s| s.to_string()),
                 content_hash: Some(content_hash),
                 line_count: sym.end_line.saturating_sub(sym.start_line) + 1,
@@ -364,14 +374,81 @@ fn extract_from_source(
                 description: None,
             };
             node.body = node.build_body();
+
+            let node_kind = node.kind.clone();
+            metas.push(NodeMeta {
+                id: id.clone(),
+                kind: node_kind.clone(),
+                start_byte: sym.start_byte,
+                end_byte: sym.end_byte,
+            });
             nodes.push(node);
+
+            // Run edge inference on the AST node
+            if let Some(ref n) = ts_node {
+                extract_relationship_edges(n, code_bytes, lang, &id, edges);
+                extract_decorator_edges(n, code_bytes, lang, &id, edges);
+                if matches!(node_kind.as_str(), "function" | "method") {
+                    extract_raise_edges(n, code_bytes, lang, &id, edges);
+                    extract_route_registrations(n, code_bytes, lang, &id, edges);
+                    extract_call_references(n, code_bytes, &id, edges);
+                }
+            }
+        }
+
+        // Resolve parent_id via interval nesting:
+        // Sort by start_byte asc, end_byte desc (outermost containers first)
+        metas.sort_by(|a, b| {
+            a.start_byte
+                .cmp(&b.start_byte)
+                .then(b.end_byte.cmp(&a.end_byte))
+        });
+
+        let container_kinds = [
+            "class",
+            "module",
+            "struct",
+            "enum",
+            "trait",
+            "impl",
+            "interface",
+        ];
+        let mut stack: Vec<(usize, usize, String)> = Vec::new(); // (start, end, id)
+
+        // Build a map from node_id → parent_id
+        let mut parent_map: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        for meta in &metas {
+            // Pop containers that don't enclose this node
+            while let Some(top) = stack.last() {
+                if meta.start_byte >= top.1 {
+                    stack.pop();
+                } else {
+                    break;
+                }
+            }
+            // If there's an enclosing container, it's the parent
+            if let Some(top) = stack.last() {
+                parent_map.insert(meta.id.clone(), top.2.clone());
+            }
+            // Push this node as a container if it's a container kind
+            if container_kinds.contains(&meta.kind.as_str()) {
+                stack.push((meta.start_byte, meta.end_byte, meta.id.clone()));
+            }
+        }
+
+        // Apply parent_id assignments
+        for node in nodes.iter_mut() {
+            if let Some(pid) = parent_map.get(&node.id) {
+                node.parent_id = Some(pid.clone());
+            }
         }
 
         // Convert tagged references to unresolved edges
         for r in &tag_refs {
             if !r.name.is_empty() && r.name.len() < 200 {
                 edges.push(Edge {
-                    from_id: String::new(), // will be resolved later
+                    from_id: String::new(),
                     to_id: format!("__unresolved::{}", r.name),
                     kind: match r.kind {
                         super::tags::RefKind::Call => "calls".to_string(),
