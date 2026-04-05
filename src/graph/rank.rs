@@ -19,8 +19,14 @@ pub struct ScoredNode {
     pub is_seed: bool,
 }
 
-/// Build a petgraph from nodes + edges, run PPR from seed nodes,
-/// return the top-k scored subgraph.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FusionMethod {
+    /// BM25^α × PPR^β score fusion (current default)
+    ScoreFusion,
+    /// Reciprocal Rank Fusion: Σ 1/(k + rank_i)
+    RRF,
+}
+
 /// Build a petgraph from nodes + edges, run PPR from seed nodes,
 /// fuse with BM25 scores, return the top-k scored subgraph.
 pub fn rank_subgraph(
@@ -29,6 +35,21 @@ pub fn rank_subgraph(
     seed_ids: &[String],
     bm25_scores: &HashMap<String, f64>,
     top_k: usize,
+) -> RankedSubgraph {
+    rank_subgraph_with(nodes, edges, seed_ids, bm25_scores, top_k, FusionMethod::ScoreFusion, None)
+}
+
+/// Build a petgraph from nodes + edges, run PPR from seed nodes,
+/// fuse with BM25 scores using the specified fusion method, return the top-k scored subgraph.
+/// If `query` is provided, applies description re-ranking as a boost pass.
+pub fn rank_subgraph_with(
+    nodes: Vec<Node>,
+    edges: Vec<Edge>,
+    seed_ids: &[String],
+    bm25_scores: &HashMap<String, f64>,
+    top_k: usize,
+    fusion: FusionMethod,
+    query: Option<&str>,
 ) -> RankedSubgraph {
     if nodes.is_empty() {
         return RankedSubgraph {
@@ -87,21 +108,118 @@ pub fn rank_subgraph(
         })
         .collect();
 
-    // Fuse: combined = BM25^0.7 × PPR^0.3
-    // BM25 dominates for keyword relevance, PPR adds structural boost
-    let alpha = 0.7;
-    let beta = 0.3;
+    let scored: Vec<(String, f64)> = match fusion {
+        FusionMethod::ScoreFusion => {
+            // Fuse: combined = BM25^0.7 × PPR^0.3
+            let alpha = 0.7;
+            let beta = 0.3;
+            let mut s: Vec<(String, f64)> = nodes
+                .iter()
+                .map(|n| {
+                    let bm25 = bm25_scores.get(&n.id).copied().unwrap_or(0.0);
+                    let ppr = ppr_normalized.get(&n.id).copied().unwrap_or(0.0);
+                    let combined = bm25.powf(alpha) * ppr.powf(beta);
+                    (n.id.clone(), combined)
+                })
+                .collect();
+            s.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            s
+        }
+        FusionMethod::RRF => {
+            // Reciprocal Rank Fusion: score = 1/(k+rank_bm25) + 1/(k+rank_ppr)
+            let k = 60.0;
 
-    let mut scored: Vec<(String, f64)> = nodes
-        .iter()
-        .map(|n| {
-            let bm25 = bm25_scores.get(&n.id).copied().unwrap_or(0.0);
-            let ppr = ppr_normalized.get(&n.id).copied().unwrap_or(0.0);
-            let combined = bm25.powf(alpha) * ppr.powf(beta);
-            (n.id.clone(), combined)
+            // BM25 ranking (by normalized score, descending)
+            let mut bm25_ranked: Vec<(&String, f64)> = nodes
+                .iter()
+                .map(|n| (&n.id, bm25_scores.get(&n.id).copied().unwrap_or(0.0)))
+                .collect();
+            bm25_ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            let bm25_rank: HashMap<&String, usize> = bm25_ranked
+                .iter()
+                .enumerate()
+                .map(|(i, (id, _))| (*id, i + 1))
+                .collect();
+
+            // PPR ranking (by normalized score, descending)
+            let mut ppr_ranked: Vec<(&String, f64)> = nodes
+                .iter()
+                .map(|n| (&n.id, ppr_normalized.get(&n.id).copied().unwrap_or(0.0)))
+                .collect();
+            ppr_ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            let ppr_rank: HashMap<&String, usize> = ppr_ranked
+                .iter()
+                .enumerate()
+                .map(|(i, (id, _))| (*id, i + 1))
+                .collect();
+
+            let mut s: Vec<(String, f64)> = nodes
+                .iter()
+                .map(|n| {
+                    let br = *bm25_rank.get(&n.id).unwrap_or(&(nodes.len() + 1)) as f64;
+                    let pr = *ppr_rank.get(&n.id).unwrap_or(&(nodes.len() + 1)) as f64;
+                    let rrf_score = 1.0 / (k + br) + 1.0 / (k + pr);
+                    (n.id.clone(), rrf_score)
+                })
+                .collect();
+            s.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            s
+        }
+    };
+
+    // Kind demotion: file and doc_section nodes score lower than code symbols
+    let kind_map: HashMap<&str, &str> = nodes.iter().map(|n| (n.id.as_str(), n.kind.as_str())).collect();
+    let scored: Vec<(String, f64)> = scored
+        .into_iter()
+        .map(|(id, score)| {
+            let multiplier = match kind_map.get(id.as_str()).copied().unwrap_or("") {
+                "file" => 0.5,
+                "doc_section" => 0.7,
+                _ => 1.0,
+            };
+            (id, score * multiplier)
         })
         .collect();
-    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Description re-ranking: boost scores by query-description term overlap
+    let scored = if let Some(query_str) = query {
+        let query_terms: HashSet<&str> = query_str
+            .split_whitespace()
+            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
+            .filter(|w| w.len() > 2)
+            .collect();
+
+        let node_map: HashMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+        let desc_alpha = 0.3;
+
+        let mut boosted: Vec<(String, f64)> = scored
+            .into_iter()
+            .map(|(id, score)| {
+                let desc_score = node_map
+                    .get(id.as_str())
+                    .and_then(|n| n.description.as_ref())
+                    .map(|desc| {
+                        let desc_lower = desc.to_lowercase();
+                        let desc_words: HashSet<&str> = desc_lower.split_whitespace()
+                            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
+                            .collect();
+                        let hits = query_terms.iter().filter(|t| {
+                            let tl = t.to_lowercase();
+                            desc_words.iter().any(|dw| dw.contains(&tl))
+                        }).count();
+                        if query_terms.is_empty() { 0.0 } else { hits as f64 / query_terms.len() as f64 }
+                    })
+                    .unwrap_or(0.0);
+                // Multiplicative boost: score × (1 + α × desc_match)
+                let boosted_score = score * (1.0 + desc_alpha * desc_score);
+                (id, boosted_score)
+            })
+            .collect();
+        boosted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        boosted
+    } else {
+        scored
+    };
 
     // Take top-k
     let seed_set: HashSet<&str> = seed_ids.iter().map(|s| s.as_str()).collect();
@@ -237,6 +355,7 @@ mod tests {
             content_hash: None,
             line_count: 10,
             source_url: None,
+            description: None,
         }
     }
 
