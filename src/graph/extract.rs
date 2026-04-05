@@ -320,19 +320,88 @@ fn extract_from_source(
 
     if use_tags && !tag_symbols.is_empty() {
         // Tags-based path: convert TaggedSymbols to Nodes, enriched via AST
+        //
+        // Two passes:
+        // 1. Compute parent nesting from byte ranges → build qualified names + IDs
+        // 2. Create nodes with correct IDs, run edge inference
 
-        // Collect node metadata for parent_id resolution
-        struct NodeMeta {
-            id: String,
+        let container_kinds = [
+            "class",
+            "module",
+            "struct",
+            "enum",
+            "trait",
+            "impl",
+            "interface",
+        ];
+
+        // Pass 1: Compute nesting to build qualified name prefixes
+        struct SymMeta {
+            idx: usize,
+            name: String,
             kind: String,
             start_byte: usize,
             end_byte: usize,
         }
-        let mut metas: Vec<NodeMeta> = Vec::new();
+        let mut metas: Vec<SymMeta> = tag_symbols
+            .iter()
+            .enumerate()
+            .map(|(i, s)| SymMeta {
+                idx: i,
+                name: s.name.clone(),
+                kind: s.kind.as_str().to_string(),
+                start_byte: s.start_byte,
+                end_byte: s.end_byte,
+            })
+            .collect();
+        metas.sort_by(|a, b| {
+            a.start_byte
+                .cmp(&b.start_byte)
+                .then(b.end_byte.cmp(&a.end_byte))
+        });
 
-        for sym in &tag_symbols {
-            let qualified = format!("{source_name}::{}", sym.name);
+        // Build prefix map: sym_index → qualified prefix (e.g. "auth" for login inside mod auth)
+        let mut prefix_map: std::collections::HashMap<usize, String> =
+            std::collections::HashMap::new();
+        let mut parent_idx_map: std::collections::HashMap<usize, usize> =
+            std::collections::HashMap::new();
+        let mut stack: Vec<(usize, usize, usize, String)> = Vec::new(); // (start, end, idx, name)
+
+        for meta in &metas {
+            while let Some(top) = stack.last() {
+                if meta.start_byte >= top.1 {
+                    stack.pop();
+                } else {
+                    break;
+                }
+            }
+            if let Some(top) = stack.last() {
+                // Build full prefix from stack
+                let prefix: String = stack
+                    .iter()
+                    .map(|(_, _, _, n)| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join("::");
+                prefix_map.insert(meta.idx, prefix);
+                parent_idx_map.insert(meta.idx, top.2);
+            }
+            if container_kinds.contains(&meta.kind.as_str()) {
+                stack.push((meta.start_byte, meta.end_byte, meta.idx, meta.name.clone()));
+            }
+        }
+
+        // Pass 2: Create nodes with correct qualified names, run edge inference
+        // Track IDs by sym index for parent_id lookup
+        let mut id_by_idx: Vec<String> = vec![String::new(); tag_symbols.len()];
+
+        for (i, sym) in tag_symbols.iter().enumerate() {
+            let qualified = if let Some(prefix) = prefix_map.get(&i) {
+                format!("{source_name}::{prefix}::{}", sym.name)
+            } else {
+                format!("{source_name}::{}", sym.name)
+            };
             let id = Node::id_for(source_name, &qualified);
+            id_by_idx[i] = id.clone();
 
             // Recover the tree-sitter AST node for enrichment
             let ts_node = root.descendant_for_byte_range(sym.start_byte, sym.end_byte);
@@ -346,11 +415,24 @@ fn extract_from_source(
                 (
                     detect_visibility(n, code_bytes, lang),
                     extract_signature_text(n, code_bytes),
-                    extract_doc_comment(n, code_bytes).or(sym.doc.clone()),
+                    extract_doc_comment(n, code_bytes)
+                        .or_else(|| {
+                            if lang == "python" {
+                                extract_python_docstring(n, code_bytes)
+                            } else {
+                                None
+                            }
+                        })
+                        .or(sym.doc.clone()),
                 )
             } else {
                 (String::new(), None, sym.doc.clone())
             };
+
+            let parent_id = parent_idx_map
+                .get(&i)
+                .map(|pi| id_by_idx[*pi].clone())
+                .or_else(|| file_parent_id.map(|s| s.to_string()));
 
             let mut node = Node {
                 id: id.clone(),
@@ -367,7 +449,7 @@ fn extract_from_source(
                 signature,
                 doc,
                 body: String::new(),
-                parent_id: file_parent_id.map(|s| s.to_string()),
+                parent_id,
                 content_hash: Some(content_hash),
                 line_count: sym.end_line.saturating_sub(sym.start_line) + 1,
                 source_url: None,
@@ -376,12 +458,6 @@ fn extract_from_source(
             node.body = node.build_body();
 
             let node_kind = node.kind.clone();
-            metas.push(NodeMeta {
-                id: id.clone(),
-                kind: node_kind.clone(),
-                start_byte: sym.start_byte,
-                end_byte: sym.end_byte,
-            });
             nodes.push(node);
 
             // Run edge inference on the AST node
@@ -393,54 +469,6 @@ fn extract_from_source(
                     extract_route_registrations(n, code_bytes, lang, &id, edges);
                     extract_call_references(n, code_bytes, &id, edges);
                 }
-            }
-        }
-
-        // Resolve parent_id via interval nesting:
-        // Sort by start_byte asc, end_byte desc (outermost containers first)
-        metas.sort_by(|a, b| {
-            a.start_byte
-                .cmp(&b.start_byte)
-                .then(b.end_byte.cmp(&a.end_byte))
-        });
-
-        let container_kinds = [
-            "class",
-            "module",
-            "struct",
-            "enum",
-            "trait",
-            "impl",
-            "interface",
-        ];
-        let mut stack: Vec<(usize, usize, String)> = Vec::new(); // (start, end, id)
-
-        // Build a map from node_id → parent_id
-        let mut parent_map: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
-        for meta in &metas {
-            // Pop containers that don't enclose this node
-            while let Some(top) = stack.last() {
-                if meta.start_byte >= top.1 {
-                    stack.pop();
-                } else {
-                    break;
-                }
-            }
-            // If there's an enclosing container, it's the parent
-            if let Some(top) = stack.last() {
-                parent_map.insert(meta.id.clone(), top.2.clone());
-            }
-            // Push this node as a container if it's a container kind
-            if container_kinds.contains(&meta.kind.as_str()) {
-                stack.push((meta.start_byte, meta.end_byte, meta.id.clone()));
-            }
-        }
-
-        // Apply parent_id assignments
-        for node in nodes.iter_mut() {
-            if let Some(pid) = parent_map.get(&node.id) {
-                node.parent_id = Some(pid.clone());
             }
         }
 

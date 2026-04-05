@@ -19,7 +19,11 @@ pub enum SymbolKind {
     Function,
     Method,
     Class,
+    Struct,
+    Enum,
     Interface,
+    Trait,
+    Impl,
     Module,
     Macro,
     Constant,
@@ -32,7 +36,11 @@ impl SymbolKind {
             Self::Function => "function",
             Self::Method => "method",
             Self::Class => "class",
+            Self::Struct => "struct",
+            Self::Enum => "enum",
             Self::Interface => "interface",
+            Self::Trait => "trait",
+            Self::Impl => "impl",
             Self::Module => "module",
             Self::Macro => "macro",
             Self::Constant => "const",
@@ -99,8 +107,17 @@ pub fn extract_tags(
             "definition.class" => {
                 def_captures.insert(idx, SymbolKind::Class);
             }
-            "definition.interface" => {
-                def_captures.insert(idx, SymbolKind::Interface);
+            "definition.interface" | "definition.trait" => {
+                def_captures.insert(idx, SymbolKind::Trait);
+            }
+            "definition.struct" => {
+                def_captures.insert(idx, SymbolKind::Struct);
+            }
+            "definition.enum" => {
+                def_captures.insert(idx, SymbolKind::Enum);
+            }
+            "definition.impl" => {
+                def_captures.insert(idx, SymbolKind::Impl);
             }
             "definition.module" => {
                 def_captures.insert(idx, SymbolKind::Module);
@@ -226,16 +243,16 @@ fn strip_unsupported_predicates(query: &str) -> String {
 
 const TAGS_RUST: &str = r#"
 (struct_item
-    name: (type_identifier) @name) @definition.class
+    name: (type_identifier) @name) @definition.struct
 
 (enum_item
-    name: (type_identifier) @name) @definition.class
+    name: (type_identifier) @name) @definition.enum
 
 (union_item
     name: (type_identifier) @name) @definition.class
 
 (type_item
-    name: (type_identifier) @name) @definition.class
+    name: (type_identifier) @name) @definition.type
 
 (declaration_list
     (function_item
@@ -245,13 +262,16 @@ const TAGS_RUST: &str = r#"
     name: (identifier) @name) @definition.function
 
 (trait_item
-    name: (type_identifier) @name) @definition.interface
+    name: (type_identifier) @name) @definition.trait
 
 (mod_item
     name: (identifier) @name) @definition.module
 
 (macro_definition
     name: (identifier) @name) @definition.macro
+
+(impl_item
+    type: (type_identifier) @name) @definition.impl
 
 (call_expression
     function: (identifier) @name) @reference.call
@@ -265,10 +285,6 @@ const TAGS_RUST: &str = r#"
 
 (impl_item
     trait: (type_identifier) @name) @reference.implementation
-
-(impl_item
-    type: (type_identifier) @name
-    !trait) @reference.implementation
 "#;
 
 const TAGS_PYTHON: &str = r#"
