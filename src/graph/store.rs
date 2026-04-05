@@ -19,7 +19,7 @@ impl GraphStore {
         let conn = Connection::open(path)
             .with_context(|| format!("opening database at {}", path.display()))?;
 
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
 
         let store = Self { conn };
         store.migrate()?;
@@ -28,7 +28,7 @@ impl GraphStore {
 
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
-        conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+        // No FK enforcement — graph references are resolved best-effort
         let store = Self { conn };
         store.migrate()?;
         Ok(store)
@@ -49,7 +49,7 @@ impl GraphStore {
             )
             .unwrap_or(0);
 
-        if version < 1 {
+        if version < 2 {
             // Drop old tables if they exist (pre-v1 data)
             self.conn.execute_batch(
                 "DROP TABLE IF EXISTS fts_symbols;
@@ -76,7 +76,7 @@ impl GraphStore {
                     kind           TEXT NOT NULL,
                     name           TEXT NOT NULL,
                     qualified_name TEXT NOT NULL,
-                    source_name    TEXT NOT NULL REFERENCES sources(name),
+                    source_name    TEXT NOT NULL,
                     language       TEXT NOT NULL,
                     file_path      TEXT NOT NULL,
                     start_line     INTEGER NOT NULL,
@@ -86,7 +86,7 @@ impl GraphStore {
                     signature      TEXT,
                     doc            TEXT,
                     body           TEXT NOT NULL DEFAULT '',
-                    parent_id      TEXT REFERENCES nodes(id)
+                    parent_id      TEXT
                 );
 
                 CREATE INDEX idx_nodes_source    ON nodes(source_name);
@@ -96,8 +96,8 @@ impl GraphStore {
                 CREATE INDEX idx_nodes_parent    ON nodes(parent_id);
 
                 CREATE TABLE edges (
-                    from_id TEXT NOT NULL REFERENCES nodes(id),
-                    to_id   TEXT NOT NULL REFERENCES nodes(id),
+                    from_id TEXT NOT NULL ,
+                    to_id   TEXT NOT NULL ,
                     kind    TEXT NOT NULL,
                     PRIMARY KEY (from_id, to_id, kind)
                 );
@@ -119,7 +119,7 @@ impl GraphStore {
             )?;
 
             self.conn.execute(
-                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '1')",
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2')",
                 [],
             )?;
         }
@@ -648,6 +648,6 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "1");
+        assert_eq!(version, "2");
     }
 }

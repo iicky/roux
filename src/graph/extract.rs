@@ -159,6 +159,25 @@ fn walk_dir(
             continue;
         }
 
+        // Check for markdown docs
+        let ext = path.extension().and_then(|e| e.to_str());
+        if matches!(ext, Some("md" | "markdown")) {
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            if content.len() > 10 * 1024 * 1024 {
+                continue;
+            }
+            let rel_path = path
+                .strip_prefix(base)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_string();
+            extract_markdown_doc(&content, &rel_path, source_name, nodes, edges);
+            continue;
+        }
+
         let lang = language_hint.or_else(|| detect_language(&path));
         let lang = match lang {
             Some(l) => l,
@@ -175,7 +194,6 @@ fn walk_dir(
             Err(_) => continue,
         };
 
-        // Check file size (10MB limit)
         if code.len() > 10 * 1024 * 1024 {
             continue;
         }
@@ -392,6 +410,122 @@ fn extract_relationship_edges(
         }
         _ => {}
     }
+
+    // Extract type_ref edges from signatures (all languages)
+    extract_type_refs(node, code, lang, sym_id, edges);
+}
+
+/// Extract type references from function parameters, return types, and field types.
+fn extract_type_refs(node: &TsNode, code: &[u8], lang: &str, sym_id: &str, edges: &mut Vec<Edge>) {
+    // Collect type identifiers from the node's immediate signature area
+    let type_node_kinds: &[&str] = match lang {
+        "rust" => &["type_identifier", "scoped_type_identifier"],
+        "python" => &["type", "identifier"], // type annotations
+        "javascript" | "typescript" | "tsx" => &["type_identifier", "predefined_type"],
+        "go" => &["type_identifier", "qualified_type"],
+        _ => return,
+    };
+
+    // Only look at parameter lists and return types, not the full body
+    let search_nodes: Vec<TsNode> = {
+        let mut targets = Vec::new();
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "parameters"
+                | "parameter_list"
+                | "formal_parameters"
+                | "type_parameters"
+                | "return_type"
+                | "type_annotation"
+                | "field_declaration_list"
+                | "generic_type" => {
+                    targets.push(child);
+                }
+                _ => {}
+            }
+        }
+        targets
+    };
+
+    let mut seen = std::collections::HashSet::new();
+
+    for search_node in &search_nodes {
+        collect_type_refs_from(search_node, code, type_node_kinds, sym_id, edges, &mut seen);
+    }
+}
+
+fn collect_type_refs_from(
+    node: &TsNode,
+    code: &[u8],
+    type_kinds: &[&str],
+    sym_id: &str,
+    edges: &mut Vec<Edge>,
+    seen: &mut std::collections::HashSet<String>,
+) {
+    if type_kinds.contains(&node.kind()) {
+        let type_name = node_text(node, code).to_string();
+        // Skip built-in/primitive types
+        if !type_name.is_empty()
+            && !is_primitive_type(&type_name)
+            && type_name.len() < 200
+            && seen.insert(type_name.clone())
+        {
+            edges.push(Edge {
+                from_id: sym_id.to_string(),
+                to_id: format!("__unresolved::{type_name}"),
+                kind: "type_ref".to_string(),
+            });
+        }
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_type_refs_from(&child, code, type_kinds, sym_id, edges, seen);
+    }
+}
+
+fn is_primitive_type(name: &str) -> bool {
+    matches!(
+        name,
+        "str"
+            | "String"
+            | "string"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+            | "f32"
+            | "f64"
+            | "bool"
+            | "boolean"
+            | "char"
+            | "int"
+            | "float"
+            | "complex"
+            | "None"
+            | "void"
+            | "undefined"
+            | "null"
+            | "never"
+            | "any"
+            | "Any"
+            | "object"
+            | "number"
+            | "Self"
+            | "self"
+            | "error"
+            | "byte"
+            | "rune"
+    )
 }
 
 /// Extract import/use statements as edges.
@@ -631,6 +765,195 @@ fn resolve_references(edges: &mut Vec<Edge>, nodes: &[Node]) {
 
     // Remove edges that couldn't be resolved (external calls, stdlib, etc.)
     edges.retain(|e| !e.to_id.starts_with("__unresolved::"));
+}
+
+// ─── Markdown documentation extraction ───────────────────────────────
+
+/// Extract documentation nodes from a Markdown file.
+/// Creates a file node, section nodes (split on headings), and references edges
+/// for backtick-quoted identifiers.
+fn extract_markdown_doc(
+    content: &str,
+    rel_path: &str,
+    source_name: &str,
+    nodes: &mut Vec<Node>,
+    edges: &mut Vec<Edge>,
+) {
+    // Create file node
+    let file_qualified = format!("{source_name}::{rel_path}");
+    let file_id = Node::id_for(source_name, &file_qualified);
+    let file_name = rel_path.rsplit('/').next().unwrap_or(rel_path);
+
+    nodes.push(Node {
+        id: file_id.clone(),
+        kind: "file".to_string(),
+        name: file_name.to_string(),
+        qualified_name: file_qualified,
+        source_name: source_name.to_string(),
+        language: "markdown".to_string(),
+        file_path: rel_path.to_string(),
+        start_line: 0,
+        start_col: 0,
+        end_line: 0,
+        visibility: String::new(),
+        signature: None,
+        doc: None,
+        body: format!("file: {rel_path}"),
+        parent_id: None,
+    });
+
+    // Parse into sections by headings
+    let mut current_heading: Option<String> = None;
+    let mut current_body = String::new();
+    let mut section_start_line = 1usize;
+
+    for (i, line) in content.lines().enumerate() {
+        if let Some(heading) = parse_md_heading(line) {
+            // Flush previous section
+            flush_doc_section(
+                &current_heading,
+                &current_body,
+                section_start_line,
+                rel_path,
+                source_name,
+                &file_id,
+                nodes,
+                edges,
+            );
+            current_heading = Some(heading);
+            current_body.clear();
+            section_start_line = i + 1;
+        } else {
+            current_body.push_str(line);
+            current_body.push('\n');
+        }
+    }
+
+    // Flush final section
+    flush_doc_section(
+        &current_heading,
+        &current_body,
+        section_start_line,
+        rel_path,
+        source_name,
+        &file_id,
+        nodes,
+        edges,
+    );
+}
+
+fn parse_md_heading(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('#') {
+        return None;
+    }
+    let level = trimmed.chars().take_while(|&c| c == '#').count();
+    if level > 6 {
+        return None;
+    }
+    let text = trimmed[level..].trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    Some(text)
+}
+
+fn flush_doc_section(
+    heading: &Option<String>,
+    body: &str,
+    start_line: usize,
+    file_path: &str,
+    source_name: &str,
+    file_id: &str,
+    nodes: &mut Vec<Node>,
+    edges: &mut Vec<Edge>,
+) {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+
+    let section_name = heading.as_deref().unwrap_or("(preamble)");
+    let qualified = format!("{source_name}::{file_path}::{section_name}");
+    let id = Node::id_for(source_name, &qualified);
+
+    let body_text = format!("doc_section: {qualified}\n{section_name}\n{trimmed}");
+
+    nodes.push(Node {
+        id: id.clone(),
+        kind: "doc_section".to_string(),
+        name: section_name.to_string(),
+        qualified_name: qualified,
+        source_name: source_name.to_string(),
+        language: "markdown".to_string(),
+        file_path: file_path.to_string(),
+        start_line,
+        start_col: 0,
+        end_line: 0,
+        visibility: String::new(),
+        signature: None,
+        doc: Some(trimmed.to_string()),
+        body: body_text,
+        parent_id: Some(file_id.to_string()),
+    });
+
+    // Extract backtick references as edges to code symbols
+    for cap in extract_backtick_refs(trimmed) {
+        edges.push(Edge {
+            from_id: id.clone(),
+            to_id: format!("__unresolved::{cap}"),
+            kind: "references".to_string(),
+        });
+    }
+}
+
+/// Extract identifiers from backtick-quoted text in markdown.
+fn extract_backtick_refs(text: &str) -> Vec<String> {
+    let mut refs = Vec::new();
+    let mut in_backtick = false;
+    let mut current = String::new();
+
+    for ch in text.chars() {
+        if ch == '`' {
+            if in_backtick {
+                // End of backtick — check if it looks like an identifier
+                let trimmed = current.trim();
+                if !trimmed.is_empty()
+                    && trimmed.len() < 100
+                    && !trimmed.contains(' ')
+                    // Skip things that look like code snippets, not identifiers
+                    && !trimmed.contains('=')
+                    && !trimmed.starts_with('-')
+                    && !trimmed.starts_with('$')
+                {
+                    // Take the last component of a qualified name
+                    let name = trimmed
+                        .rsplit(|c| c == ':' || c == '.' || c == '/')
+                        .next()
+                        .unwrap_or(trimmed);
+                    if !name.is_empty()
+                        && name
+                            .chars()
+                            .next()
+                            .map(|c| c.is_alphabetic())
+                            .unwrap_or(false)
+                    {
+                        refs.push(name.to_string());
+                    }
+                }
+                current.clear();
+                in_backtick = false;
+            } else {
+                in_backtick = true;
+            }
+        } else if in_backtick {
+            current.push(ch);
+        }
+    }
+
+    refs.sort();
+    refs.dedup();
+    refs
 }
 
 // ─── Language-specific node extraction ───────────────────────────────
@@ -1336,5 +1659,63 @@ def _private():
         let names: Vec<&str> = g.nodes.iter().map(|n| n.name.as_str()).collect();
         // _private should be skipped by extractor (starts with _)
         assert!(names.contains(&"public"));
+    }
+
+    #[test]
+    fn test_rust_type_ref_edges() {
+        let g = extract_rust(
+            r#"
+            pub struct Config {}
+            pub fn load(path: Config) -> Result {}
+            "#,
+        );
+        let type_refs: Vec<_> = g.edges.iter().filter(|e| e.kind == "type_ref").collect();
+        assert!(
+            !type_refs.is_empty(),
+            "should have type_ref edge for Config param: {:?}",
+            g.edges
+        );
+    }
+
+    #[test]
+    fn test_markdown_doc_extraction() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("README.md"),
+            "# Getting Started\nInstall with `cargo`.\n\n## Usage\nCall `add` to ingest sources.\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("lib.rs"), "pub fn add() {}\n").unwrap();
+
+        let g = extract_dir(dir.path(), "mylib", "1.0.0", Some("rust")).unwrap();
+
+        // Should have doc_section nodes
+        let doc_sections: Vec<_> = g.nodes.iter().filter(|n| n.kind == "doc_section").collect();
+        assert!(
+            doc_sections.len() >= 2,
+            "should have at least 2 doc sections (Getting Started, Usage), got {}",
+            doc_sections.len()
+        );
+
+        // Should have references edges from backtick mentions
+        let refs: Vec<_> = g.edges.iter().filter(|e| e.kind == "references").collect();
+        assert!(
+            !refs.is_empty(),
+            "should have references edges from backtick mentions"
+        );
+    }
+
+    #[test]
+    fn test_backtick_ref_extraction() {
+        let refs = extract_backtick_refs("Use `spawn` to create tasks. See `tokio::Runtime`.");
+        assert!(refs.contains(&"spawn".to_string()));
+        assert!(refs.contains(&"Runtime".to_string()));
+    }
+
+    #[test]
+    fn test_backtick_skips_non_identifiers() {
+        let refs = extract_backtick_refs("Run `cargo build --release` and `export PATH=$HOME`.");
+        // These contain spaces, =, or $ — should be skipped
+        assert!(refs.is_empty(), "should skip non-identifiers: {:?}", refs);
     }
 }
