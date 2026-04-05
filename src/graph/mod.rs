@@ -34,6 +34,12 @@ pub struct Node {
     pub body: String,
     /// Parent node ID (file for top-level, class for methods, etc.)
     pub parent_id: Option<String>,
+    /// Blake3 hash of the symbol's source text (for staleness detection)
+    pub content_hash: Option<String>,
+    /// Number of lines this symbol spans
+    pub line_count: usize,
+    /// URL to view this symbol online (GitHub, docs.rs, etc.)
+    pub source_url: Option<String>,
 }
 
 /// An edge between two nodes (cross-references only, not containment).

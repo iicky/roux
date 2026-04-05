@@ -49,7 +49,7 @@ impl GraphStore {
             )
             .unwrap_or(0);
 
-        if version < 2 {
+        if version < 3 {
             // Drop old tables if they exist (pre-v1 data)
             self.conn.execute_batch(
                 "DROP TABLE IF EXISTS fts_symbols;
@@ -86,7 +86,10 @@ impl GraphStore {
                     signature      TEXT,
                     doc            TEXT,
                     body           TEXT NOT NULL DEFAULT '',
-                    parent_id      TEXT
+                    parent_id      TEXT,
+                    content_hash   TEXT,
+                    line_count     INTEGER NOT NULL DEFAULT 0,
+                    source_url     TEXT
                 );
 
                 CREATE INDEX idx_nodes_source    ON nodes(source_name);
@@ -119,7 +122,7 @@ impl GraphStore {
             )?;
 
             self.conn.execute(
-                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2')",
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '3')",
                 [],
             )?;
         }
@@ -172,8 +175,8 @@ impl GraphStore {
                 "INSERT OR REPLACE INTO nodes
                     (id, kind, name, qualified_name, source_name, language,
                      file_path, start_line, start_col, end_line, visibility,
-                     signature, doc, body, parent_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                     signature, doc, body, parent_id, content_hash, line_count, source_url)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             )?;
             let mut fts_stmt = tx.prepare_cached(
                 "INSERT INTO fts_nodes (id, name, qualified_name, file_path, signature, doc, body)
@@ -197,6 +200,9 @@ impl GraphStore {
                     node.doc,
                     node.body,
                     node.parent_id,
+                    node.content_hash,
+                    node.line_count,
+                    node.source_url,
                 ])?;
                 fts_stmt.execute(params![
                     node.id,
@@ -306,7 +312,7 @@ impl GraphStore {
         let sql = format!(
             "SELECT id, kind, name, qualified_name, source_name, language,
                     file_path, start_line, start_col, end_line, visibility,
-                    signature, doc, body, parent_id
+                    signature, doc, body, parent_id, content_hash, line_count, source_url
              FROM nodes WHERE id IN ({})",
             placeholders.join(", ")
         );
@@ -335,6 +341,9 @@ impl GraphStore {
                     doc: row.get(12)?,
                     body: row.get(13)?,
                     parent_id: row.get(14)?,
+                    content_hash: row.get(15)?,
+                    line_count: row.get(16)?,
+                    source_url: row.get(17)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -491,6 +500,9 @@ mod tests {
             doc: Some(format!("Does {name} things.")),
             body: format!("function: {qualified}\nfn {name}()\nDoes {name} things."),
             parent_id: None,
+            content_hash: None,
+            line_count: 10,
+            source_url: None,
         }
     }
 
@@ -559,6 +571,9 @@ mod tests {
             doc: None,
             body: "file: src/auth.rs".to_string(),
             parent_id: None,
+            content_hash: None,
+            line_count: 0,
+            source_url: None,
         };
 
         let mut func = make_node("login", "function", "test::login");
@@ -648,6 +663,6 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "2");
+        assert_eq!(version, "3");
     }
 }
