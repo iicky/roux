@@ -36,7 +36,15 @@ pub fn rank_subgraph(
     bm25_scores: &HashMap<String, f64>,
     top_k: usize,
 ) -> RankedSubgraph {
-    rank_subgraph_with(nodes, edges, seed_ids, bm25_scores, top_k, FusionMethod::ScoreFusion, None)
+    rank_subgraph_with(
+        nodes,
+        edges,
+        seed_ids,
+        bm25_scores,
+        top_k,
+        FusionMethod::ScoreFusion,
+        None,
+    )
 }
 
 /// Build a petgraph from nodes + edges, run PPR from seed nodes,
@@ -168,7 +176,10 @@ pub fn rank_subgraph_with(
     };
 
     // Kind demotion: file and doc_section nodes score lower than code symbols
-    let kind_map: HashMap<&str, &str> = nodes.iter().map(|n| (n.id.as_str(), n.kind.as_str())).collect();
+    let kind_map: HashMap<&str, &str> = nodes
+        .iter()
+        .map(|n| (n.id.as_str(), n.kind.as_str()))
+        .collect();
     let scored: Vec<(String, f64)> = scored
         .into_iter()
         .map(|(id, score)| {
@@ -200,14 +211,22 @@ pub fn rank_subgraph_with(
                     .and_then(|n| n.description.as_ref())
                     .map(|desc| {
                         let desc_lower = desc.to_lowercase();
-                        let desc_words: HashSet<&str> = desc_lower.split_whitespace()
+                        let desc_words: HashSet<&str> = desc_lower
+                            .split_whitespace()
                             .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
                             .collect();
-                        let hits = query_terms.iter().filter(|t| {
-                            let tl = t.to_lowercase();
-                            desc_words.iter().any(|dw| dw.contains(&tl))
-                        }).count();
-                        if query_terms.is_empty() { 0.0 } else { hits as f64 / query_terms.len() as f64 }
+                        let hits = query_terms
+                            .iter()
+                            .filter(|t| {
+                                let tl = t.to_lowercase();
+                                desc_words.iter().any(|dw| dw.contains(&tl))
+                            })
+                            .count();
+                        if query_terms.is_empty() {
+                            0.0
+                        } else {
+                            hits as f64 / query_terms.len() as f64
+                        }
                     })
                     .unwrap_or(0.0);
                 // Multiplicative boost: score × (1 + α × desc_match)

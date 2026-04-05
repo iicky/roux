@@ -352,7 +352,15 @@ impl GraphStore {
 
         // Run PPR ranking on the subgraph, fused with BM25 scores
         let q = if desc_rerank { Some(query) } else { None };
-        let ranked = super::rank::rank_subgraph_with(nodes, edges, &matched_ids, &bm25_scores, limit, fusion, q);
+        let ranked = super::rank::rank_subgraph_with(
+            nodes,
+            edges,
+            &matched_ids,
+            &bm25_scores,
+            limit,
+            fusion,
+            q,
+        );
 
         let scores: HashMap<String, f64> = ranked
             .nodes
@@ -533,13 +541,41 @@ pub struct SourceRecord {
 /// Strips template words (function, calls, in, class, etc.) and keeps symbol names.
 fn extract_description_keywords(desc: &str) -> String {
     const DESC_STOPWORDS: &[&str] = &[
-        "function", "method", "class", "struct", "enum", "trait", "impl", "module",
-        "interface", "const", "type", "file", "in", "calls", "called", "by",
-        "uses", "implements", "extends", "decorated", "with", "tested",
-        "and", "the", "a", "an", "of", "for", "to", "from", "is", "are",
+        "function",
+        "method",
+        "class",
+        "struct",
+        "enum",
+        "trait",
+        "impl",
+        "module",
+        "interface",
+        "const",
+        "type",
+        "file",
+        "in",
+        "calls",
+        "called",
+        "by",
+        "uses",
+        "implements",
+        "extends",
+        "decorated",
+        "with",
+        "tested",
+        "and",
+        "the",
+        "a",
+        "an",
+        "of",
+        "for",
+        "to",
+        "from",
+        "is",
+        "are",
     ];
 
-    desc.split(|c: char| c == ',' || c == ' ')
+    desc.split([',', ' '])
         .map(|w| w.trim())
         .filter(|w| {
             !w.is_empty()
@@ -620,11 +656,11 @@ pub fn code_tokenize(s: &str) -> Vec<String> {
                 let prev_lower = chars[i - 1].is_lowercase();
                 let next_lower = i + 1 < chars.len() && chars[i + 1].is_lowercase();
 
-                if prev_lower || (chars[i - 1].is_uppercase() && next_lower) {
-                    if !current.is_empty() {
-                        tokens.push(current.clone());
-                        current.clear();
-                    }
+                if (prev_lower || (chars[i - 1].is_uppercase() && next_lower))
+                    && !current.is_empty()
+                {
+                    tokens.push(current.clone());
+                    current.clear();
                 }
             }
             current.push(c);
@@ -650,7 +686,7 @@ pub fn tokenize_for_fts(text: &str) -> String {
     text.split_whitespace()
         .flat_map(|word| {
             // Split on common code separators
-            word.split(|c: char| c == ':' || c == '.' || c == '/' || c == '(' || c == ')')
+            word.split([':', '.', '/', '(', ')'])
                 .flat_map(|part| {
                     let mut tokens = code_tokenize(part);
                     // Emit concatenated form: "walk_dir" → also index "walkdir"
@@ -861,7 +897,10 @@ mod tests {
         // Verify index-time concatenation: "walk_dir" should be findable as "walkdir"
         let fts = tokenize_for_fts("walk_dir");
         eprintln!("tokenize_for_fts('walk_dir') = '{fts}'");
-        assert!(fts.contains("walkdir"), "should contain concatenated form, got: {fts}");
+        assert!(
+            fts.contains("walkdir"),
+            "should contain concatenated form, got: {fts}"
+        );
 
         let store = GraphStore::open_in_memory().unwrap();
         let node = make_node("walk_dir", "function", "test::walk_dir");
