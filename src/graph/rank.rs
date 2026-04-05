@@ -21,10 +21,13 @@ pub struct ScoredNode {
 
 /// Build a petgraph from nodes + edges, run PPR from seed nodes,
 /// return the top-k scored subgraph.
+/// Build a petgraph from nodes + edges, run PPR from seed nodes,
+/// fuse with BM25 scores, return the top-k scored subgraph.
 pub fn rank_subgraph(
     nodes: Vec<Node>,
     edges: Vec<Edge>,
     seed_ids: &[String],
+    bm25_scores: &HashMap<String, f64>,
     top_k: usize,
 ) -> RankedSubgraph {
     if nodes.is_empty() {
@@ -71,12 +74,32 @@ pub fn rank_subgraph(
         .filter_map(|id| id_to_idx.get(id).copied())
         .collect();
 
-    let scores = personalized_pagerank(&graph, &seed_indices, 0.15, 20);
+    let ppr_scores = personalized_pagerank(&graph, &seed_indices, 0.15, 20);
 
-    // Rank nodes by score
-    let mut scored: Vec<(String, f64)> = scores
+    // Normalize PPR scores to [0,1]
+    let ppr_max = ppr_scores.values().cloned().fold(0.0f64, f64::max);
+    let ppr_normalized: HashMap<String, f64> = ppr_scores
         .iter()
-        .map(|(idx, score)| (idx_to_id[idx].clone(), *score))
+        .map(|(idx, score)| {
+            let id = idx_to_id[idx].clone();
+            let norm = if ppr_max > 0.0 { score / ppr_max } else { 0.0 };
+            (id, norm)
+        })
+        .collect();
+
+    // Fuse: combined = BM25^0.7 × PPR^0.3
+    // BM25 dominates for keyword relevance, PPR adds structural boost
+    let alpha = 0.7;
+    let beta = 0.3;
+
+    let mut scored: Vec<(String, f64)> = nodes
+        .iter()
+        .map(|n| {
+            let bm25 = bm25_scores.get(&n.id).copied().unwrap_or(0.0);
+            let ppr = ppr_normalized.get(&n.id).copied().unwrap_or(0.0);
+            let combined = bm25.powf(alpha) * ppr.powf(beta);
+            (n.id.clone(), combined)
+        })
         .collect();
     scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -239,7 +262,7 @@ mod tests {
             },
         ];
 
-        let result = rank_subgraph(nodes, edges, &["a".to_string()], 10);
+        let result = rank_subgraph(nodes, edges, &["a".to_string()], &HashMap::new(), 10);
 
         // authenticate should be highest (it's the seed)
         assert_eq!(result.nodes[0].node.name, "authenticate");
@@ -301,7 +324,7 @@ mod tests {
             },
         ];
 
-        let result = rank_subgraph(nodes, edges, &["seed".to_string()], 10);
+        let result = rank_subgraph(nodes, edges, &["seed".to_string()], &HashMap::new(), 10);
 
         // Hub should rank second (after seed)
         let names: Vec<&str> = result.nodes.iter().map(|n| n.node.name.as_str()).collect();
@@ -321,7 +344,7 @@ mod tests {
             kind: "calls".to_string(),
         }];
 
-        let result = rank_subgraph(nodes, edges, &["n0".to_string()], 5);
+        let result = rank_subgraph(nodes, edges, &["n0".to_string()], &HashMap::new(), 5);
 
         // Should have at most ~5 nodes (seeds always included)
         assert!(result.nodes.len() <= 6, "got {}", result.nodes.len());
@@ -329,7 +352,7 @@ mod tests {
 
     #[test]
     fn test_empty_graph() {
-        let result = rank_subgraph(vec![], vec![], &[], 5);
+        let result = rank_subgraph(vec![], vec![], &[], &HashMap::new(), 5);
         assert!(result.nodes.is_empty());
     }
 }
