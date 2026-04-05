@@ -82,23 +82,18 @@ pub fn extract_file(
     // Create file node
     let file_qualified = format!("{source_name}::{rel_path}");
     let file_id = Node::id_for(source_name, &file_qualified);
-    nodes.push(Node {
-        id: file_id.clone(),
-        kind: "file".to_string(),
-        name: rel_path.clone(),
-        qualified_name: file_qualified,
-        source_name: source_name.to_string(),
-        language: lang.to_string(),
-        file_path: rel_path.clone(),
-        start_line: 0,
-        start_col: 0,
-        end_line: 0,
-        visibility: String::new(),
-        signature: None,
-        doc: None,
-        body: format!("file: {rel_path}"),
-        parent_id: None,
-    });
+    let file_hash = blake3::hash(code.as_bytes()).to_hex().to_string();
+    let file_lines = code.lines().count();
+    nodes.push(make_file_node(
+        &file_id,
+        &rel_path,
+        &file_qualified,
+        source_name,
+        lang,
+        &rel_path,
+        Some(&file_hash),
+        file_lines,
+    ));
 
     extract_from_source(
         &code,
@@ -221,28 +216,23 @@ fn walk_dir(
         // Create a file node
         let file_qualified = format!("{source_name}::{rel_path}");
         let file_id = Node::id_for(source_name, &file_qualified);
+        let file_hash = blake3::hash(code.as_bytes()).to_hex().to_string();
+        let file_lines = code.lines().count();
         let file_name = path
             .file_name()
             .map(|f| f.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        nodes.push(Node {
-            id: file_id.clone(),
-            kind: "file".to_string(),
-            name: file_name,
-            qualified_name: file_qualified,
-            source_name: source_name.to_string(),
-            language: lang.to_string(),
-            file_path: rel_path.clone(),
-            start_line: 0,
-            start_col: 0,
-            end_line: 0,
-            visibility: String::new(),
-            signature: None,
-            doc: None,
-            body: format!("file: {rel_path}"),
-            parent_id: None,
-        });
+        nodes.push(make_file_node(
+            &file_id,
+            &file_name,
+            &file_qualified,
+            source_name,
+            lang,
+            &rel_path,
+            Some(&file_hash),
+            file_lines,
+        ));
 
         let _ = extract_from_source(
             &code,
@@ -991,9 +981,15 @@ fn extract_node(
         sym.start_line = node.start_position().row + 1;
         sym.start_col = node.start_position().column;
         sym.end_line = node.end_position().row + 1;
+        sym.line_count = sym.end_line.saturating_sub(sym.start_line) + 1;
         sym.visibility = detect_visibility(node, code, lang);
         sym.id = Node::id_for(source_name, &sym.qualified_name);
         sym.parent_id = parent_id.map(|s| s.to_string());
+
+        // Content hash for staleness detection
+        let source_text = &code[node.start_byte()..node.end_byte()];
+        sym.content_hash = Some(blake3::hash(source_text).to_hex().to_string());
+
         sym.body = sym.build_body();
 
         let sym_id = sym.id.clone();
@@ -1138,24 +1134,19 @@ fn extract_markdown_doc(
     let file_qualified = format!("{source_name}::{rel_path}");
     let file_id = Node::id_for(source_name, &file_qualified);
     let file_name = rel_path.rsplit('/').next().unwrap_or(rel_path);
+    let file_hash = blake3::hash(content.as_bytes()).to_hex().to_string();
+    let file_lines = content.lines().count();
 
-    nodes.push(Node {
-        id: file_id.clone(),
-        kind: "file".to_string(),
-        name: file_name.to_string(),
-        qualified_name: file_qualified,
-        source_name: source_name.to_string(),
-        language: "markdown".to_string(),
-        file_path: rel_path.to_string(),
-        start_line: 0,
-        start_col: 0,
-        end_line: 0,
-        visibility: String::new(),
-        signature: None,
-        doc: None,
-        body: format!("file: {rel_path}"),
-        parent_id: None,
-    });
+    nodes.push(make_file_node(
+        &file_id,
+        file_name,
+        &file_qualified,
+        source_name,
+        "markdown",
+        rel_path,
+        Some(&file_hash),
+        file_lines,
+    ));
 
     // Parse into sections by headings
     let mut current_heading: Option<String> = None;
@@ -1250,6 +1241,9 @@ fn flush_doc_section(
         doc: Some(trimmed.to_string()),
         body: body_text,
         parent_id: Some(file_id.to_string()),
+        content_hash: Some(blake3::hash(trimmed.as_bytes()).to_hex().to_string()),
+        line_count: trimmed.lines().count(),
+        source_url: None,
     });
 
     // Extract backtick references as edges to code symbols
@@ -1642,6 +1636,38 @@ fn detect_visibility(node: &TsNode, code: &[u8], lang: &str) -> String {
     }
 }
 
+fn make_file_node(
+    id: &str,
+    name: &str,
+    qualified_name: &str,
+    source_name: &str,
+    language: &str,
+    file_path: &str,
+    content_hash: Option<&str>,
+    line_count: usize,
+) -> Node {
+    Node {
+        id: id.to_string(),
+        kind: "file".to_string(),
+        name: name.to_string(),
+        qualified_name: qualified_name.to_string(),
+        source_name: source_name.to_string(),
+        language: language.to_string(),
+        file_path: file_path.to_string(),
+        start_line: 0,
+        start_col: 0,
+        end_line: 0,
+        visibility: String::new(),
+        signature: None,
+        doc: None,
+        body: format!("file: {file_path}"),
+        parent_id: None,
+        content_hash: content_hash.map(|s| s.to_string()),
+        line_count,
+        source_url: None,
+    }
+}
+
 fn make_node(name: &str, kind: &str, signature: Option<String>, doc: Option<String>) -> Node {
     let name = name.to_string();
     Node {
@@ -1660,6 +1686,9 @@ fn make_node(name: &str, kind: &str, signature: Option<String>, doc: Option<Stri
         doc,
         body: String::new(),
         parent_id: None,
+        content_hash: None,
+        line_count: 0,
+        source_url: None,
     }
 }
 
