@@ -189,7 +189,10 @@ fn walk_dir(
             continue;
         }
 
-        let lang = language_hint.or_else(|| detect_language(&path));
+        // Use language hint if it has a grammar, otherwise detect from file extension
+        let lang = language_hint
+            .filter(|l| get_ts_language(l).is_some())
+            .or_else(|| detect_language(&path));
         let lang = match lang {
             Some(l) => l,
             None => continue,
@@ -259,6 +262,11 @@ fn detect_language(path: &Path) -> Option<&'static str> {
         Some("ts" | "tsx") => Some("typescript"),
         Some("js" | "jsx" | "mjs") => Some("javascript"),
         Some("go") => Some("go"),
+        Some("cpp" | "cc" | "cxx" | "c++" | "hpp" | "h") => Some("cpp"),
+        Some("c") => Some("c"),
+        Some("sh" | "bash" | "zsh") => Some("bash"),
+        Some("java") => Some("java"),
+        Some("rb") => Some("ruby"),
         _ => None,
     }
 }
@@ -270,6 +278,8 @@ fn get_ts_language(lang: &str) -> Option<Language> {
         "javascript" => Some(tree_sitter_javascript::LANGUAGE.into()),
         "typescript" | "tsx" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
         "go" => Some(tree_sitter_go::LANGUAGE.into()),
+        "cpp" | "c" => Some(tree_sitter_cpp::LANGUAGE.into()),
+        "bash" => Some(tree_sitter_bash::LANGUAGE.into()),
         _ => None,
     }
 }
@@ -1192,7 +1202,7 @@ fn extract_node(
         "python" => extract_python_node(node, code, kind),
         "javascript" | "typescript" | "tsx" => extract_js_node(node, code, kind),
         "go" => extract_go_node(node, code, kind),
-        _ => None,
+        _ => extract_generic_node(node, code, kind),
     } {
         // Build qualified name
         let qualified = if prefix.is_empty() {
@@ -1298,22 +1308,34 @@ fn extract_calls_recursive(
     edges: &mut Vec<Edge>,
 ) {
     // Look for call expressions
-    if node.kind() == "call_expression"
-        || node.kind() == "call"
-        || node.kind() == "macro_invocation"
+    let kind = node.kind();
+    if kind == "call_expression"
+        || kind == "call"
+        || kind == "macro_invocation"
+        || kind == "method_call_expression" // Rust: self.foo(), obj.bar()
+        || kind == "member_expression"
+    // JS: obj.method()
     {
-        // The function being called is usually the first child
-        if let Some(func_node) = node
-            .child_by_field_name("function")
-            .or_else(|| node.child_by_field_name("name"))
-            .or_else(|| node.child(0))
-        {
-            let callee_name = node_text(&func_node, code).to_string();
-            if !callee_name.is_empty() && callee_name.len() < 200 {
-                // Store as an unresolved reference — we'll resolve to actual node IDs later
+        let callee_name = if kind == "method_call_expression" {
+            // Rust method calls: extract just the method name field
+            node.child_by_field_name("name")
+                .map(|n| node_text(&n, code).to_string())
+        } else {
+            // Regular calls: function/name/first-child
+            node.child_by_field_name("function")
+                .or_else(|| node.child_by_field_name("name"))
+                .or_else(|| node.child(0))
+                .map(|n| node_text(&n, code).to_string())
+        };
+
+        if let Some(name) = callee_name {
+            // For qualified calls like "path::to::func", take just the last segment
+            let short_name = name.rsplit("::").next().unwrap_or(&name);
+            let short_name = short_name.rsplit('.').next().unwrap_or(short_name);
+            if !short_name.is_empty() && short_name.len() < 200 {
                 edges.push(Edge {
                     from_id: caller_id.to_string(),
-                    to_id: format!("__unresolved::{callee_name}"),
+                    to_id: format!("__unresolved::{short_name}"),
                     kind: "calls".to_string(),
                 });
             }
@@ -1805,6 +1827,75 @@ fn extract_go_node(node: &TsNode, code: &[u8], kind: &str) -> Option<Node> {
                 "type"
             };
             Some(make_node(&name, type_kind, None, doc))
+        }
+        _ => None,
+    }
+}
+
+/// Generic fallback extractor for unsupported languages.
+/// Extracts common node types that appear across most tree-sitter grammars.
+fn extract_generic_node(node: &TsNode, code: &[u8], kind: &str) -> Option<Node> {
+    match kind {
+        // Function-like declarations (covers C, C++, Java, Ruby, Shell, etc.)
+        "function_definition"
+        | "function_declaration"
+        | "method_definition"
+        | "method_declaration"
+        | "function_item" // Rust-like
+        | "subroutine"
+        | "procedure" => {
+            // C/C++: name is inside function_declarator child
+            let declarator = find_child_by_kind(node, "function_declarator");
+            let name_source = declarator.as_ref().unwrap_or(node);
+            let name = find_child_by_kind(name_source, "identifier")
+                .or_else(|| find_child_by_kind(name_source, "name"))
+                .or_else(|| find_child_by_kind(name_source, "field_identifier"))
+                .or_else(|| find_child_by_kind(name_source, "property_identifier"))
+                .or_else(|| find_child_by_kind(node, "word"))?; // Bash
+            let name = node_text(&name, code).to_string();
+            if name.is_empty() || name.len() > 200 {
+                return None;
+            }
+            let sig = extract_signature_text(node, code);
+            let doc = extract_doc_comment(node, code);
+            Some(make_node(&name, "function", sig, doc))
+        }
+        // Class/struct/type declarations
+        "class_definition"
+        | "class_declaration"
+        | "class_specifier"     // C++
+        | "struct_item"
+        | "struct_declaration"
+        | "struct_specifier"    // C++
+        | "enum_item"
+        | "enum_declaration"
+        | "enum_specifier"      // C++
+        | "interface_declaration"
+        | "trait_item"
+        | "type_declaration"
+        | "record_declaration" => {
+            let name = find_child_by_kind(node, "identifier")
+                .or_else(|| find_child_by_kind(node, "type_identifier"))
+                .or_else(|| find_child_by_kind(node, "name"))?;
+            let name = node_text(&name, code).to_string();
+            if name.is_empty() || name.len() > 200 {
+                return None;
+            }
+            let doc = extract_doc_comment(node, code);
+            let node_kind = if kind.contains("class") {
+                "class"
+            } else if kind.contains("struct") {
+                "struct"
+            } else if kind.contains("enum") {
+                "enum"
+            } else if kind.contains("interface") {
+                "interface"
+            } else if kind.contains("trait") {
+                "trait"
+            } else {
+                "type"
+            };
+            Some(make_node(&name, node_kind, None, doc))
         }
         _ => None,
     }
