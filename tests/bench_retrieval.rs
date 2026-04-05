@@ -772,7 +772,19 @@ fn bench_adversarial_self() {
         .upsert_source("roux", "dev", "rust", &graph.nodes, &graph.edges)
         .unwrap();
 
-    run_adversarial("roux", &store, ADVERSARIAL_ROUX);
+    let (h10, mrr_score) = run_adversarial("roux", &store, ADVERSARIAL_ROUX);
+
+    // Regression gates — lock in current adversarial floor
+    assert!(
+        h10 >= 0.55,
+        "Adversarial Hit@10 regressed: {:.1}% (need ≥55%)",
+        h10 * 100.0
+    );
+    assert!(
+        mrr_score >= 0.25,
+        "Adversarial MRR regressed: {:.3} (need ≥0.25)",
+        mrr_score
+    );
 }
 
 #[test]
@@ -811,7 +823,11 @@ fn bench_adversarial_multi() {
     }
 }
 
-fn run_adversarial(name: &str, store: &roux_cli::graph::store::GraphStore, queries: &[QueryCase]) {
+fn run_adversarial(
+    name: &str,
+    store: &roux_cli::graph::store::GraphStore,
+    queries: &[QueryCase],
+) -> (f64, f64) {
     let mut results: Vec<(Vec<String>, &[&str])> = Vec::new();
 
     eprintln!("\n═══ adversarial: {name} ({} queries) ═══", queries.len());
@@ -893,6 +909,8 @@ fn run_adversarial(name: &str, store: &roux_cli::graph::store::GraphStore, queri
         );
     }
     eprintln!();
+
+    (h10, mrr_score)
 }
 
 // ─── Multi-repo benchmark (requires cloned repos) ───────────────────
