@@ -309,38 +309,126 @@ fn extract_from_source(
     // Extract import edges from top-level
     extract_imports(&root, code_bytes, lang, source_name, edges);
 
-    // Use tags.scm query-based extraction when opted in via env var.
-    // Default to AST walking until tags extraction reaches parity.
-    let use_tags = std::env::var("ROUX_USE_TAGS").is_ok();
-    let (tag_symbols, tag_refs) = if use_tags {
-        super::tags::extract_tags(code_bytes, lang, ts_lang.clone(), &tree)
-    } else {
-        (vec![], vec![])
-    };
+    // Tags-based extraction: use tags.scm queries, fall back to AST walking
+    // for languages without a tags query.
+    let (tag_symbols, tag_refs) =
+        super::tags::extract_tags(code_bytes, lang, ts_lang.clone(), &tree);
 
-    if use_tags && !tag_symbols.is_empty() {
-        // Tags-based path: convert TaggedSymbols to Nodes
-        for sym in &tag_symbols {
-            let qualified = format!("{source_name}::{}", sym.name);
+    if !tag_symbols.is_empty() {
+        // Tags-based path: convert TaggedSymbols to Nodes, enriched via AST
+        //
+        // Two passes:
+        // 1. Compute parent nesting from byte ranges → build qualified names + IDs
+        // 2. Create nodes with correct IDs, run edge inference
+
+        let container_kinds = [
+            "class",
+            "module",
+            "struct",
+            "enum",
+            "trait",
+            "impl",
+            "interface",
+        ];
+
+        // Pass 1: Compute nesting to build qualified name prefixes
+        struct SymMeta {
+            idx: usize,
+            name: String,
+            kind: String,
+            start_byte: usize,
+            end_byte: usize,
+        }
+        let mut metas: Vec<SymMeta> = tag_symbols
+            .iter()
+            .enumerate()
+            .map(|(i, s)| SymMeta {
+                idx: i,
+                name: s.name.clone(),
+                kind: s.kind.as_str().to_string(),
+                start_byte: s.start_byte,
+                end_byte: s.end_byte,
+            })
+            .collect();
+        metas.sort_by(|a, b| {
+            a.start_byte
+                .cmp(&b.start_byte)
+                .then(b.end_byte.cmp(&a.end_byte))
+        });
+
+        // Build prefix map: sym_index → qualified prefix (e.g. "auth" for login inside mod auth)
+        let mut prefix_map: std::collections::HashMap<usize, String> =
+            std::collections::HashMap::new();
+        let mut parent_idx_map: std::collections::HashMap<usize, usize> =
+            std::collections::HashMap::new();
+        let mut stack: Vec<(usize, usize, usize, String)> = Vec::new(); // (start, end, idx, name)
+
+        for meta in &metas {
+            while let Some(top) = stack.last() {
+                if meta.start_byte >= top.1 {
+                    stack.pop();
+                } else {
+                    break;
+                }
+            }
+            if let Some(top) = stack.last() {
+                // Build full prefix from stack
+                let prefix: String = stack
+                    .iter()
+                    .map(|(_, _, _, n)| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join("::");
+                prefix_map.insert(meta.idx, prefix);
+                parent_idx_map.insert(meta.idx, top.2);
+            }
+            if container_kinds.contains(&meta.kind.as_str()) {
+                stack.push((meta.start_byte, meta.end_byte, meta.idx, meta.name.clone()));
+            }
+        }
+
+        // Pass 2: Create nodes with correct qualified names, run edge inference
+        // Track IDs by sym index for parent_id lookup
+        let mut id_by_idx: Vec<String> = vec![String::new(); tag_symbols.len()];
+
+        for (i, sym) in tag_symbols.iter().enumerate() {
+            let qualified = if let Some(prefix) = prefix_map.get(&i) {
+                format!("{source_name}::{prefix}::{}", sym.name)
+            } else {
+                format!("{source_name}::{}", sym.name)
+            };
             let id = Node::id_for(source_name, &qualified);
+            id_by_idx[i] = id.clone();
 
-            // Extract source text for this symbol for hashing and body
-            let sym_source = &code[sym.start_byte..sym.end_byte.min(code.len())];
-            let content_hash = blake3::hash(sym_source.as_bytes()).to_hex().to_string();
+            // Recover the tree-sitter AST node for enrichment
+            let ts_node = root.descendant_for_byte_range(sym.start_byte, sym.end_byte);
 
-            // Build a signature from the first line of the symbol
-            let sig = sym_source.lines().next().map(|l| l.to_string());
+            // Content hash from symbol source text
+            let source_text = &code_bytes[sym.start_byte..sym.end_byte.min(code_bytes.len())];
+            let content_hash = blake3::hash(source_text).to_hex().to_string();
 
-            // Build body text for FTS indexing
-            let mut body = format!("{}: {}", sym.kind.as_str(), qualified);
-            if let Some(ref s) = sig {
-                body.push('\n');
-                body.push_str(s);
-            }
-            if let Some(ref doc) = sym.doc {
-                body.push('\n');
-                body.push_str(doc);
-            }
+            // Enrich with AST-derived metadata
+            let (visibility, signature, doc) = if let Some(ref n) = ts_node {
+                (
+                    detect_visibility(n, code_bytes, lang),
+                    extract_signature_text(n, code_bytes),
+                    extract_doc_comment(n, code_bytes)
+                        .or_else(|| {
+                            if lang == "python" {
+                                extract_python_docstring(n, code_bytes)
+                            } else {
+                                None
+                            }
+                        })
+                        .or(sym.doc.clone()),
+                )
+            } else {
+                (String::new(), None, sym.doc.clone())
+            };
+
+            let parent_id = parent_idx_map
+                .get(&i)
+                .map(|pi| id_by_idx[*pi].clone())
+                .or_else(|| file_parent_id.map(|s| s.to_string()));
 
             let mut node = Node {
                 id: id.clone(),
@@ -353,25 +441,38 @@ fn extract_from_source(
                 start_line: sym.start_line,
                 start_col: sym.start_col,
                 end_line: sym.end_line,
-                visibility: String::new(),
-                signature: sig,
-                doc: sym.doc.clone(),
-                body,
-                parent_id: file_parent_id.map(|s| s.to_string()),
+                visibility,
+                signature,
+                doc,
+                body: String::new(),
+                parent_id,
                 content_hash: Some(content_hash),
                 line_count: sym.end_line.saturating_sub(sym.start_line) + 1,
                 source_url: None,
                 description: None,
             };
             node.body = node.build_body();
+
+            let node_kind = node.kind.clone();
             nodes.push(node);
+
+            // Run edge inference on the AST node
+            if let Some(ref n) = ts_node {
+                extract_relationship_edges(n, code_bytes, lang, &id, edges);
+                extract_decorator_edges(n, code_bytes, lang, &id, edges);
+                if matches!(node_kind.as_str(), "function" | "method") {
+                    extract_raise_edges(n, code_bytes, lang, &id, edges);
+                    extract_route_registrations(n, code_bytes, lang, &id, edges);
+                    extract_call_references(n, code_bytes, &id, edges);
+                }
+            }
         }
 
         // Convert tagged references to unresolved edges
         for r in &tag_refs {
             if !r.name.is_empty() && r.name.len() < 200 {
                 edges.push(Edge {
-                    from_id: String::new(), // will be resolved later
+                    from_id: String::new(),
                     to_id: format!("__unresolved::{}", r.name),
                     kind: match r.kind {
                         super::tags::RefKind::Call => "calls".to_string(),
@@ -1271,13 +1372,8 @@ fn extract_node(
     let kind = node.kind();
 
     // Try to extract a node from this node
-    if let Some(mut sym) = match lang {
-        "rust" => extract_rust_node(node, code, kind),
-        "python" => extract_python_node(node, code, kind),
-        "javascript" | "typescript" | "tsx" => extract_js_node(node, code, kind),
-        "go" => extract_go_node(node, code, kind),
-        _ => extract_generic_node(node, code, kind),
-    } {
+    // Generic fallback for languages without tags.scm queries
+    if let Some(mut sym) = extract_generic_node(node, code, kind) {
         // Build qualified name
         let qualified = if prefix.is_empty() {
             format!("{source_name}::{}", sym.name)
@@ -1713,198 +1809,8 @@ fn clean_block_comment(text: &str) -> String {
         .join("\n")
 }
 
-fn extract_rust_node(node: &TsNode, code: &[u8], kind: &str) -> Option<Node> {
-    match kind {
-        "function_item" | "function_signature_item" => {
-            let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
-            let sig = extract_signature_text(node, code);
-            let doc = extract_doc_comment(node, code);
-            Some(make_node(&name, "function", sig, doc))
-        }
-        "struct_item" => {
-            let name = node_text(&find_child_by_kind(node, "type_identifier")?, code).to_string();
-            let doc = extract_doc_comment(node, code);
-            Some(make_node(
-                &name,
-                "struct",
-                Some(format!("struct {}", &name)),
-                doc,
-            ))
-        }
-        "enum_item" => {
-            let name = node_text(&find_child_by_kind(node, "type_identifier")?, code).to_string();
-            let doc = extract_doc_comment(node, code);
-            Some(make_node(
-                &name,
-                "enum",
-                Some(format!("enum {}", &name)),
-                doc,
-            ))
-        }
-        "trait_item" => {
-            let name = node_text(&find_child_by_kind(node, "type_identifier")?, code).to_string();
-            let doc = extract_doc_comment(node, code);
-            Some(make_node(
-                &name,
-                "trait",
-                Some(format!("trait {}", &name)),
-                doc,
-            ))
-        }
-        "impl_item" => {
-            let type_node = find_child_by_kind(node, "type_identifier")
-                .or_else(|| find_child_by_kind(node, "generic_type"))?;
-            let name = node_text(&type_node, code).to_string();
-            let sig = extract_signature_text(node, code);
-            Some(make_node(&name, "impl", sig, None))
-        }
-        "mod_item" => {
-            let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
-            let doc = extract_doc_comment(node, code);
-            Some(make_node(&name, "module", None, doc))
-        }
-        "const_item" | "static_item" => {
-            let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
-            let doc = extract_doc_comment(node, code);
-            Some(make_node(
-                &name,
-                "const",
-                Some(format!("const {name}")),
-                doc,
-            ))
-        }
-        "type_item" => {
-            let name = node_text(&find_child_by_kind(node, "type_identifier")?, code).to_string();
-            let doc = extract_doc_comment(node, code);
-            Some(make_node(&name, "type", Some(format!("type {name}")), doc))
-        }
-        _ => None,
-    }
-}
-
-fn extract_python_node(node: &TsNode, code: &[u8], kind: &str) -> Option<Node> {
-    match kind {
-        "function_definition" => {
-            let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
-            if name.starts_with('_') && !name.starts_with("__") {
-                return None;
-            }
-            let sig = extract_signature_text(node, code);
-            let doc =
-                extract_python_docstring(node, code).or_else(|| extract_doc_comment(node, code));
-            Some(make_node(&name, "function", sig, doc))
-        }
-        "class_definition" => {
-            let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
-            let doc =
-                extract_python_docstring(node, code).or_else(|| extract_doc_comment(node, code));
-            Some(make_node(
-                &name,
-                "class",
-                Some(format!("class {name}")),
-                doc,
-            ))
-        }
-        _ => None,
-    }
-}
-
-fn extract_js_node(node: &TsNode, code: &[u8], kind: &str) -> Option<Node> {
-    match kind {
-        "function_declaration" => {
-            let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
-            let sig = extract_signature_text(node, code);
-            let doc = extract_doc_comment(node, code);
-            Some(make_node(&name, "function", sig, doc))
-        }
-        "class_declaration" => {
-            let name = node_text(
-                &find_child_by_kind(node, "identifier")
-                    .or_else(|| find_child_by_kind(node, "type_identifier"))?,
-                code,
-            )
-            .to_string();
-            let doc = extract_doc_comment(node, code);
-            Some(make_node(
-                &name,
-                "class",
-                Some(format!("class {name}")),
-                doc,
-            ))
-        }
-        "export_statement" => {
-            // Check if it's exporting a declaration
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                if let Some(sym) = extract_js_node(&child, code, child.kind()) {
-                    return Some(sym);
-                }
-            }
-            None
-        }
-        "method_definition" => {
-            let name =
-                node_text(&find_child_by_kind(node, "property_identifier")?, code).to_string();
-            let sig = extract_signature_text(node, code);
-            let doc = extract_doc_comment(node, code);
-            Some(make_node(&name, "method", sig, doc))
-        }
-        "lexical_declaration" => {
-            // export const foo = (...) => ...
-            let decl = find_child_by_kind(node, "variable_declarator")?;
-            let name = node_text(&find_child_by_kind(&decl, "identifier")?, code).to_string();
-            let value = decl.child_by_field_name("value")?;
-            if value.kind() == "arrow_function" || value.kind() == "function" {
-                let doc = extract_doc_comment(node, code);
-                Some(make_node(&name, "function", None, doc))
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
-}
-
-fn extract_go_node(node: &TsNode, code: &[u8], kind: &str) -> Option<Node> {
-    match kind {
-        "function_declaration" => {
-            let name = node_text(&find_child_by_kind(node, "identifier")?, code).to_string();
-            // Only export uppercase functions in Go
-            if !name.starts_with(|c: char| c.is_uppercase()) {
-                return None;
-            }
-            let sig = extract_signature_text(node, code);
-            let doc = extract_doc_comment(node, code);
-            Some(make_node(&name, "function", sig, doc))
-        }
-        "method_declaration" => {
-            let name = node_text(&find_child_by_kind(node, "field_identifier")?, code).to_string();
-            if !name.starts_with(|c: char| c.is_uppercase()) {
-                return None;
-            }
-            let sig = extract_signature_text(node, code);
-            let doc = extract_doc_comment(node, code);
-            Some(make_node(&name, "method", sig, doc))
-        }
-        "type_declaration" => {
-            let spec = find_child_by_kind(node, "type_spec")?;
-            let name = node_text(&find_child_by_kind(&spec, "type_identifier")?, code).to_string();
-            if !name.starts_with(|c: char| c.is_uppercase()) {
-                return None;
-            }
-            let doc = extract_doc_comment(node, code);
-            let type_kind = if find_child_by_kind(&spec, "struct_type").is_some() {
-                "struct"
-            } else if find_child_by_kind(&spec, "interface_type").is_some() {
-                "interface"
-            } else {
-                "type"
-            };
-            Some(make_node(&name, type_kind, None, doc))
-        }
-        _ => None,
-    }
-}
+// Language-specific extractors removed — tags.scm queries handle all supported languages.
+// extract_generic_node below is the fallback for languages without a tags query.
 
 /// Generic fallback extractor for unsupported languages.
 /// Extracts common node types that appear across most tree-sitter grammars.
