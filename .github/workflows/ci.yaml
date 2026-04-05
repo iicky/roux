@@ -32,17 +32,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        include:
-          - os: ubuntu-latest
-            features: ""
-          - os: macos-latest
-            features: "--features metal"
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
-      - run: cargo nextest run ${{ matrix.features }}
+      - run: cargo nextest run
 
   test-gate:
     name: Test

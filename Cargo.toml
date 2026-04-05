@@ -55,19 +55,9 @@ tree-sitter-bash = "0.25"
 
 # Graph algorithms
 petgraph = "0.8"
-candle-core = "0.10"
-candle-nn = "0.10"
-candle-transformers = "0.10"
-tokenizers = "0.22"
-hf-hub = "0.5"
 
 [dev-dependencies]
 tempfile = "3"
-
-[features]
-default = []
-metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
-cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 
 [profile.release]
 lto = true
