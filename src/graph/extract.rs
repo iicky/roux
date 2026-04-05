@@ -49,6 +49,9 @@ pub fn extract_dir(
         );
     }
 
+    // Generate natural language descriptions from graph context
+    generate_descriptions(&mut all_nodes, &all_edges);
+
     Ok(FileGraph {
         nodes: all_nodes,
         edges: all_edges,
@@ -863,6 +866,184 @@ fn infer_export_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
     }
 }
 
+/// Generic names that add no semantic signal as callers/callees.
+const STOPLIST: &[&str] = &[
+    "new", "init", "main", "run", "build", "default", "from", "into",
+    "clone", "drop", "fmt", "eq", "hash", "cmp", "test", "setup",
+    "__init__", "__new__", "__repr__", "__str__", "__eq__",
+    "toString", "valueOf", "constructor",
+];
+
+/// Generate natural language descriptions from graph edges.
+/// Each symbol gets a templated description like:
+/// "function that calls validate_token and hash_password, called by login_handler,
+///  located in auth module, implements Authenticator"
+fn generate_descriptions(nodes: &mut [Node], edges: &[Edge]) {
+    // Build lookup maps from immutable snapshot
+    let name_map: std::collections::HashMap<String, String> = nodes
+        .iter()
+        .map(|n| (n.id.clone(), n.name.clone()))
+        .collect();
+    let kind_map: std::collections::HashMap<String, String> = nodes
+        .iter()
+        .map(|n| (n.id.clone(), n.kind.clone()))
+        .collect();
+    let parent_map: std::collections::HashMap<String, (String, String)> = nodes
+        .iter()
+        .filter_map(|n| {
+            n.parent_id.as_ref().and_then(|pid| {
+                name_map.get(pid).and_then(|pname| {
+                    kind_map.get(pid).map(|pkind| {
+                        (n.id.clone(), (pname.clone(), pkind.clone()))
+                    })
+                })
+            })
+        })
+        .collect();
+
+    // Pre-compute edge lookups
+    let mut calls_out: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    let mut called_by: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    let mut implements: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    let mut inherits_from: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    let mut type_refs: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    let mut tested_by: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    let mut decorators: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+
+    for edge in edges {
+        match edge.kind.as_str() {
+            "calls" => {
+                calls_out.entry(edge.from_id.as_str()).or_default().push(&edge.to_id);
+                called_by.entry(edge.to_id.as_str()).or_default().push(&edge.from_id);
+            }
+            "implements" => {
+                implements.entry(edge.from_id.as_str()).or_default().push(&edge.to_id);
+            }
+            "inherits" => {
+                inherits_from.entry(edge.from_id.as_str()).or_default().push(&edge.to_id);
+            }
+            "type_ref" => {
+                type_refs.entry(edge.from_id.as_str()).or_default().push(&edge.to_id);
+            }
+            "tests" => {
+                tested_by.entry(edge.to_id.as_str()).or_default().push(&edge.from_id);
+            }
+            "decorates" => {
+                decorators.entry(edge.to_id.as_str()).or_default().push(&edge.from_id);
+            }
+            _ => {}
+        }
+    }
+
+    for node in nodes.iter_mut() {
+        if node.kind == "file" || node.kind == "doc_section" {
+            continue;
+        }
+
+        let mut parts: Vec<String> = Vec::new();
+
+        // Kind + name
+        parts.push(format!("{} {}", node.kind, node.name));
+
+        // Parent context
+        if let Some((pname, pkind)) = parent_map.get(&node.id) {
+            if pkind != "file" {
+                parts.push(format!("in {pkind} {pname}"));
+            } else {
+                parts.push(format!("in {pname}"));
+            }
+        }
+
+        // Calls (filtered by stoplist)
+        if let Some(callees) = calls_out.get(node.id.as_str()) {
+            let names: Vec<&str> = callees
+                .iter()
+                .filter_map(|id| name_map.get(*id).map(|s| s.as_str()))
+                .filter(|n| !STOPLIST.contains(n) && n.len() > 1)
+                .take(5)
+                .collect();
+            if !names.is_empty() {
+                parts.push(format!("calls {}", names.join(" ")));
+            }
+        }
+
+        // Called by (callers are semantic signal)
+        if let Some(callers) = called_by.get(node.id.as_str()) {
+            let names: Vec<&str> = callers
+                .iter()
+                .filter_map(|id| name_map.get(*id).map(|s| s.as_str()))
+                .filter(|n| !STOPLIST.contains(n) && n.len() > 1)
+                .take(5)
+                .collect();
+            if !names.is_empty() {
+                parts.push(format!("called by {}", names.join(" ")));
+            }
+        }
+
+        // Implements
+        if let Some(traits) = implements.get(node.id.as_str()) {
+            let names: Vec<&str> = traits
+                .iter()
+                .filter_map(|id| name_map.get(*id).map(|s| s.as_str()))
+                .collect();
+            if !names.is_empty() {
+                parts.push(format!("implements {}", names.join(" ")));
+            }
+        }
+
+        // Inherits
+        if let Some(parents) = inherits_from.get(node.id.as_str()) {
+            let names: Vec<&str> = parents
+                .iter()
+                .filter_map(|id| name_map.get(*id).map(|s| s.as_str()))
+                .collect();
+            if !names.is_empty() {
+                parts.push(format!("extends {}", names.join(" ")));
+            }
+        }
+
+        // Decorators
+        if let Some(decs) = decorators.get(node.id.as_str()) {
+            let names: Vec<&str> = decs
+                .iter()
+                .filter_map(|id| name_map.get(*id).map(|s| s.as_str()))
+                .filter(|n| !STOPLIST.contains(n))
+                .take(3)
+                .collect();
+            if !names.is_empty() {
+                parts.push(format!("decorated with {}", names.join(" ")));
+            }
+        }
+
+        // Type references
+        if let Some(refs) = type_refs.get(node.id.as_str()) {
+            let names: Vec<&str> = refs
+                .iter()
+                .filter_map(|id| name_map.get(*id).map(|s| s.as_str()))
+                .filter(|n| n.len() > 2)
+                .take(3)
+                .collect();
+            if !names.is_empty() {
+                parts.push(format!("uses {}", names.join(" ")));
+            }
+        }
+
+        // Tested by
+        if let Some(tests) = tested_by.get(node.id.as_str()) {
+            let names: Vec<&str> = tests
+                .iter()
+                .filter_map(|id| name_map.get(*id).map(|s| s.as_str()))
+                .take(2)
+                .collect();
+            if !names.is_empty() {
+                parts.push(format!("tested by {}", names.join(" ")));
+            }
+        }
+
+        node.description = Some(parts.join(", "));
+    }
+}
+
 /// Extract import/use statements as edges.
 fn extract_imports(
     root: &TsNode,
@@ -1241,6 +1422,7 @@ fn flush_doc_section(
         content_hash: Some(blake3::hash(trimmed.as_bytes()).to_hex().to_string()),
         line_count: trimmed.lines().count(),
         source_url: None,
+        description: None,
     });
 
     // Extract backtick references as edges to code symbols
@@ -1659,6 +1841,7 @@ fn make_file_node(
         content_hash: content_hash.map(|s| s.to_string()),
         line_count,
         source_url: None,
+        description: None,
     }
 }
 
@@ -1683,6 +1866,7 @@ fn make_node(name: &str, kind: &str, signature: Option<String>, doc: Option<Stri
         content_hash: None,
         line_count: 0,
         source_url: None,
+        description: None,
     }
 }
 
