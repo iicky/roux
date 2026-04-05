@@ -1,6 +1,7 @@
 pub mod extract;
 pub mod rank;
 pub mod store;
+pub mod tags;
 
 /// A node in the code graph — a file, function, class, etc.
 #[derive(Debug, Clone)]
