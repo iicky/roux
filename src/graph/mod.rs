@@ -1,4 +1,5 @@
 pub mod extract;
+pub mod rank;
 pub mod store;
 
 /// A node in the code graph — a file, function, class, etc.

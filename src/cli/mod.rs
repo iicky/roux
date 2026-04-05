@@ -249,6 +249,7 @@ fn cmd_query(
                         "doc": s.doc,
                         "parent_id": s.parent_id,
                         "matched": result.matched_ids.contains(&s.id),
+                        "score": result.scores.get(&s.id),
                     })
                 }).collect::<Vec<_>>(),
                 "edges": result.edges.iter().map(|e| {
@@ -267,9 +268,14 @@ fn cmd_query(
                 let is_match = result.matched_ids.contains(&sym.id);
                 let marker = if is_match { "●" } else { "○" };
                 let kind_str = &sym.kind;
+                let score = result
+                    .scores
+                    .get(&sym.id)
+                    .map(|s| format!(" [{:.4}]", s))
+                    .unwrap_or_default();
 
                 println!(
-                    "{marker} {} ({kind_str}) {}:{}",
+                    "{marker} {} ({kind_str}){score} {}:{}",
                     sym.qualified_name, sym.file_path, sym.start_line
                 );
 
