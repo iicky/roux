@@ -204,14 +204,18 @@ impl GraphStore {
                     node.line_count,
                     node.source_url,
                 ])?;
+                // Tokenize for FTS: split camelCase/snake_case for better matching
+                let fts_name = tokenize_for_fts(&node.name);
+                let fts_qualified = tokenize_for_fts(&node.qualified_name);
+                let fts_body = tokenize_for_fts(&node.body);
                 fts_stmt.execute(params![
                     node.id,
-                    node.name,
-                    node.qualified_name,
+                    fts_name,
+                    fts_qualified,
                     node.file_path,
                     node.signature,
                     node.doc,
-                    node.body,
+                    fts_body,
                 ])?;
             }
         }
@@ -499,22 +503,107 @@ pub struct SourceRecord {
 }
 
 fn fts_query_escape(query: &str) -> String {
-    query
-        .split_whitespace()
-        .map(|word| {
-            let clean: String = word
-                .chars()
-                .filter(|c| c.is_alphanumeric() || *c == '_')
-                .collect();
-            if clean.is_empty() {
-                String::new()
-            } else {
-                format!("\"{clean}\"")
+    let mut tokens: Vec<String> = Vec::new();
+
+    for word in query.split_whitespace() {
+        let clean: String = word
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if clean.is_empty() {
+            continue;
+        }
+
+        // Add original word
+        tokens.push(clean.to_lowercase());
+
+        // Add subword splits (camelCase/snake_case)
+        let subwords = code_tokenize(&clean);
+        for sw in &subwords {
+            if *sw != clean.to_lowercase() {
+                tokens.push(sw.clone());
             }
-        })
-        .filter(|s| !s.is_empty())
+        }
+    }
+
+    tokens.sort();
+    tokens.dedup();
+
+    if tokens.is_empty() {
+        return String::new();
+    }
+
+    tokens
+        .iter()
+        .map(|t| format!("\"{t}\""))
         .collect::<Vec<_>>()
         .join(" OR ")
+}
+
+/// Split a code identifier into subwords.
+/// Handles camelCase, PascalCase, snake_case, and SCREAMING_CASE.
+/// "parseHTMLDocument" → ["parse", "HTML", "Document"]
+/// "fts_query_escape" → ["fts", "query", "escape"]
+/// "GraphStore" → ["Graph", "Store"]
+pub fn code_tokenize(s: &str) -> Vec<String> {
+    if s.is_empty() {
+        return vec![];
+    }
+
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+
+    // First split on underscores
+    for part in s.split('_') {
+        if part.is_empty() {
+            continue;
+        }
+
+        // Then split camelCase/PascalCase
+        let chars: Vec<char> = part.chars().collect();
+        for i in 0..chars.len() {
+            let c = chars[i];
+            if i > 0 && c.is_uppercase() {
+                // Check if this is a transition: lowercase→uppercase or uppercase→uppercase+lowercase
+                let prev_lower = chars[i - 1].is_lowercase();
+                let next_lower = i + 1 < chars.len() && chars[i + 1].is_lowercase();
+
+                if prev_lower || (chars[i - 1].is_uppercase() && next_lower) {
+                    if !current.is_empty() {
+                        tokens.push(current.clone());
+                        current.clear();
+                    }
+                }
+            }
+            current.push(c);
+        }
+        if !current.is_empty() {
+            tokens.push(current.clone());
+            current.clear();
+        }
+    }
+
+    // Also include the original unsplit form for exact matching
+    let original = s.to_string();
+    if !tokens.contains(&original) && tokens.len() > 1 {
+        tokens.push(original);
+    }
+
+    // Lowercase all tokens for case-insensitive matching
+    tokens.iter().map(|t| t.to_lowercase()).collect()
+}
+
+/// Tokenize text for FTS indexing — splits code identifiers into subwords.
+pub fn tokenize_for_fts(text: &str) -> String {
+    text.split_whitespace()
+        .flat_map(|word| {
+            // Split on common code separators
+            word.split(|c: char| c == ':' || c == '.' || c == '/' || c == '(' || c == ')')
+                .flat_map(|part| code_tokenize(part))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]
