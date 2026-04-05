@@ -204,10 +204,14 @@ impl GraphStore {
                     node.line_count,
                     node.source_url,
                 ])?;
-                // Tokenize for FTS: split camelCase/snake_case for better matching
-                let fts_name = tokenize_for_fts(&node.name);
-                let fts_qualified = tokenize_for_fts(&node.qualified_name);
-                let fts_body = tokenize_for_fts(&node.body);
+                // Index both original text AND tokenized form for best of both
+                let fts_name = format!("{} {}", node.name, tokenize_for_fts(&node.name));
+                let fts_qualified = format!(
+                    "{} {}",
+                    node.qualified_name,
+                    tokenize_for_fts(&node.qualified_name)
+                );
+                let fts_body = format!("{} {}", node.body, tokenize_for_fts(&node.body));
                 fts_stmt.execute(params![
                     node.id,
                     fts_name,

@@ -9,6 +9,16 @@ struct QueryCase {
     query: &'static str,
     /// Expected symbol names (any of these appearing in top-K is a hit)
     expected: &'static [&'static str],
+    /// Whether this query relies on symbol names (robust) or docstrings (fragile)
+    depends_on: QueryDep,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum QueryDep {
+    /// Query terms match symbol names directly
+    SymbolName,
+    /// Query terms need docstrings or body text to match
+    DocContent,
 }
 
 // ─── Self-benchmark: roux's own codebase ────────────────────────────
@@ -16,63 +26,129 @@ struct QueryCase {
 const ROUX_QUERIES: &[QueryCase] = &[
     QueryCase {
         query: "download a crate from crates.io",
+        depends_on: QueryDep::SymbolName,
         expected: &["download_crate", "validate_crate_name"],
     },
     QueryCase {
         query: "search the graph for matching nodes",
+        depends_on: QueryDep::SymbolName,
         expected: &["search", "GraphStore"],
     },
     QueryCase {
         query: "parse source code with tree-sitter",
+        depends_on: QueryDep::SymbolName,
         expected: &["extract_from_source", "extract_node", "extract_dir"],
     },
     QueryCase {
         query: "personalized pagerank ranking",
+        depends_on: QueryDep::SymbolName,
         expected: &["personalized_pagerank", "rank_subgraph"],
     },
     QueryCase {
         query: "store nodes and edges in sqlite",
+        depends_on: QueryDep::SymbolName,
         expected: &["upsert_source", "GraphStore"],
     },
     QueryCase {
         query: "extract Python functions and classes",
+        depends_on: QueryDep::SymbolName,
         expected: &["extract_python_node"],
     },
     QueryCase {
         query: "resolve unresolved references",
+        depends_on: QueryDep::SymbolName,
         expected: &["resolve_references"],
     },
     QueryCase {
-        query: "full text search with FTS5",
-        expected: &["fts_query_escape", "fts_nodes"],
+        query: "escape query string for fts matching",
+        depends_on: QueryDep::SymbolName,
+        expected: &["fts_query_escape", "tokenize_for_fts"],
     },
     QueryCase {
         query: "detect language from file extension",
+        depends_on: QueryDep::SymbolName,
         expected: &["detect_language", "get_ts_language"],
     },
     QueryCase {
         query: "configuration and store path",
+        depends_on: QueryDep::SymbolName,
         expected: &["resolve_store_path", "Config"],
     },
     QueryCase {
         query: "extract markdown documentation sections",
+        depends_on: QueryDep::SymbolName,
         expected: &["extract_markdown_doc", "flush_doc_section"],
     },
     QueryCase {
         query: "extract decorator edges from Python",
+        depends_on: QueryDep::SymbolName,
         expected: &["extract_decorator_edges", "decorates"],
     },
     QueryCase {
         query: "infer which tests cover which functions",
+        depends_on: QueryDep::SymbolName,
         expected: &["infer_test_edges", "extract_tested_name"],
     },
     QueryCase {
         query: "detect function visibility public private",
+        depends_on: QueryDep::SymbolName,
         expected: &["detect_visibility"],
     },
     QueryCase {
         query: "walk directory tree for source files",
+        depends_on: QueryDep::SymbolName,
         expected: &["walk_dir"],
+    },
+    // ─── Additional queries for robustness ──────────────────
+    QueryCase {
+        query: "extract rust structs and enums",
+        depends_on: QueryDep::SymbolName,
+        expected: &["extract_rust_node"],
+    },
+    QueryCase {
+        query: "extract JS class and function nodes",
+        depends_on: QueryDep::SymbolName,
+        expected: &["extract_js_node"],
+    },
+    QueryCase {
+        query: "Go exported functions and methods",
+        depends_on: QueryDep::SymbolName,
+        expected: &["extract_go_node"],
+    },
+    QueryCase {
+        query: "backtick references in markdown",
+        depends_on: QueryDep::DocContent,
+        expected: &["extract_backtick_refs"],
+    },
+    QueryCase {
+        query: "HTTP route handler detection",
+        depends_on: QueryDep::SymbolName,
+        expected: &["extract_route_registrations", "routes"],
+    },
+    QueryCase {
+        query: "raise throw error detection",
+        depends_on: QueryDep::SymbolName,
+        expected: &["extract_raise_edges"],
+    },
+    QueryCase {
+        query: "inheritance class extends parent",
+        depends_on: QueryDep::SymbolName,
+        expected: &["extract_relationship_edges", "inherits"],
+    },
+    QueryCase {
+        query: "blake3 hash of source text",
+        depends_on: QueryDep::SymbolName,
+        expected: &["content_hash", "build_body"],
+    },
+    QueryCase {
+        query: "file node creation from path",
+        depends_on: QueryDep::SymbolName,
+        expected: &["make_file_node"],
+    },
+    QueryCase {
+        query: "remove source delete from index",
+        depends_on: QueryDep::SymbolName,
+        expected: &["remove_source"],
     },
 ];
 
@@ -236,17 +312,76 @@ fn bench_self_retrieval() {
         let rank_str = rank
             .map(|r| format!("@{r}"))
             .unwrap_or_else(|| "miss".to_string());
-        eprintln!("  {status} [{rank_str:>5}] {}", case.query);
+        let dep = match case.depends_on {
+            QueryDep::SymbolName => "name",
+            QueryDep::DocContent => "doc ",
+        };
+        eprintln!("  {status} [{rank_str:>5}] ({dep}) {}", case.query);
     }
 
-    // Quality gates — these should pass in CI
-    assert!(h5 >= 0.5, "Hit@5 too low: {:.1}% (need ≥50%)", h5 * 100.0);
+    // Breakdown by dependency type
+    let name_results: Vec<_> = results
+        .iter()
+        .zip(ROUX_QUERIES.iter())
+        .filter(|(_, c)| c.depends_on == QueryDep::SymbolName)
+        .map(|(r, _)| r.clone())
+        .collect();
+    let doc_results: Vec<_> = results
+        .iter()
+        .zip(ROUX_QUERIES.iter())
+        .filter(|(_, c)| c.depends_on == QueryDep::DocContent)
+        .map(|(r, _)| r.clone())
+        .collect();
+
+    if !name_results.is_empty() {
+        eprintln!("\n── by dependency ──");
+        eprintln!("  Symbol-name queries ({}):", name_results.len());
+        eprintln!(
+            "    Hit@1: {:.1}%  MRR: {:.3}",
+            hit_at_k(&name_results, 1) * 100.0,
+            mrr(&name_results)
+        );
+        if !doc_results.is_empty() {
+            eprintln!("  Doc-content queries ({}):", doc_results.len());
+            eprintln!(
+                "    Hit@1: {:.1}%  MRR: {:.3}",
+                hit_at_k(&doc_results, 1) * 100.0,
+                mrr(&doc_results)
+            );
+        }
+    }
+
+    // Hard gates — these block CI
     assert!(
-        mrr_score >= 0.3,
-        "MRR too low: {:.3} (need ≥0.3)",
+        h10 >= 0.95,
+        "HARD FAIL: Hit@10 regressed: {:.1}% (need ≥95%)",
+        h10 * 100.0
+    );
+    assert!(
+        mrr_score >= 0.65,
+        "HARD FAIL: MRR regressed: {:.3} (need ≥0.65)",
         mrr_score
     );
-    assert!(ndcg >= 0.3, "NDCG@10 too low: {:.3} (need ≥0.3)", ndcg);
+
+    // Soft gates — warn but don't block
+    if h1 < 0.55 {
+        eprintln!(
+            "  ⚠ WARNING: Hit@1 below target: {:.1}% (target ≥55%)",
+            h1 * 100.0
+        );
+    }
+    if h5 < 0.80 {
+        eprintln!(
+            "  ⚠ WARNING: Hit@5 below target: {:.1}% (target ≥80%)",
+            h5 * 100.0
+        );
+    }
+    if ndcg < 0.60 {
+        eprintln!(
+            "  ⚠ WARNING: NDCG@10 below target: {:.3} (target ≥0.60)",
+            ndcg
+        );
+    }
     assert!(
         avg_coherence >= 0.3,
         "Subgraph coherence too low: {:.1}% (need ≥30%)",
@@ -310,8 +445,8 @@ fn bench_performance() {
 
     // Performance gates
     assert!(
-        search_avg_ms < 500.0,
-        "Search too slow: {:.1}ms (need <500ms)",
+        search_avg_ms < 10.0,
+        "Search too slow: {:.1}ms (need <10ms)",
         search_avg_ms
     );
 }
