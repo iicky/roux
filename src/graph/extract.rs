@@ -142,16 +142,15 @@ fn walk_dir(
             continue;
         }
 
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with('.')
+        if let Some(name) = path.file_name().and_then(|n| n.to_str())
+            && (name.starts_with('.')
                 || name == "node_modules"
                 || name == "target"
                 || name == "__pycache__"
                 || name == "vendor"
-                || name == ".git"
-            {
-                continue;
-            }
+                || name == ".git")
+        {
+            continue;
         }
 
         if path.is_dir() {
@@ -336,13 +335,12 @@ fn extract_relationship_edges(
                     // Find trait name — it's a type_identifier before the "for" keyword
                     let mut found_trait = None;
                     for child in &children {
-                        if child.kind() == "type_identifier"
+                        if (child.kind() == "type_identifier"
                             || child.kind() == "generic_type"
-                            || child.kind() == "scoped_type_identifier"
+                            || child.kind() == "scoped_type_identifier")
+                            && found_trait.is_none()
                         {
-                            if found_trait.is_none() {
-                                found_trait = Some(node_text(child, code).to_string());
-                            }
+                            found_trait = Some(node_text(child, code).to_string());
                         }
                     }
                     if let Some(trait_name) = found_trait {
@@ -357,18 +355,18 @@ fn extract_relationship_edges(
         }
         "python" => {
             // class Foo(Bar, Baz): → inherits edges
-            if kind == "class_definition" {
-                if let Some(args) = find_child_by_kind(node, "argument_list") {
-                    let mut cursor = args.walk();
-                    for child in args.children(&mut cursor) {
-                        if child.kind() == "identifier" {
-                            let parent_name = node_text(&child, code).to_string();
-                            edges.push(Edge {
-                                from_id: sym_id.to_string(),
-                                to_id: format!("__unresolved::{parent_name}"),
-                                kind: "inherits".to_string(),
-                            });
-                        }
+            if kind == "class_definition"
+                && let Some(args) = find_child_by_kind(node, "argument_list")
+            {
+                let mut cursor = args.walk();
+                for child in args.children(&mut cursor) {
+                    if child.kind() == "identifier" {
+                        let parent_name = node_text(&child, code).to_string();
+                        edges.push(Edge {
+                            from_id: sym_id.to_string(),
+                            to_id: format!("__unresolved::{parent_name}"),
+                            kind: "inherits".to_string(),
+                        });
                     }
                 }
             }
@@ -566,8 +564,7 @@ fn extract_decorator_edges(
                             || decorator_name.contains(".put")
                             || decorator_name.contains(".delete")
                         {
-                            let route_path =
-                                text.split(|c| c == '\'' || c == '"').nth(1).unwrap_or("");
+                            let route_path = text.split(['\'', '"']).nth(1).unwrap_or("");
                             if !route_path.is_empty() {
                                 edges.push(Edge {
                                     from_id: sym_id.to_string(),
@@ -678,14 +675,14 @@ fn extract_raises_recursive(
             _ => None,
         };
 
-        if let Some(name) = error_name {
-            if !name.is_empty() {
-                edges.push(Edge {
-                    from_id: sym_id.to_string(),
-                    to_id: format!("__unresolved::{name}"),
-                    kind: "raises".to_string(),
-                });
-            }
+        if let Some(name) = error_name
+            && !name.is_empty()
+        {
+            edges.push(Edge {
+                from_id: sym_id.to_string(),
+                to_id: format!("__unresolved::{name}"),
+                kind: "raises".to_string(),
+            });
         }
         return; // Don't recurse into raise/throw children
     }
@@ -729,7 +726,7 @@ fn extract_route_registrations(
             let route = text
                 .split(&pattern)
                 .nth(1)
-                .and_then(|r| r.split(|c| c == '\'' || c == '"').nth(1));
+                .and_then(|r| r.split(['\'', '"']).nth(1));
             if let Some(path) = route {
                 edges.push(Edge {
                     from_id: sym_id.to_string(),
@@ -784,16 +781,16 @@ fn extract_tested_name(test_name: &str) -> Option<String> {
         return Some(name.to_string());
     }
     // TestFoo → Foo
-    if let Some(name) = test_name.strip_prefix("Test") {
-        if name.starts_with(|c: char| c.is_uppercase()) {
-            return Some(name.to_string());
-        }
+    if let Some(name) = test_name.strip_prefix("Test")
+        && name.starts_with(|c: char| c.is_uppercase())
+    {
+        return Some(name.to_string());
     }
     // testFoo → Foo (JS convention)
-    if let Some(name) = test_name.strip_prefix("test") {
-        if name.starts_with(|c: char| c.is_uppercase()) {
-            return Some(name.to_string());
-        }
+    if let Some(name) = test_name.strip_prefix("test")
+        && name.starts_with(|c: char| c.is_uppercase())
+    {
+        return Some(name.to_string());
     }
     None
 }
@@ -849,18 +846,18 @@ fn infer_export_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
         }
 
         // Publicly visible symbols get an "exports" edge from their file
-        if matches!(node.visibility.as_str(), "pub" | "export") {
-            if let Some(ref parent_id) = node.parent_id {
-                // Check if parent is a file node
-                if let Some(parent) = nodes.iter().find(|n| n.id == *parent_id) {
-                    if parent.kind == "file" {
-                        edges.push(Edge {
-                            from_id: parent.id.clone(),
-                            to_id: node.id.clone(),
-                            kind: "exports".to_string(),
-                        });
-                    }
-                }
+        if matches!(node.visibility.as_str(), "pub" | "export")
+            && let Some(ref parent_id) = node.parent_id
+        {
+            // Check if parent is a file node
+            if let Some(parent) = nodes.iter().find(|n| n.id == *parent_id)
+                && parent.kind == "file"
+            {
+                edges.push(Edge {
+                    from_id: parent.id.clone(),
+                    to_id: node.id.clone(),
+                    kind: "exports".to_string(),
+                });
             }
         }
     }
@@ -1276,10 +1273,7 @@ fn extract_backtick_refs(text: &str) -> Vec<String> {
                     && !trimmed.starts_with('$')
                 {
                     // Take the last component of a qualified name
-                    let name = trimmed
-                        .rsplit(|c| c == ':' || c == '.' || c == '/')
-                        .next()
-                        .unwrap_or(trimmed);
+                    let name = trimmed.rsplit([':', '.', '/']).next().unwrap_or(trimmed);
                     if !name.is_empty()
                         && name
                             .chars()
@@ -1613,10 +1607,10 @@ fn detect_visibility(node: &TsNode, code: &[u8], lang: &str) -> String {
         }
         "javascript" | "typescript" | "tsx" => {
             // Check if parent is an export_statement
-            if let Some(parent) = node.parent() {
-                if parent.kind() == "export_statement" {
-                    return "export".to_string();
-                }
+            if let Some(parent) = node.parent()
+                && parent.kind() == "export_statement"
+            {
+                return "export".to_string();
             }
             "private".to_string()
         }
