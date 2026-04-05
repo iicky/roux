@@ -309,16 +309,12 @@ fn extract_from_source(
     // Extract import edges from top-level
     extract_imports(&root, code_bytes, lang, source_name, edges);
 
-    // Use tags.scm query-based extraction when opted in via env var.
-    // Default to AST walking until tags extraction reaches parity.
-    let use_tags = std::env::var("ROUX_USE_TAGS").is_ok();
-    let (tag_symbols, tag_refs) = if use_tags {
-        super::tags::extract_tags(code_bytes, lang, ts_lang.clone(), &tree)
-    } else {
-        (vec![], vec![])
-    };
+    // Tags-based extraction: use tags.scm queries, fall back to AST walking
+    // for languages without a tags query.
+    let (tag_symbols, tag_refs) =
+        super::tags::extract_tags(code_bytes, lang, ts_lang.clone(), &tree);
 
-    if use_tags && !tag_symbols.is_empty() {
+    if !tag_symbols.is_empty() {
         // Tags-based path: convert TaggedSymbols to Nodes, enriched via AST
         //
         // Two passes:
