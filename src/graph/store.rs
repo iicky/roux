@@ -252,54 +252,65 @@ impl GraphStore {
             return Ok(SearchResult::default());
         }
 
-        // Expand: matched nodes + 1-hop via edges + children via parent_id + parents
+        // Pull 2-hop ego-graph around seed nodes via recursive expansion
         let mut all_ids: Vec<String> = matched_ids.clone();
 
-        for id in &matched_ids {
-            // Edge neighbors (both directions)
-            let mut stmt = self.conn.prepare_cached(
-                "SELECT to_id FROM edges WHERE from_id = ?1
-                 UNION
-                 SELECT from_id FROM edges WHERE to_id = ?1",
-            )?;
-            let neighbors: Vec<String> = stmt
-                .query_map(params![id], |row| row.get(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            all_ids.extend(neighbors);
+        // Hop 1 + Hop 2: expand edges + parent/children for each seed
+        for _hop in 0..2 {
+            let mut new_ids = Vec::new();
+            for id in &all_ids {
+                // Edge neighbors (both directions)
+                let mut stmt = self.conn.prepare_cached(
+                    "SELECT to_id FROM edges WHERE from_id = ?1
+                     UNION
+                     SELECT from_id FROM edges WHERE to_id = ?1",
+                )?;
+                let neighbors: Vec<String> = stmt
+                    .query_map(params![id], |row| row.get(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                new_ids.extend(neighbors);
 
-            // Parent
-            let parent: Option<String> = self
-                .conn
-                .query_row(
+                // Parent
+                if let Ok(pid) = self.conn.query_row(
                     "SELECT parent_id FROM nodes WHERE id = ?1 AND parent_id IS NOT NULL",
                     params![id],
-                    |row| row.get(0),
-                )
-                .ok();
-            if let Some(pid) = parent {
-                all_ids.push(pid);
-            }
+                    |row| row.get::<_, String>(0),
+                ) {
+                    new_ids.push(pid);
+                }
 
-            // Children
-            let mut stmt = self
-                .conn
-                .prepare_cached("SELECT id FROM nodes WHERE parent_id = ?1")?;
-            let children: Vec<String> = stmt
-                .query_map(params![id], |row| row.get(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            all_ids.extend(children);
+                // Children
+                let mut stmt = self
+                    .conn
+                    .prepare_cached("SELECT id FROM nodes WHERE parent_id = ?1")?;
+                let children: Vec<String> = stmt
+                    .query_map(params![id], |row| row.get(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                new_ids.extend(children);
+            }
+            all_ids.extend(new_ids);
+            all_ids.sort();
+            all_ids.dedup();
         }
 
-        all_ids.sort();
-        all_ids.dedup();
-
+        // Fetch full subgraph
         let nodes = self.fetch_nodes(&all_ids)?;
         let edges = self.fetch_edges(&all_ids)?;
 
+        // Run PPR ranking on the subgraph
+        let ranked = super::rank::rank_subgraph(nodes, edges, &matched_ids, limit);
+
+        let scores: HashMap<String, f64> = ranked
+            .nodes
+            .iter()
+            .map(|sn| (sn.node.id.clone(), sn.score))
+            .collect();
+
         Ok(SearchResult {
             matched_ids,
-            nodes,
-            edges,
+            nodes: ranked.nodes.into_iter().map(|sn| sn.node).collect(),
+            edges: ranked.edges,
+            scores,
         })
     }
 
@@ -449,7 +460,11 @@ pub struct SearchResult {
     pub matched_ids: Vec<String>,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    /// PPR scores per node ID (higher = more structurally relevant to the query)
+    pub scores: HashMap<String, f64>,
 }
+
+use std::collections::HashMap;
 
 pub struct SourceRecord {
     pub name: String,
