@@ -462,6 +462,48 @@ impl GraphStore {
         Ok(edges)
     }
 
+    /// Compare stored content hashes against new nodes to find what changed.
+    /// Returns (added, modified, removed) node IDs.
+    pub fn diff_source(
+        &self,
+        source_name: &str,
+        new_nodes: &[super::Node],
+    ) -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
+        // Get stored hashes
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, content_hash FROM nodes WHERE source_name = ?1")?;
+        let stored: HashMap<String, Option<String>> = stmt
+            .query_map(params![source_name], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })?
+            .collect::<rusqlite::Result<HashMap<_, _>>>()?;
+
+        let mut added = Vec::new();
+        let mut modified = Vec::new();
+        let new_ids: std::collections::HashSet<&str> =
+            new_nodes.iter().map(|n| n.id.as_str()).collect();
+
+        for node in new_nodes {
+            match stored.get(&node.id) {
+                None => added.push(node.id.clone()),
+                Some(old_hash) => {
+                    if old_hash.as_deref() != node.content_hash.as_deref() {
+                        modified.push(node.id.clone());
+                    }
+                }
+            }
+        }
+
+        let removed: Vec<String> = stored
+            .keys()
+            .filter(|id| !new_ids.contains(id.as_str()))
+            .cloned()
+            .collect();
+
+        Ok((added, modified, removed))
+    }
+
     pub fn remove_source(&self, name: &str) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
 
@@ -913,5 +955,40 @@ mod tests {
             r1.nodes.iter().any(|n| n.name == "walk_dir"),
             "walk_dir should be findable as 'walkdir'"
         );
+    }
+
+    #[test]
+    fn test_diff_source() {
+        let store = GraphStore::open_in_memory().unwrap();
+
+        let mut n1 = make_node("foo", "function", "test::foo");
+        n1.content_hash = Some("hash_a".to_string());
+        let mut n2 = make_node("bar", "function", "test::bar");
+        n2.content_hash = Some("hash_b".to_string());
+
+        store
+            .upsert_source("test", "dev", "rust", &[n1, n2], &[])
+            .unwrap();
+
+        // New extraction: foo unchanged, bar modified, baz added
+        let mut new_n1 = make_node("foo", "function", "test::foo");
+        new_n1.content_hash = Some("hash_a".to_string());
+        let mut new_n2 = make_node("bar", "function", "test::bar");
+        new_n2.content_hash = Some("hash_b_changed".to_string());
+        let new_n3 = make_node("baz", "function", "test::baz");
+
+        let (added, modified, removed) = store
+            .diff_source("test", &[new_n1, new_n2, new_n3])
+            .unwrap();
+
+        assert_eq!(added.len(), 1, "baz should be added");
+        assert_eq!(modified.len(), 1, "bar should be modified");
+        assert!(removed.is_empty(), "nothing removed");
+
+        // Re-extract without n1 — it should show as removed
+        let mut only_n2 = make_node("bar", "function", "test::bar");
+        only_n2.content_hash = Some("hash_b".to_string());
+        let (_, _, removed2) = store.diff_source("test", &[only_n2]).unwrap();
+        assert_eq!(removed2.len(), 1, "foo should be removed");
     }
 }
