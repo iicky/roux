@@ -237,15 +237,39 @@ impl GraphStore {
             return Ok(SearchResult::default());
         }
 
-        // BM25 search on FTS index
-        let matched_ids: Vec<String> = {
+        // BM25 search on FTS index — capture scores
+        let bm25_results: Vec<(String, f64)> = {
             let mut stmt = self.conn.prepare(
-                "SELECT id FROM fts_nodes WHERE fts_nodes MATCH ?1 ORDER BY rank LIMIT ?2",
+                "SELECT id, rank FROM fts_nodes WHERE fts_nodes MATCH ?1 ORDER BY rank LIMIT ?2",
             )?;
-            stmt.query_map(params![safe_query, limit as i64], |row| {
-                row.get::<_, String>(0)
+            stmt.query_map(params![safe_query, (limit * 2) as i64], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        let matched_ids: Vec<String> = bm25_results.iter().map(|(id, _)| id.clone()).collect();
+
+        // Normalize BM25 scores to [0,1] (rank is negative, lower = better)
+        let bm25_scores: HashMap<String, f64> = if bm25_results.is_empty() {
+            HashMap::new()
+        } else {
+            let min_rank = bm25_results
+                .iter()
+                .map(|(_, r)| *r)
+                .fold(f64::INFINITY, f64::min);
+            let max_rank = bm25_results
+                .iter()
+                .map(|(_, r)| *r)
+                .fold(f64::NEG_INFINITY, f64::max);
+            let range = (max_rank - min_rank).max(1e-10);
+            bm25_results
+                .iter()
+                .map(|(id, rank)| {
+                    // Invert: lower rank = higher score
+                    let normalized = 1.0 - (rank - min_rank) / range;
+                    (id.clone(), normalized)
+                })
+                .collect()
         };
 
         if matched_ids.is_empty() {
@@ -297,8 +321,8 @@ impl GraphStore {
         let nodes = self.fetch_nodes(&all_ids)?;
         let edges = self.fetch_edges(&all_ids)?;
 
-        // Run PPR ranking on the subgraph
-        let ranked = super::rank::rank_subgraph(nodes, edges, &matched_ids, limit);
+        // Run PPR ranking on the subgraph, fused with BM25 scores
+        let ranked = super::rank::rank_subgraph(nodes, edges, &matched_ids, &bm25_scores, limit);
 
         let scores: HashMap<String, f64> = ranked
             .nodes
