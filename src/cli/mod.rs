@@ -226,7 +226,30 @@ fn cmd_init(config: &Config, transitive: bool, local: bool) -> Result<()> {
         }
     }
 
-    eprintln!("\nDone: {success} ingested, {skipped} skipped, {failed} failed");
+    eprintln!("\nDeps: {success} ingested, {skipped} skipped, {failed} failed");
+
+    // Index the local source
+    let project_name = cwd
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("project");
+    eprintln!("\nIndexing local source as '{project_name}'...");
+    let file_graph =
+        graph::extract::extract_dir(&cwd, project_name, "dev", Some(project.kind.language()))?;
+    if !file_graph.nodes.is_empty() {
+        store.upsert_source(
+            project_name,
+            "dev",
+            project.kind.language(),
+            &file_graph.nodes,
+            &file_graph.edges,
+        )?;
+        eprintln!(
+            "Indexed {} symbols, {} edges from local source",
+            file_graph.nodes.len(),
+            file_graph.edges.len()
+        );
+    }
 
     // Store lockfile hash for staleness detection
     if let Ok(content) = std::fs::read(&project.lockfile) {
