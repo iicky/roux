@@ -46,9 +46,9 @@ const ROUX_QUERIES: &[QueryCase] = &[
         expected: &["upsert_source", "GraphStore"],
     },
     QueryCase {
-        query: "extract Python functions and classes",
+        query: "extract functions and classes from source",
         depends_on: QueryDep::SymbolName,
-        expected: &["extract_python_node"],
+        expected: &["extract_from_source", "extract_tags"],
     },
     QueryCase {
         query: "resolve unresolved references",
@@ -97,19 +97,19 @@ const ROUX_QUERIES: &[QueryCase] = &[
     },
     // ─── Additional queries for robustness ──────────────────
     QueryCase {
-        query: "extract rust structs and enums",
+        query: "extract structs and enums from source",
         depends_on: QueryDep::SymbolName,
-        expected: &["extract_rust_node"],
+        expected: &["extract_from_source", "extract_tags"],
     },
     QueryCase {
-        query: "extract JS class and function nodes",
+        query: "extract class and function nodes from JS",
         depends_on: QueryDep::SymbolName,
-        expected: &["extract_js_node"],
+        expected: &["extract_from_source", "extract_tags"],
     },
     QueryCase {
-        query: "Go exported functions and methods",
+        query: "Go function and method extraction",
         depends_on: QueryDep::SymbolName,
-        expected: &["extract_go_node"],
+        expected: &["extract_from_source", "extract_tags"],
     },
     QueryCase {
         query: "backtick references in markdown",
