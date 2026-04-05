@@ -450,3 +450,259 @@ fn bench_performance() {
         search_avg_ms
     );
 }
+
+// ─── Multi-repo benchmark (requires cloned repos) ───────────────────
+
+struct RepoBench {
+    name: &'static str,
+    path: &'static str,
+    language: &'static str,
+    queries: &'static [QueryCase],
+}
+
+const MULTI_REPO: &[RepoBench] = &[
+    RepoBench {
+        name: "flask",
+        path: "/tmp/roux-sources/flask",
+        language: "python",
+        queries: &[
+            QueryCase {
+                query: "create logger for application",
+                depends_on: QueryDep::SymbolName,
+                expected: &["create_logger"],
+            },
+            QueryCase {
+                query: "register blueprint with app",
+                depends_on: QueryDep::SymbolName,
+                expected: &["register_blueprint", "register"],
+            },
+            QueryCase {
+                query: "add url routing rule",
+                depends_on: QueryDep::SymbolName,
+                expected: &["add_url_rule"],
+            },
+            QueryCase {
+                query: "session cookie interface",
+                depends_on: QueryDep::SymbolName,
+                expected: &["SessionInterface", "get_cookie_name"],
+            },
+            QueryCase {
+                query: "send file response",
+                depends_on: QueryDep::SymbolName,
+                expected: &["sendfile", "send_file"],
+            },
+            QueryCase {
+                query: "template rendering",
+                depends_on: QueryDep::SymbolName,
+                expected: &["render_template", "render"],
+            },
+            QueryCase {
+                query: "error handling exceptions",
+                depends_on: QueryDep::SymbolName,
+                expected: &["AppError", "handle_exception"],
+            },
+            QueryCase {
+                query: "request context",
+                depends_on: QueryDep::SymbolName,
+                expected: &["AppContext", "RequestContext"],
+            },
+        ],
+    },
+    RepoBench {
+        name: "express",
+        path: "/tmp/roux-sources/express",
+        language: "javascript",
+        queries: &[
+            QueryCase {
+                query: "create express application",
+                depends_on: QueryDep::SymbolName,
+                expected: &["createApplication"],
+            },
+            QueryCase {
+                query: "send file in response",
+                depends_on: QueryDep::SymbolName,
+                expected: &["sendfile", "onfile"],
+            },
+            QueryCase {
+                query: "parse error handling",
+                depends_on: QueryDep::SymbolName,
+                expected: &["parseError", "onerror"],
+            },
+            QueryCase {
+                query: "cookie handling",
+                depends_on: QueryDep::SymbolName,
+                expected: &["getCookies", "getCookie"],
+            },
+        ],
+    },
+    RepoBench {
+        name: "ripgrep",
+        path: "/tmp/roux-sources/ripgrep",
+        language: "rust",
+        queries: &[
+            QueryCase {
+                query: "search for pattern match in file",
+                depends_on: QueryDep::SymbolName,
+                expected: &["matched", "match_by_line", "find"],
+            },
+            QueryCase {
+                query: "detect binary file content",
+                depends_on: QueryDep::SymbolName,
+                expected: &["detect_binary", "binary_data", "binary_byte_offset"],
+            },
+            QueryCase {
+                query: "searcher core implementation",
+                depends_on: QueryDep::SymbolName,
+                expected: &["Core", "Searcher"],
+            },
+            QueryCase {
+                query: "line context before and after match",
+                depends_on: QueryDep::SymbolName,
+                expected: &["before_context_by_line", "after_context_by_line"],
+            },
+            QueryCase {
+                query: "file type filtering glob patterns",
+                depends_on: QueryDep::SymbolName,
+                expected: &["Glob", "FileType", "glob"],
+            },
+            QueryCase {
+                query: "printer output formatting",
+                depends_on: QueryDep::SymbolName,
+                expected: &["Printer", "print", "Standard"],
+            },
+            QueryCase {
+                query: "command line argument parsing",
+                depends_on: QueryDep::SymbolName,
+                expected: &["parse", "Args", "Arg"],
+            },
+            QueryCase {
+                query: "walk directory recursively",
+                depends_on: QueryDep::SymbolName,
+                expected: &["Walk", "walk", "DirEntry"],
+            },
+        ],
+    },
+];
+
+#[test]
+#[ignore] // requires cloned repos at /tmp/roux-sources/
+fn bench_multi_repo() {
+    use roux_cli::graph::extract;
+    use roux_cli::graph::store::GraphStore;
+    use std::time::Instant;
+
+    eprintln!("\n═══ multi-repo benchmark ═══\n");
+
+    let mut all_results: Vec<(Vec<String>, &[&str])> = Vec::new();
+    let mut all_ppr_scores: Vec<f64> = Vec::new();
+
+    for repo in MULTI_REPO {
+        let path = std::path::Path::new(repo.path);
+        if !path.exists() {
+            eprintln!("  SKIP {} (not found at {})", repo.name, repo.path);
+            continue;
+        }
+
+        let store = GraphStore::open_in_memory().unwrap();
+
+        let t0 = Instant::now();
+        let graph = extract::extract_dir(path, repo.name, "dev", Some(repo.language)).unwrap();
+        let extract_ms = t0.elapsed().as_millis();
+
+        store
+            .upsert_source(repo.name, "dev", repo.language, &graph.nodes, &graph.edges)
+            .unwrap();
+
+        let mut repo_results: Vec<(Vec<String>, &[&str])> = Vec::new();
+
+        for case in repo.queries {
+            let result = store.search(case.query, 10).unwrap();
+            let names: Vec<String> = result.nodes.iter().map(|n| n.name.clone()).collect();
+
+            // Collect PPR scores for distribution analysis
+            for score in result.scores.values() {
+                all_ppr_scores.push(*score);
+            }
+
+            repo_results.push((names, case.expected));
+        }
+
+        let h1 = hit_at_k(&repo_results, 1);
+        let h5 = hit_at_k(&repo_results, 5);
+        let h10 = hit_at_k(&repo_results, 10);
+        let repo_mrr = mrr(&repo_results);
+
+        eprintln!(
+            "  {:<12} {:>5} nodes  {:>5} edges  {:>4}ms extract",
+            repo.name,
+            graph.nodes.len(),
+            graph.edges.len(),
+            extract_ms,
+        );
+        eprintln!(
+            "  {:<12} Hit@1:{:>5.1}%  Hit@5:{:>5.1}%  Hit@10:{:>5.1}%  MRR:{:.3}",
+            "",
+            h1 * 100.0,
+            h5 * 100.0,
+            h10 * 100.0,
+            repo_mrr,
+        );
+
+        // Per-query breakdown
+        for (i, case) in repo.queries.iter().enumerate() {
+            let (ref names, _) = repo_results[i];
+            let rank = names
+                .iter()
+                .position(|n| case.expected.iter().any(|exp| n.contains(exp)))
+                .map(|r| r + 1);
+            let status = if rank.is_some() { "✓" } else { "✗" };
+            let rank_str = rank
+                .map(|r| format!("@{r}"))
+                .unwrap_or_else(|| "miss".to_string());
+            eprintln!("    {status} [{rank_str:>5}] {}", case.query);
+        }
+        eprintln!();
+
+        all_results.extend(repo_results);
+    }
+
+    if all_results.is_empty() {
+        eprintln!("  No repos found — skipping multi-repo benchmark");
+        return;
+    }
+
+    // Aggregate metrics
+    let total_h1 = hit_at_k(&all_results, 1);
+    let total_h5 = hit_at_k(&all_results, 5);
+    let total_h10 = hit_at_k(&all_results, 10);
+    let total_mrr = mrr(&all_results);
+    let total_ndcg = ndcg_at_k(&all_results, 10);
+
+    eprintln!(
+        "── aggregate ({} queries across {} repos) ──",
+        all_results.len(),
+        MULTI_REPO.len()
+    );
+    eprintln!("  Hit@1:   {:.1}%", total_h1 * 100.0);
+    eprintln!("  Hit@5:   {:.1}%", total_h5 * 100.0);
+    eprintln!("  Hit@10:  {:.1}%", total_h10 * 100.0);
+    eprintln!("  MRR:     {:.3}", total_mrr);
+    eprintln!("  NDCG@10: {:.3}", total_ndcg);
+
+    // PPR score distribution across repos
+    if !all_ppr_scores.is_empty() {
+        all_ppr_scores.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let n = all_ppr_scores.len();
+        let median = all_ppr_scores[n / 2];
+        let p95 = all_ppr_scores[(n as f64 * 0.95) as usize];
+        let max = all_ppr_scores[n - 1];
+        let min = all_ppr_scores[0];
+
+        eprintln!("\n── PPR score distribution ({n} scores) ──");
+        eprintln!("  min:    {:.6}", min);
+        eprintln!("  median: {:.6}", median);
+        eprintln!("  p95:    {:.6}", p95);
+        eprintln!("  max:    {:.6}", max);
+        eprintln!("  range:  {:.1}×", if min > 0.0 { max / min } else { 0.0 });
+    }
+}
