@@ -394,7 +394,7 @@ impl GraphStore {
         })
     }
 
-    fn fetch_nodes(&self, ids: &[String]) -> Result<Vec<Node>> {
+    pub fn fetch_nodes(&self, ids: &[String]) -> Result<Vec<Node>> {
         if ids.is_empty() {
             return Ok(vec![]);
         }
