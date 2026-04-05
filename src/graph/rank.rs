@@ -56,13 +56,12 @@ pub fn rank_subgraph(
 
     // Add parent_id as implicit "contains" edges so PPR flows through containment
     for node in &nodes {
-        if let Some(ref parent_id) = node.parent_id {
-            if let (Some(&child), Some(&parent)) =
+        if let Some(ref parent_id) = node.parent_id
+            && let (Some(&child), Some(&parent)) =
                 (id_to_idx.get(&node.id), id_to_idx.get(parent_id))
-            {
-                graph.add_edge(parent, child, "contains".to_string());
-                graph.add_edge(child, parent, "contained_by".to_string());
-            }
+        {
+            graph.add_edge(parent, child, "contains".to_string());
+            graph.add_edge(child, parent, "contained_by".to_string());
         }
     }
 
