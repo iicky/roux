@@ -381,48 +381,53 @@ impl GraphStore {
             return Ok(vec![]);
         }
 
-        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{i}")).collect();
-        let sql = format!(
-            "SELECT id, kind, name, qualified_name, source_name, language,
-                    file_path, start_line, start_col, end_line, visibility,
-                    signature, doc, body, parent_id, content_hash, line_count, source_url, description
-             FROM nodes WHERE id IN ({})",
-            placeholders.join(", ")
-        );
+        let mut all_nodes = Vec::new();
+        // Batch to stay under SQLite's 32766 parameter limit
+        for chunk in ids.chunks(20000) {
+            let placeholders: Vec<String> = (1..=chunk.len()).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "SELECT id, kind, name, qualified_name, source_name, language,
+                        file_path, start_line, start_col, end_line, visibility,
+                        signature, doc, body, parent_id, content_hash, line_count, source_url, description
+                 FROM nodes WHERE id IN ({})",
+                placeholders.join(", ")
+            );
 
-        let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::types::ToSql> = ids
-            .iter()
-            .map(|id| id as &dyn rusqlite::types::ToSql)
-            .collect();
+            let mut stmt = self.conn.prepare(&sql)?;
+            let params: Vec<&dyn rusqlite::types::ToSql> = chunk
+                .iter()
+                .map(|id| id as &dyn rusqlite::types::ToSql)
+                .collect();
 
-        let nodes = stmt
-            .query_map(params.as_slice(), |row| {
-                Ok(Node {
-                    id: row.get(0)?,
-                    kind: row.get(1)?,
-                    name: row.get(2)?,
-                    qualified_name: row.get(3)?,
-                    source_name: row.get(4)?,
-                    language: row.get(5)?,
-                    file_path: row.get(6)?,
-                    start_line: row.get(7)?,
-                    start_col: row.get(8)?,
-                    end_line: row.get(9)?,
-                    visibility: row.get(10)?,
-                    signature: row.get(11)?,
-                    doc: row.get(12)?,
-                    body: row.get(13)?,
-                    parent_id: row.get(14)?,
-                    content_hash: row.get(15)?,
-                    line_count: row.get(16)?,
-                    source_url: row.get(17)?,
-                    description: row.get(18)?,
-                })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
+            let nodes = stmt
+                .query_map(params.as_slice(), |row| {
+                    Ok(Node {
+                        id: row.get(0)?,
+                        kind: row.get(1)?,
+                        name: row.get(2)?,
+                        qualified_name: row.get(3)?,
+                        source_name: row.get(4)?,
+                        language: row.get(5)?,
+                        file_path: row.get(6)?,
+                        start_line: row.get(7)?,
+                        start_col: row.get(8)?,
+                        end_line: row.get(9)?,
+                        visibility: row.get(10)?,
+                        signature: row.get(11)?,
+                        doc: row.get(12)?,
+                        body: row.get(13)?,
+                        parent_id: row.get(14)?,
+                        content_hash: row.get(15)?,
+                        line_count: row.get(16)?,
+                        source_url: row.get(17)?,
+                        description: row.get(18)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            all_nodes.extend(nodes);
+        }
 
-        Ok(nodes)
+        Ok(all_nodes)
     }
 
     fn fetch_edges(&self, ids: &[String]) -> Result<Vec<Edge>> {
@@ -430,36 +435,41 @@ impl GraphStore {
             return Ok(vec![]);
         }
 
-        let n = ids.len();
-        let ph1: Vec<String> = (1..=n).map(|i| format!("?{i}")).collect();
-        let ph2: Vec<String> = (n + 1..=n * 2).map(|i| format!("?{i}")).collect();
-        let sql = format!(
-            "SELECT from_id, to_id, kind FROM edges
-             WHERE from_id IN ({}) OR to_id IN ({})",
-            ph1.join(", "),
-            ph2.join(", ")
-        );
+        let mut all_edges = Vec::new();
+        // Batch to stay under SQLite's 32766 parameter limit (ids appear twice: from + to)
+        for chunk in ids.chunks(10000) {
+            let n = chunk.len();
+            let ph1: Vec<String> = (1..=n).map(|i| format!("?{i}")).collect();
+            let ph2: Vec<String> = (n + 1..=n * 2).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "SELECT from_id, to_id, kind FROM edges
+                 WHERE from_id IN ({}) OR to_id IN ({})",
+                ph1.join(", "),
+                ph2.join(", ")
+            );
 
-        let mut stmt = self.conn.prepare(&sql)?;
-        let mut all_params: Vec<&dyn rusqlite::types::ToSql> = Vec::with_capacity(n * 2);
-        for id in ids {
-            all_params.push(id as &dyn rusqlite::types::ToSql);
+            let mut stmt = self.conn.prepare(&sql)?;
+            let mut all_params: Vec<&dyn rusqlite::types::ToSql> = Vec::with_capacity(n * 2);
+            for id in chunk {
+                all_params.push(id as &dyn rusqlite::types::ToSql);
+            }
+            for id in chunk {
+                all_params.push(id as &dyn rusqlite::types::ToSql);
+            }
+
+            let edges = stmt
+                .query_map(all_params.as_slice(), |row| {
+                    Ok(Edge {
+                        from_id: row.get(0)?,
+                        to_id: row.get(1)?,
+                        kind: row.get(2)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            all_edges.extend(edges);
         }
-        for id in ids {
-            all_params.push(id as &dyn rusqlite::types::ToSql);
-        }
 
-        let edges = stmt
-            .query_map(all_params.as_slice(), |row| {
-                Ok(Edge {
-                    from_id: row.get(0)?,
-                    to_id: row.get(1)?,
-                    kind: row.get(2)?,
-                })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-
-        Ok(edges)
+        Ok(all_edges)
     }
 
     /// Compare stored content hashes against new nodes to find what changed.
