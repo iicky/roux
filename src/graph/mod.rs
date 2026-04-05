@@ -41,6 +41,9 @@ pub struct Node {
     pub line_count: usize,
     /// URL to view this symbol online (GitHub, docs.rs, etc.)
     pub source_url: Option<String>,
+    /// Auto-generated natural language description from graph context.
+    /// Bridges the semantic gap for undocumented symbols.
+    pub description: Option<String>,
 }
 
 /// An edge between two nodes (cross-references only, not containment).
