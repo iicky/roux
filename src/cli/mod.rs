@@ -100,7 +100,7 @@ impl Cli {
         let config = Config::load()?;
 
         match &self.command {
-            Command::Init { .. } => todo!("init"),
+            Command::Init { transitive, local } => cmd_init(&config, *transitive, *local),
             Command::Add {
                 source,
                 lang,
@@ -136,6 +136,109 @@ impl Cli {
             Command::Remove { source } => cmd_remove(&config, source),
         }
     }
+}
+
+fn cmd_init(config: &Config, transitive: bool, local: bool) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+
+    let project = crate::lockfile::detect_project(&cwd)
+        .ok_or_else(|| anyhow::anyhow!("No lockfile or manifest found in current directory"))?;
+
+    let direct_count = project.deps.iter().filter(|d| d.direct).count();
+    let total_count = project.deps.len();
+    eprintln!(
+        "Detected {:?} project ({} direct deps, {} total) from {}",
+        project.kind,
+        direct_count,
+        total_count,
+        project
+            .lockfile
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy(),
+    );
+
+    let deps: Vec<_> = if transitive {
+        project.deps
+    } else {
+        project.deps.into_iter().filter(|d| d.direct).collect()
+    };
+
+    if deps.is_empty() {
+        eprintln!("No dependencies to ingest.");
+        return Ok(());
+    }
+
+    eprintln!("Ingesting {} dependencies...\n", deps.len());
+
+    let store_path = config.resolve_store_path(local);
+    if let Some(parent) = store_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let store = GraphStore::open(&store_path)?;
+
+    let mut success = 0;
+    let mut skipped = 0;
+    let mut failed = 0;
+
+    for dep in &deps {
+        let version_str = dep.version.as_deref().unwrap_or("latest");
+
+        // For Rust crates, download from crates.io
+        if project.kind == crate::lockfile::ProjectKind::Rust {
+            eprint!("  {} v{} ... ", dep.name, version_str);
+
+            match ingest_crate(&store, &dep.name, version_str) {
+                Ok(count) => {
+                    eprintln!("{count} symbols");
+                    success += 1;
+                }
+                Err(e) => {
+                    eprintln!("failed: {e}");
+                    failed += 1;
+                }
+            }
+        } else {
+            // For other languages, we can only ingest local paths
+            // TODO: add PyPI, npm registry support
+            eprintln!(
+                "  {} (skip — no registry support for {:?} yet)",
+                dep.name, project.kind
+            );
+            skipped += 1;
+        }
+    }
+
+    eprintln!("\nDone: {success} ingested, {skipped} skipped, {failed} failed");
+
+    // Store lockfile hash for staleness detection
+    if let Ok(content) = std::fs::read(&project.lockfile) {
+        let hash = blake3::hash(&content).to_hex().to_string();
+        store.set_metadata("lockfile_hash", &hash)?;
+        store.set_metadata("lockfile_path", &project.lockfile.to_string_lossy())?;
+    }
+
+    Ok(())
+}
+
+/// Ingest a single crate from crates.io into the store.
+fn ingest_crate(store: &GraphStore, name: &str, version: &str) -> Result<usize> {
+    let (dir, resolved_version) = crate::source::crate_download::download_crate(name, version)?;
+    let file_graph = graph::extract::extract_dir(&dir, name, &resolved_version, Some("rust"))?;
+
+    if file_graph.nodes.is_empty() {
+        return Ok(0);
+    }
+
+    store.upsert_source(
+        name,
+        &resolved_version,
+        "rust",
+        &file_graph.nodes,
+        &file_graph.edges,
+    )?;
+
+    Ok(file_graph.nodes.len())
 }
 
 fn cmd_add(
