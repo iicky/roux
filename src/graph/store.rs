@@ -49,7 +49,7 @@ impl GraphStore {
             )
             .unwrap_or(0);
 
-        if version < 3 {
+        if version < 4 {
             // Drop old tables if they exist (pre-v1 data)
             self.conn.execute_batch(
                 "DROP TABLE IF EXISTS fts_symbols;
@@ -89,7 +89,8 @@ impl GraphStore {
                     parent_id      TEXT,
                     content_hash   TEXT,
                     line_count     INTEGER NOT NULL DEFAULT 0,
-                    source_url     TEXT
+                    source_url     TEXT,
+                    description    TEXT
                 );
 
                 CREATE INDEX idx_nodes_source    ON nodes(source_name);
@@ -122,7 +123,7 @@ impl GraphStore {
             )?;
 
             self.conn.execute(
-                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '3')",
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '4')",
                 [],
             )?;
         }
@@ -175,8 +176,8 @@ impl GraphStore {
                 "INSERT OR REPLACE INTO nodes
                     (id, kind, name, qualified_name, source_name, language,
                      file_path, start_line, start_col, end_line, visibility,
-                     signature, doc, body, parent_id, content_hash, line_count, source_url)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                     signature, doc, body, parent_id, content_hash, line_count, source_url, description)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
             )?;
             let mut fts_stmt = tx.prepare_cached(
                 "INSERT INTO fts_nodes (id, name, qualified_name, file_path, signature, doc, body)
@@ -203,6 +204,7 @@ impl GraphStore {
                     node.content_hash,
                     node.line_count,
                     node.source_url,
+                    node.description,
                 ])?;
                 // Index both original text AND tokenized form for best of both
                 let fts_name = format!("{} {}", node.name, tokenize_for_fts(&node.name));
@@ -240,6 +242,25 @@ impl GraphStore {
 
     /// Search by keyword, return matching nodes + their graph neighborhood.
     pub fn search(&self, query: &str, limit: usize) -> Result<SearchResult> {
+        self.search_with_opts(query, limit, super::rank::FusionMethod::ScoreFusion, true)
+    }
+
+    pub fn search_with_fusion(
+        &self,
+        query: &str,
+        limit: usize,
+        fusion: super::rank::FusionMethod,
+    ) -> Result<SearchResult> {
+        self.search_with_opts(query, limit, fusion, true)
+    }
+
+    pub fn search_with_opts(
+        &self,
+        query: &str,
+        limit: usize,
+        fusion: super::rank::FusionMethod,
+        desc_rerank: bool,
+    ) -> Result<SearchResult> {
         let safe_query = fts_query_escape(query);
         if safe_query.is_empty() {
             return Ok(SearchResult::default());
@@ -330,7 +351,8 @@ impl GraphStore {
         let edges = self.fetch_edges(&all_ids)?;
 
         // Run PPR ranking on the subgraph, fused with BM25 scores
-        let ranked = super::rank::rank_subgraph(nodes, edges, &matched_ids, &bm25_scores, limit);
+        let q = if desc_rerank { Some(query) } else { None };
+        let ranked = super::rank::rank_subgraph_with(nodes, edges, &matched_ids, &bm25_scores, limit, fusion, q);
 
         let scores: HashMap<String, f64> = ranked
             .nodes
@@ -355,7 +377,7 @@ impl GraphStore {
         let sql = format!(
             "SELECT id, kind, name, qualified_name, source_name, language,
                     file_path, start_line, start_col, end_line, visibility,
-                    signature, doc, body, parent_id, content_hash, line_count, source_url
+                    signature, doc, body, parent_id, content_hash, line_count, source_url, description
              FROM nodes WHERE id IN ({})",
             placeholders.join(", ")
         );
@@ -387,6 +409,7 @@ impl GraphStore {
                     content_hash: row.get(15)?,
                     line_count: row.get(16)?,
                     source_url: row.get(17)?,
+                    description: row.get(18)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -506,6 +529,31 @@ pub struct SourceRecord {
     pub node_count: usize,
 }
 
+/// Extract only the meaningful symbol names from a generated description.
+/// Strips template words (function, calls, in, class, etc.) and keeps symbol names.
+fn extract_description_keywords(desc: &str) -> String {
+    const DESC_STOPWORDS: &[&str] = &[
+        "function", "method", "class", "struct", "enum", "trait", "impl", "module",
+        "interface", "const", "type", "file", "in", "calls", "called", "by",
+        "uses", "implements", "extends", "decorated", "with", "tested",
+        "and", "the", "a", "an", "of", "for", "to", "from", "is", "are",
+    ];
+
+    desc.split(|c: char| c == ',' || c == ' ')
+        .map(|w| w.trim())
+        .filter(|w| {
+            !w.is_empty()
+                && w.len() > 2
+                && !DESC_STOPWORDS.contains(w)
+                && !w.ends_with(".rs")
+                && !w.ends_with(".py")
+                && !w.ends_with(".js")
+                && !w.ends_with(".ts")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn fts_query_escape(query: &str) -> String {
     let mut tokens: Vec<String> = Vec::new();
 
@@ -603,7 +651,15 @@ pub fn tokenize_for_fts(text: &str) -> String {
         .flat_map(|word| {
             // Split on common code separators
             word.split(|c: char| c == ':' || c == '.' || c == '/' || c == '(' || c == ')')
-                .flat_map(|part| code_tokenize(part))
+                .flat_map(|part| {
+                    let mut tokens = code_tokenize(part);
+                    // Emit concatenated form: "walk_dir" → also index "walkdir"
+                    let concat: String = part.to_lowercase().replace('_', "");
+                    if !tokens.contains(&concat) && concat.len() > 1 {
+                        tokens.push(concat);
+                    }
+                    tokens
+                })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>()
@@ -635,6 +691,7 @@ mod tests {
             content_hash: None,
             line_count: 10,
             source_url: None,
+            description: None,
         }
     }
 
@@ -706,6 +763,7 @@ mod tests {
             content_hash: None,
             line_count: 0,
             source_url: None,
+            description: None,
         };
 
         let mut func = make_node("login", "function", "test::login");
@@ -795,6 +853,26 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "3");
+        assert_eq!(version, "4");
+    }
+
+    #[test]
+    fn test_fts_walkdir() {
+        // Verify index-time concatenation: "walk_dir" should be findable as "walkdir"
+        let fts = tokenize_for_fts("walk_dir");
+        eprintln!("tokenize_for_fts('walk_dir') = '{fts}'");
+        assert!(fts.contains("walkdir"), "should contain concatenated form, got: {fts}");
+
+        let store = GraphStore::open_in_memory().unwrap();
+        let node = make_node("walk_dir", "function", "test::walk_dir");
+        store
+            .upsert_source("test", "dev", "rust", &[node], &[])
+            .unwrap();
+
+        let r1 = store.search("walkdir", 10).unwrap();
+        assert!(
+            r1.nodes.iter().any(|n| n.name == "walk_dir"),
+            "walk_dir should be findable as 'walkdir'"
+        );
     }
 }
