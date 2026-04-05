@@ -868,10 +868,30 @@ fn infer_export_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
 
 /// Generic names that add no semantic signal as callers/callees.
 const STOPLIST: &[&str] = &[
-    "new", "init", "main", "run", "build", "default", "from", "into",
-    "clone", "drop", "fmt", "eq", "hash", "cmp", "test", "setup",
-    "__init__", "__new__", "__repr__", "__str__", "__eq__",
-    "toString", "valueOf", "constructor",
+    "new",
+    "init",
+    "main",
+    "run",
+    "build",
+    "default",
+    "from",
+    "into",
+    "clone",
+    "drop",
+    "fmt",
+    "eq",
+    "hash",
+    "cmp",
+    "test",
+    "setup",
+    "__init__",
+    "__new__",
+    "__repr__",
+    "__str__",
+    "__eq__",
+    "toString",
+    "valueOf",
+    "constructor",
 ];
 
 /// Generate natural language descriptions from graph edges.
@@ -893,43 +913,71 @@ fn generate_descriptions(nodes: &mut [Node], edges: &[Edge]) {
         .filter_map(|n| {
             n.parent_id.as_ref().and_then(|pid| {
                 name_map.get(pid).and_then(|pname| {
-                    kind_map.get(pid).map(|pkind| {
-                        (n.id.clone(), (pname.clone(), pkind.clone()))
-                    })
+                    kind_map
+                        .get(pid)
+                        .map(|pkind| (n.id.clone(), (pname.clone(), pkind.clone())))
                 })
             })
         })
         .collect();
 
     // Pre-compute edge lookups
-    let mut calls_out: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
-    let mut called_by: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
-    let mut implements: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
-    let mut inherits_from: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
-    let mut type_refs: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
-    let mut tested_by: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
-    let mut decorators: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    let mut calls_out: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    let mut called_by: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    let mut implements: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    let mut inherits_from: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    let mut type_refs: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    let mut tested_by: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    let mut decorators: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
 
     for edge in edges {
         match edge.kind.as_str() {
             "calls" => {
-                calls_out.entry(edge.from_id.as_str()).or_default().push(&edge.to_id);
-                called_by.entry(edge.to_id.as_str()).or_default().push(&edge.from_id);
+                calls_out
+                    .entry(edge.from_id.as_str())
+                    .or_default()
+                    .push(&edge.to_id);
+                called_by
+                    .entry(edge.to_id.as_str())
+                    .or_default()
+                    .push(&edge.from_id);
             }
             "implements" => {
-                implements.entry(edge.from_id.as_str()).or_default().push(&edge.to_id);
+                implements
+                    .entry(edge.from_id.as_str())
+                    .or_default()
+                    .push(&edge.to_id);
             }
             "inherits" => {
-                inherits_from.entry(edge.from_id.as_str()).or_default().push(&edge.to_id);
+                inherits_from
+                    .entry(edge.from_id.as_str())
+                    .or_default()
+                    .push(&edge.to_id);
             }
             "type_ref" => {
-                type_refs.entry(edge.from_id.as_str()).or_default().push(&edge.to_id);
+                type_refs
+                    .entry(edge.from_id.as_str())
+                    .or_default()
+                    .push(&edge.to_id);
             }
             "tests" => {
-                tested_by.entry(edge.to_id.as_str()).or_default().push(&edge.from_id);
+                tested_by
+                    .entry(edge.to_id.as_str())
+                    .or_default()
+                    .push(&edge.from_id);
             }
             "decorates" => {
-                decorators.entry(edge.to_id.as_str()).or_default().push(&edge.from_id);
+                decorators
+                    .entry(edge.to_id.as_str())
+                    .or_default()
+                    .push(&edge.from_id);
             }
             _ => {}
         }
