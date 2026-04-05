@@ -2,6 +2,7 @@
 
 pub mod cli;
 pub mod config;
+pub mod embed;
 pub mod graph;
 pub mod lockfile;
 pub mod source;
