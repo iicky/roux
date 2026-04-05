@@ -309,18 +309,92 @@ fn extract_from_source(
     // Extract import edges from top-level
     extract_imports(&root, code_bytes, lang, source_name, edges);
 
-    extract_node(
-        &root,
-        code_bytes,
-        lang,
-        file_path,
-        source_name,
-        source_version,
-        nodes,
-        edges,
-        file_parent_id,
-        "",
-    );
+    // Use tags.scm query-based extraction when opted in via env var.
+    // Default to AST walking until tags extraction reaches parity.
+    let use_tags = std::env::var("ROUX_USE_TAGS").is_ok();
+    let (tag_symbols, tag_refs) = if use_tags {
+        super::tags::extract_tags(code_bytes, lang, ts_lang.clone(), &tree)
+    } else {
+        (vec![], vec![])
+    };
+
+    if use_tags && !tag_symbols.is_empty() {
+        // Tags-based path: convert TaggedSymbols to Nodes
+        for sym in &tag_symbols {
+            let qualified = format!("{source_name}::{}", sym.name);
+            let id = Node::id_for(source_name, &qualified);
+
+            // Extract source text for this symbol for hashing and body
+            let sym_source = &code[sym.start_byte..sym.end_byte.min(code.len())];
+            let content_hash = blake3::hash(sym_source.as_bytes()).to_hex().to_string();
+
+            // Build a signature from the first line of the symbol
+            let sig = sym_source.lines().next().map(|l| l.to_string());
+
+            // Build body text for FTS indexing
+            let mut body = format!("{}: {}", sym.kind.as_str(), qualified);
+            if let Some(ref s) = sig {
+                body.push('\n');
+                body.push_str(s);
+            }
+            if let Some(ref doc) = sym.doc {
+                body.push('\n');
+                body.push_str(doc);
+            }
+
+            let mut node = Node {
+                id: id.clone(),
+                kind: sym.kind.as_str().to_string(),
+                name: sym.name.clone(),
+                qualified_name: qualified,
+                source_name: source_name.to_string(),
+                language: lang.to_string(),
+                file_path: file_path.to_string(),
+                start_line: sym.start_line,
+                start_col: sym.start_col,
+                end_line: sym.end_line,
+                visibility: String::new(),
+                signature: sig,
+                doc: sym.doc.clone(),
+                body,
+                parent_id: file_parent_id.map(|s| s.to_string()),
+                content_hash: Some(content_hash),
+                line_count: sym.end_line.saturating_sub(sym.start_line) + 1,
+                source_url: None,
+                description: None,
+            };
+            node.body = node.build_body();
+            nodes.push(node);
+        }
+
+        // Convert tagged references to unresolved edges
+        for r in &tag_refs {
+            if !r.name.is_empty() && r.name.len() < 200 {
+                edges.push(Edge {
+                    from_id: String::new(), // will be resolved later
+                    to_id: format!("__unresolved::{}", r.name),
+                    kind: match r.kind {
+                        super::tags::RefKind::Call => "calls".to_string(),
+                        super::tags::RefKind::Implementation => "implements".to_string(),
+                    },
+                });
+            }
+        }
+    } else {
+        // Fallback: AST-walking extraction for languages without tags.scm
+        extract_node(
+            &root,
+            code_bytes,
+            lang,
+            file_path,
+            source_name,
+            source_version,
+            nodes,
+            edges,
+            file_parent_id,
+            "",
+        );
+    }
 
     Ok(())
 }
