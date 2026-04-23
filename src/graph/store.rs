@@ -280,7 +280,13 @@ impl GraphStore {
 
     /// Search by keyword, return matching nodes + their graph neighborhood.
     pub fn search(&self, query: &str, limit: usize) -> Result<SearchResult> {
-        self.search_with_opts(query, limit, super::rank::FusionMethod::ScoreFusion, true)
+        self.search_with_opts(
+            query,
+            limit,
+            super::rank::FusionMethod::ScoreFusion,
+            true,
+            None,
+        )
     }
 
     pub fn search_with_fusion(
@@ -289,7 +295,38 @@ impl GraphStore {
         limit: usize,
         fusion: super::rank::FusionMethod,
     ) -> Result<SearchResult> {
-        self.search_with_opts(query, limit, fusion, true)
+        self.search_with_opts(query, limit, fusion, true, None)
+    }
+
+    /// Search restricted to a named source. Returns an error if the source doesn't exist.
+    pub fn search_scoped(
+        &self,
+        query: &str,
+        limit: usize,
+        source: Option<&str>,
+    ) -> Result<SearchResult> {
+        if let Some(src) = source {
+            let exists: bool = self
+                .conn
+                .query_row(
+                    "SELECT 1 FROM sources WHERE name = ?1",
+                    params![src],
+                    |_row| Ok(true),
+                )
+                .unwrap_or(false);
+            if !exists {
+                anyhow::bail!(
+                    "source '{src}' not found. Run `roux list` to see available sources."
+                );
+            }
+        }
+        self.search_with_opts(
+            query,
+            limit,
+            super::rank::FusionMethod::ScoreFusion,
+            true,
+            source,
+        )
     }
 
     pub fn search_with_opts(
@@ -298,14 +335,27 @@ impl GraphStore {
         limit: usize,
         fusion: super::rank::FusionMethod,
         desc_rerank: bool,
+        source: Option<&str>,
     ) -> Result<SearchResult> {
         let safe_query = fts_query_escape(query);
         if safe_query.is_empty() {
             return Ok(SearchResult::default());
         }
 
-        // BM25 search on FTS index — capture scores
-        let bm25_results: Vec<(String, f64)> = {
+        // BM25 search on FTS index — capture scores. When a source filter is
+        // set, join against nodes to restrict matches to that source.
+        let bm25_results: Vec<(String, f64)> = if let Some(src) = source {
+            let mut stmt = self.conn.prepare(
+                "SELECT f.id, f.rank FROM fts_nodes f
+                 JOIN nodes n ON n.id = f.id
+                 WHERE fts_nodes MATCH ?1 AND n.source_name = ?2
+                 ORDER BY f.rank LIMIT ?3",
+            )?;
+            stmt.query_map(params![safe_query, src, (limit * 2) as i64], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+        } else {
             let mut stmt = self.conn.prepare(
                 "SELECT id, rank FROM fts_nodes WHERE fts_nodes MATCH ?1 ORDER BY rank LIMIT ?2",
             )?;
@@ -406,10 +456,22 @@ impl GraphStore {
             .map(|sn| (sn.node.id.clone(), sn.score))
             .collect();
 
+        let mut out_nodes: Vec<Node> = ranked.nodes.into_iter().map(|sn| sn.node).collect();
+        let mut out_edges = ranked.edges;
+
+        // Apply source filter to final output: expansion may have pulled in
+        // cross-source neighbors; the user asked for a specific source only.
+        if let Some(src) = source {
+            out_nodes.retain(|n| n.source_name == src);
+            let kept_ids: std::collections::HashSet<&String> =
+                out_nodes.iter().map(|n| &n.id).collect();
+            out_edges.retain(|e| kept_ids.contains(&e.from_id) && kept_ids.contains(&e.to_id));
+        }
+
         Ok(SearchResult {
             matched_ids,
-            nodes: ranked.nodes.into_iter().map(|sn| sn.node).collect(),
-            edges: ranked.edges,
+            nodes: out_nodes,
+            edges: out_edges,
             scores,
         })
     }
@@ -934,6 +996,63 @@ mod tests {
         assert_eq!(result.matched_ids.len(), 1);
         assert_eq!(result.nodes.len(), 1);
         assert_eq!(result.nodes[0].name, "spawn");
+    }
+
+    #[test]
+    fn test_search_scoped_filters_by_source() {
+        let store = GraphStore::open_in_memory().unwrap();
+
+        // Two sources each have a node named `shared_thing` — BM25 matches both
+        // but the scoped search must only surface one source's results.
+        let n_alpha = {
+            let qn = "alpha::shared_thing";
+            Node {
+                id: Node::id_for("alpha", qn),
+                source_name: "alpha".into(),
+                qualified_name: qn.into(),
+                ..make_node("shared_thing", "function", qn)
+            }
+        };
+        let n_beta = {
+            let qn = "beta::shared_thing";
+            Node {
+                id: Node::id_for("beta", qn),
+                source_name: "beta".into(),
+                qualified_name: qn.into(),
+                ..make_node("shared_thing", "function", qn)
+            }
+        };
+        store
+            .upsert_source("alpha", "1.0", "rust", &[n_alpha], &[])
+            .unwrap();
+        store
+            .upsert_source("beta", "1.0", "rust", &[n_beta], &[])
+            .unwrap();
+
+        // Unfiltered: both sources' nodes are returned.
+        let all = store.search_scoped("shared_thing", 10, None).unwrap();
+        assert_eq!(all.nodes.len(), 2);
+
+        // Scoped to alpha: only alpha's node.
+        let only_alpha = store
+            .search_scoped("shared_thing", 10, Some("alpha"))
+            .unwrap();
+        assert_eq!(only_alpha.nodes.len(), 1);
+        assert_eq!(only_alpha.nodes[0].source_name, "alpha");
+    }
+
+    #[test]
+    fn test_search_scoped_missing_source_errors() {
+        let store = GraphStore::open_in_memory().unwrap();
+        let n = make_node("x", "function", "s::x");
+        store.upsert_source("s", "1.0", "rust", &[n], &[]).unwrap();
+
+        let err = store
+            .search_scoped("x", 10, Some("nope"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not found"));
+        assert!(err.contains("roux list"));
     }
 
     #[test]

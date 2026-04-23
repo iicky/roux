@@ -482,7 +482,7 @@ fn bench_rrf_ab_test() {
 
         for case in ROUX_QUERIES {
             let result = store
-                .search_with_opts(case.query, 10, *method, *desc_rerank)
+                .search_with_opts(case.query, 10, *method, *desc_rerank, None)
                 .unwrap();
             let names: Vec<String> = result.nodes.iter().map(|n| n.name.clone()).collect();
             results.push((names, case.expected));
@@ -1112,7 +1112,13 @@ fn bench_multi_repo() {
             for case in indexed.bench.queries {
                 let result = indexed
                     .store
-                    .search_with_opts(case.query, 10, FusionMethod::ScoreFusion, *desc_rerank)
+                    .search_with_opts(
+                        case.query,
+                        10,
+                        FusionMethod::ScoreFusion,
+                        *desc_rerank,
+                        None,
+                    )
                     .unwrap();
                 let names: Vec<String> = result.nodes.iter().map(|n| n.name.clone()).collect();
                 repo_results.push((names, case.expected));

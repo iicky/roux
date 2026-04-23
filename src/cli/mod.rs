@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-use crate::config::Config;
+use crate::config::{Config, StoreScope};
 use crate::graph;
 use crate::graph::extract::FileGraph;
 use crate::graph::store::GraphStore;
@@ -68,10 +68,10 @@ enum Command {
         /// Output format: text or json
         #[arg(long, default_value = "text")]
         format: String,
-        /// Search local index only
-        #[arg(long)]
+        /// Search local index only (mutually exclusive with --global)
+        #[arg(long, conflicts_with = "global")]
         local: bool,
-        /// Search global index only
+        /// Search global index only (mutually exclusive with --local)
         #[arg(long)]
         global: bool,
         /// Query a specific .sqlite index file (e.g. a downloaded artifact)
@@ -83,9 +83,12 @@ enum Command {
         /// Output format: text or json
         #[arg(long, default_value = "text")]
         format: String,
-        /// List local index only
-        #[arg(long)]
+        /// List local index only (mutually exclusive with --global)
+        #[arg(long, conflicts_with = "global")]
         local: bool,
+        /// List global index only (mutually exclusive with --local)
+        #[arg(long)]
+        global: bool,
         /// List sources in a specific .sqlite index file
         #[arg(long, value_name = "PATH")]
         db: Option<std::path::PathBuf>,
@@ -169,7 +172,12 @@ impl Cli {
                 *global,
                 db.as_deref(),
             ),
-            Command::List { format, local, db } => cmd_list(&config, format, *local, db.as_deref()),
+            Command::List {
+                format,
+                local,
+                global,
+                db,
+            } => cmd_list(&config, format, *local, *global, db.as_deref()),
             Command::Sync { source, dry_run } => cmd_sync(&config, source.as_deref(), *dry_run),
             Command::Remove { source } => cmd_remove(&config, source),
             Command::Export {
@@ -220,7 +228,7 @@ fn cmd_init(
 
     eprintln!("Ingesting {} dependencies...\n", deps.len());
 
-    let store_path = config.resolve_store_path(local);
+    let store_path = config.resolve_store_path(StoreScope::from_flags(local, false));
     if let Some(parent) = store_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -454,7 +462,7 @@ fn cmd_add(
     }
 
     // Store in graph database
-    let store_path = config.resolve_store_path(local);
+    let store_path = config.resolve_store_path(StoreScope::from_flags(local, false));
     let store = GraphStore::open(&store_path)?;
     store.upsert_source(
         &source.name,
@@ -481,22 +489,19 @@ fn cmd_add(
 }
 
 fn cmd_query(
-    _config: &Config,
+    config: &Config,
     query: &str,
     top: usize,
-    _source: Option<&str>,
+    source: Option<&str>,
     format: &str,
     local: bool,
-    _global: bool,
+    global: bool,
     db: Option<&std::path::Path>,
 ) -> Result<()> {
     let store_path = if let Some(path) = db {
         path.to_path_buf()
-    } else if local {
-        std::path::PathBuf::from(".roux/db.sqlite")
     } else {
-        let config = Config::load()?;
-        config.resolve_store_path(false)
+        config.resolve_store_path(StoreScope::from_flags(local, global))
     };
 
     if !store_path.exists() {
@@ -508,7 +513,7 @@ fn cmd_query(
     }
 
     let store = GraphStore::open(&store_path)?;
-    let result = store.search(query, top)?;
+    let result = store.search_scoped(query, top, source)?;
 
     if result.nodes.is_empty() {
         eprintln!("No results found.");
@@ -663,9 +668,9 @@ fn cmd_list(
     config: &Config,
     format: &str,
     local: bool,
+    global: bool,
     db: Option<&std::path::Path>,
 ) -> Result<()> {
-    let _ = local; // TODO: use to filter local vs global
     let local_path = std::path::PathBuf::from(".roux/db.sqlite");
 
     let mut rows: Vec<(crate::graph::store::SourceRecord, Status, String)> = Vec::new();
@@ -682,9 +687,12 @@ fn cmd_list(
             rows.push((src, status, display_name));
         }
     } else {
-        let store_path = config.resolve_store_path(false);
+        let scope = StoreScope::from_flags(local, global);
+        let include_local = matches!(scope, StoreScope::Local | StoreScope::Auto);
+        let include_global = matches!(scope, StoreScope::Global | StoreScope::Auto);
+        let global_path = config.resolve_store_path(StoreScope::Global);
 
-        if local_path.exists() {
+        if include_local && local_path.exists() {
             let store = GraphStore::open(&local_path)?;
             for src in store.list_sources()? {
                 let status = check_source_status(&src);
@@ -693,8 +701,8 @@ fn cmd_list(
             }
         }
 
-        if store_path.exists() && store_path != local_path {
-            let store = GraphStore::open(&store_path)?;
+        if include_global && global_path.exists() && global_path != local_path {
+            let store = GraphStore::open(&global_path)?;
             for src in store.list_sources()? {
                 let status = check_source_status(&src);
                 let display_name = src.name.clone();
@@ -751,14 +759,11 @@ fn cmd_list(
 }
 
 fn cmd_export(config: &Config, output: &std::path::Path, gzip: bool, global: bool) -> Result<()> {
-    let local_path = std::path::PathBuf::from(".roux/db.sqlite");
     let source_db = if global {
-        config.resolve_store_path(false)
-    } else if local_path.exists() {
-        local_path
+        config.resolve_store_path(StoreScope::Global)
     } else {
-        // Fall back to global if no local index present
-        config.resolve_store_path(false)
+        // Auto honors prefer_local if .roux/db.sqlite exists, else falls back to global.
+        config.resolve_store_path(StoreScope::Auto)
     };
 
     if !source_db.exists() {
@@ -837,12 +842,7 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
     let cwd = std::env::current_dir()?;
     let project = crate::lockfile::detect_project(&cwd);
 
-    let local_path = std::path::PathBuf::from(".roux/db.sqlite");
-    let store_path = if local_path.exists() {
-        local_path
-    } else {
-        config.resolve_store_path(false)
-    };
+    let store_path = config.resolve_store_path(StoreScope::Auto);
     if !store_path.exists() {
         anyhow::bail!(
             "no index found at {}. Run `roux init` or `roux add` first.",
@@ -1072,7 +1072,7 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
 }
 
 fn cmd_remove(config: &Config, source_name: &str) -> Result<()> {
-    let store_path = config.resolve_store_path(false);
+    let store_path = config.resolve_store_path(StoreScope::Auto);
     if !store_path.exists() {
         anyhow::bail!("no index found at {}", store_path.display());
     }
@@ -1327,6 +1327,15 @@ mod tests {
     fn test_parse_list() {
         Cli::try_parse_from(["roux", "list"]).unwrap();
         Cli::try_parse_from(["roux", "list", "--format", "json"]).unwrap();
+        Cli::try_parse_from(["roux", "list", "--local"]).unwrap();
+        Cli::try_parse_from(["roux", "list", "--global"]).unwrap();
+    }
+
+    #[test]
+    fn test_parse_local_global_conflict() {
+        // --local and --global are mutually exclusive on both query and list.
+        assert!(Cli::try_parse_from(["roux", "query", "x", "--local", "--global"]).is_err());
+        assert!(Cli::try_parse_from(["roux", "list", "--local", "--global"]).is_err());
     }
 
     #[test]

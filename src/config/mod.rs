@@ -84,17 +84,43 @@ impl Config {
         Ok(toml::from_str(s)?)
     }
 
-    pub fn resolve_store_path(&self, local: bool) -> PathBuf {
-        if local {
-            return PathBuf::from(".roux/db.sqlite");
-        }
-        if self.index.prefer_local {
-            let local_path = PathBuf::from(".roux/db.sqlite");
-            if local_path.exists() {
-                return local_path;
+    pub fn resolve_store_path(&self, scope: StoreScope) -> PathBuf {
+        match scope {
+            StoreScope::Local => PathBuf::from(".roux/db.sqlite"),
+            StoreScope::Global => self.index.global_path.clone(),
+            StoreScope::Auto => {
+                if self.index.prefer_local {
+                    let local_path = PathBuf::from(".roux/db.sqlite");
+                    if local_path.exists() {
+                        return local_path;
+                    }
+                }
+                self.index.global_path.clone()
             }
         }
-        self.index.global_path.clone()
+    }
+}
+
+/// Which store a CLI command should target. `Auto` follows `prefer_local`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreScope {
+    /// Force `.roux/db.sqlite`.
+    Local,
+    /// Force the configured global store even if a local index exists.
+    Global,
+    /// Default behavior: prefer local if `prefer_local` is true and local exists.
+    Auto,
+}
+
+impl StoreScope {
+    /// Translate mutually-exclusive CLI flags into a scope. Callers should use
+    /// clap's `conflicts_with` so both flags can't be set at once.
+    pub fn from_flags(local: bool, global: bool) -> Self {
+        match (local, global) {
+            (true, false) => StoreScope::Local,
+            (false, true) => StoreScope::Global,
+            _ => StoreScope::Auto,
+        }
     }
 }
 
@@ -131,8 +157,24 @@ mod tests {
     #[test]
     fn test_resolve_store_path_local() {
         let config = Config::default();
-        let path = config.resolve_store_path(true);
+        let path = config.resolve_store_path(StoreScope::Local);
         assert_eq!(path, PathBuf::from(".roux/db.sqlite"));
+    }
+
+    #[test]
+    fn test_resolve_store_path_global_overrides_prefer_local() {
+        let mut config = Config::default();
+        config.index.prefer_local = true;
+        // Even with prefer_local and a potentially-present .roux, Global forces global.
+        let path = config.resolve_store_path(StoreScope::Global);
+        assert_eq!(path, config.index.global_path);
+    }
+
+    #[test]
+    fn test_scope_from_flags() {
+        assert_eq!(StoreScope::from_flags(true, false), StoreScope::Local);
+        assert_eq!(StoreScope::from_flags(false, true), StoreScope::Global);
+        assert_eq!(StoreScope::from_flags(false, false), StoreScope::Auto);
     }
 
     #[test]
