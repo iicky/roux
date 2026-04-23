@@ -21,6 +21,20 @@ fn skip_dir(name: &str) -> bool {
         )
 }
 
+/// Artifact files the indexer never consumes. Keeping these out of the rollup
+/// means `roux export` into the indexed directory doesn't spuriously flip the
+/// local source to "stale".
+fn skip_file(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.ends_with(".sqlite")
+        || lower.ends_with(".sqlite-journal")
+        || lower.ends_with(".sqlite-wal")
+        || lower.ends_with(".sqlite-shm")
+        || lower.ends_with(".sqlite.gz")
+        || lower.ends_with(".db")
+        || lower == ".ds_store"
+}
+
 /// Rollup fingerprint of a directory: blake3 over sorted `(rel_path, size, mtime)` tuples.
 pub fn fingerprint_dir(dir: &Path) -> Result<String> {
     let mut entries = Vec::new();
@@ -79,6 +93,11 @@ fn collect(
         if path.is_dir() {
             collect(&path, base, out, depth + 1)?;
         } else {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                && skip_file(name)
+            {
+                continue;
+            }
             let md = match path.metadata() {
                 Ok(m) => m,
                 Err(_) => continue,
@@ -147,6 +166,23 @@ mod tests {
         // And hidden dot-files/dirs at top level.
         fs::create_dir(tmp.path().join(".hidden")).unwrap();
         fs::write(tmp.path().join(".hidden").join("x"), "y").unwrap();
+
+        let fp_after = fingerprint_dir(tmp.path()).unwrap();
+        assert_eq!(fp_before, fp_after);
+    }
+
+    #[test]
+    fn dir_fingerprint_skips_sqlite_artifacts() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.rs"), "fn a() {}").unwrap();
+        let fp_before = fingerprint_dir(tmp.path()).unwrap();
+
+        // Exporting a roux artifact into the indexed directory must not change
+        // the fingerprint — otherwise a `roux export` spuriously flips the
+        // local source to stale.
+        fs::write(tmp.path().join("artifact.sqlite"), "fake db bytes").unwrap();
+        fs::write(tmp.path().join("artifact.sqlite.gz"), "fake gz").unwrap();
+        fs::write(tmp.path().join(".DS_Store"), "macos junk").unwrap();
 
         let fp_after = fingerprint_dir(tmp.path()).unwrap();
         assert_eq!(fp_before, fp_after);

@@ -74,6 +74,9 @@ enum Command {
         /// Search global index only
         #[arg(long)]
         global: bool,
+        /// Query a specific .sqlite index file (e.g. a downloaded artifact)
+        #[arg(long, value_name = "PATH")]
+        db: Option<std::path::PathBuf>,
     },
     /// List all indexed sources
     List {
@@ -83,6 +86,9 @@ enum Command {
         /// List local index only
         #[arg(long)]
         local: bool,
+        /// List sources in a specific .sqlite index file
+        #[arg(long, value_name = "PATH")]
+        db: Option<std::path::PathBuf>,
     },
     /// Re-read lockfile and re-ingest changed dependencies
     Sync {
@@ -96,6 +102,18 @@ enum Command {
     Remove {
         /// Source name to remove
         source: String,
+    },
+    /// Export the local index to a portable artifact file for distribution
+    Export {
+        /// Output path (e.g. my-index.sqlite or my-index.sqlite.gz)
+        #[arg(long, value_name = "PATH")]
+        output: std::path::PathBuf,
+        /// Compress the output with gzip (appends/requires .gz suffix)
+        #[arg(long)]
+        gzip: bool,
+        /// Export from the global index instead of .roux/db.sqlite
+        #[arg(long)]
+        global: bool,
     },
 }
 
@@ -140,6 +158,7 @@ impl Cli {
                 format,
                 local,
                 global,
+                db,
             } => cmd_query(
                 &config,
                 query,
@@ -148,10 +167,18 @@ impl Cli {
                 format,
                 *local,
                 *global,
+                db.as_deref(),
             ),
-            Command::List { format, local } => cmd_list(&config, format, *local),
+            Command::List { format, local, db } => {
+                cmd_list(&config, format, *local, db.as_deref())
+            }
             Command::Sync { .. } => todo!("sync"),
             Command::Remove { source } => cmd_remove(&config, source),
+            Command::Export {
+                output,
+                gzip,
+                global,
+            } => cmd_export(&config, output, *gzip, *global),
         }
     }
 }
@@ -473,8 +500,11 @@ fn cmd_query(
     format: &str,
     local: bool,
     _global: bool,
+    db: Option<&std::path::Path>,
 ) -> Result<()> {
-    let store_path = if local {
+    let store_path = if let Some(path) = db {
+        path.to_path_buf()
+    } else if local {
         std::path::PathBuf::from(".roux/db.sqlite")
     } else {
         let config = Config::load()?;
@@ -483,6 +513,10 @@ fn cmd_query(
 
     if !store_path.exists() {
         anyhow::bail!("no index found at {}", store_path.display());
+    }
+
+    if db.is_some() {
+        crate::artifact::check_artifact_compatibility(&store_path)?;
     }
 
     let store = GraphStore::open(&store_path)?;
@@ -637,28 +671,47 @@ pub fn check_source_status(record: &crate::graph::store::SourceRecord) -> Status
     }
 }
 
-fn cmd_list(config: &Config, format: &str, local: bool) -> Result<()> {
+fn cmd_list(
+    config: &Config,
+    format: &str,
+    local: bool,
+    db: Option<&std::path::Path>,
+) -> Result<()> {
     let _ = local; // TODO: use to filter local vs global
-    let store_path = config.resolve_store_path(false);
     let local_path = std::path::PathBuf::from(".roux/db.sqlite");
 
     let mut rows: Vec<(crate::graph::store::SourceRecord, Status, String)> = Vec::new();
 
-    if local_path.exists() {
-        let store = GraphStore::open(&local_path)?;
-        for src in store.list_sources()? {
-            let status = check_source_status(&src);
-            let display_name = format!("{} (local)", src.name);
-            rows.push((src, status, display_name));
+    if let Some(path) = db {
+        if !path.exists() {
+            anyhow::bail!("no index found at {}", path.display());
         }
-    }
-
-    if store_path.exists() && store_path != local_path {
-        let store = GraphStore::open(&store_path)?;
+        crate::artifact::check_artifact_compatibility(path)?;
+        let store = GraphStore::open(path)?;
         for src in store.list_sources()? {
             let status = check_source_status(&src);
             let display_name = src.name.clone();
             rows.push((src, status, display_name));
+        }
+    } else {
+        let store_path = config.resolve_store_path(false);
+
+        if local_path.exists() {
+            let store = GraphStore::open(&local_path)?;
+            for src in store.list_sources()? {
+                let status = check_source_status(&src);
+                let display_name = format!("{} (local)", src.name);
+                rows.push((src, status, display_name));
+            }
+        }
+
+        if store_path.exists() && store_path != local_path {
+            let store = GraphStore::open(&store_path)?;
+            for src in store.list_sources()? {
+                let status = check_source_status(&src);
+                let display_name = src.name.clone();
+                rows.push((src, status, display_name));
+            }
         }
     }
 
@@ -706,6 +759,41 @@ fn cmd_list(config: &Config, format: &str, local: bool) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn cmd_export(
+    config: &Config,
+    output: &std::path::Path,
+    gzip: bool,
+    global: bool,
+) -> Result<()> {
+    let local_path = std::path::PathBuf::from(".roux/db.sqlite");
+    let source_db = if global {
+        config.resolve_store_path(false)
+    } else if local_path.exists() {
+        local_path
+    } else {
+        // Fall back to global if no local index present
+        config.resolve_store_path(false)
+    };
+
+    if !source_db.exists() {
+        anyhow::bail!(
+            "no index found at {}. Run `roux init --local` or `roux add` first.",
+            source_db.display()
+        );
+    }
+
+    eprintln!("Exporting {} → {}", source_db.display(), output.display());
+    let written = crate::artifact::export(&source_db, output, gzip)?;
+    let size = std::fs::metadata(&written).map(|m| m.len()).unwrap_or(0);
+    eprintln!(
+        "Wrote {} ({:.1} MiB){}",
+        written.display(),
+        size as f64 / 1024.0 / 1024.0,
+        if gzip { ", gzipped" } else { "" }
+    );
     Ok(())
 }
 
@@ -917,6 +1005,57 @@ mod tests {
     #[test]
     fn test_parse_remove() {
         Cli::try_parse_from(["roux", "remove", "tokio"]).unwrap();
+    }
+
+    #[test]
+    fn test_parse_query_with_db() {
+        let cli = Cli::try_parse_from([
+            "roux", "query", "auth", "--db", "/tmp/index.sqlite",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Query { db, .. } => {
+                assert_eq!(db.unwrap(), std::path::PathBuf::from("/tmp/index.sqlite"));
+            }
+            _ => panic!("expected Query"),
+        }
+    }
+
+    #[test]
+    fn test_parse_list_with_db() {
+        let cli = Cli::try_parse_from(["roux", "list", "--db", "./x.sqlite"]).unwrap();
+        assert!(matches!(cli.command, Command::List { db: Some(_), .. }));
+    }
+
+    #[test]
+    fn test_parse_export() {
+        let cli = Cli::try_parse_from([
+            "roux", "export", "--output", "my-index.sqlite",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Export { output, gzip, global } => {
+                assert_eq!(output, std::path::PathBuf::from("my-index.sqlite"));
+                assert!(!gzip);
+                assert!(!global);
+            }
+            _ => panic!("expected Export"),
+        }
+    }
+
+    #[test]
+    fn test_parse_export_gzipped() {
+        let cli = Cli::try_parse_from([
+            "roux", "export", "--output", "my.sqlite.gz", "--gzip", "--global",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Export { gzip, global, .. } => {
+                assert!(gzip);
+                assert!(global);
+            }
+            _ => panic!("expected Export"),
+        }
     }
 
     #[test]
