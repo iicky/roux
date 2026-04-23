@@ -1,11 +1,6 @@
 [advisories]
 yanked = "warn"
-ignore = [
-    # transitive: number_prefix (via indicatif) — unmaintained, no security issue
-    "RUSTSEC-2025-0119",
-    # transitive: paste (via candle) — unmaintained, no security issue
-    "RUSTSEC-2024-0436",
-]
+ignore = []
 
 [licenses]
 allow = [
