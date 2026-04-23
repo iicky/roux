@@ -510,34 +510,32 @@ fn extract_relationship_edges(
 ) {
     let kind = node.kind();
     match lang {
-        "rust" => {
+        "rust" if kind == "impl_item" => {
             // impl Trait for Type → implements edge
-            if kind == "impl_item" {
-                // Check for "for" keyword indicating trait impl
-                let full_text = node_text(node, code);
-                if full_text.contains(" for ") {
-                    // The trait is before "for", the type is after
-                    // Tree-sitter structure: impl <trait> for <type> { ... }
-                    let mut cursor = node.walk();
-                    let children: Vec<_> = node.children(&mut cursor).collect();
-                    // Find trait name — it's a type_identifier before the "for" keyword
-                    let mut found_trait = None;
-                    for child in &children {
-                        if (child.kind() == "type_identifier"
-                            || child.kind() == "generic_type"
-                            || child.kind() == "scoped_type_identifier")
-                            && found_trait.is_none()
-                        {
-                            found_trait = Some(node_text(child, code).to_string());
-                        }
+            // Check for "for" keyword indicating trait impl
+            let full_text = node_text(node, code);
+            if full_text.contains(" for ") {
+                // The trait is before "for", the type is after
+                // Tree-sitter structure: impl <trait> for <type> { ... }
+                let mut cursor = node.walk();
+                let children: Vec<_> = node.children(&mut cursor).collect();
+                // Find trait name — it's a type_identifier before the "for" keyword
+                let mut found_trait = None;
+                for child in &children {
+                    if (child.kind() == "type_identifier"
+                        || child.kind() == "generic_type"
+                        || child.kind() == "scoped_type_identifier")
+                        && found_trait.is_none()
+                    {
+                        found_trait = Some(node_text(child, code).to_string());
                     }
-                    if let Some(trait_name) = found_trait {
-                        edges.push(Edge {
-                            from_id: sym_id.to_string(),
-                            to_id: format!("__unresolved::{trait_name}"),
-                            kind: "implements".to_string(),
-                        });
-                    }
+                }
+                if let Some(trait_name) = found_trait {
+                    edges.push(Edge {
+                        from_id: sym_id.to_string(),
+                        to_id: format!("__unresolved::{trait_name}"),
+                        kind: "implements".to_string(),
+                    });
                 }
             }
         }
@@ -559,40 +557,38 @@ fn extract_relationship_edges(
                 }
             }
         }
-        "javascript" | "typescript" | "tsx" => {
+        "javascript" | "typescript" | "tsx" if kind == "class_declaration" => {
             // class Foo extends Bar → inherits
             // class Foo implements Bar → implements (TS only)
-            if kind == "class_declaration" {
-                if let Some(heritage) = find_child_by_kind(node, "class_heritage") {
-                    let text = node_text(&heritage, code);
-                    if text.contains("extends") {
-                        // Extract the parent class name
-                        if let Some(id) = find_child_by_kind(&heritage, "identifier") {
-                            let parent_name = node_text(&id, code).to_string();
-                            edges.push(Edge {
-                                from_id: sym_id.to_string(),
-                                to_id: format!("__unresolved::{parent_name}"),
-                                kind: "inherits".to_string(),
-                            });
-                        }
+            if let Some(heritage) = find_child_by_kind(node, "class_heritage") {
+                let text = node_text(&heritage, code);
+                if text.contains("extends") {
+                    // Extract the parent class name
+                    if let Some(id) = find_child_by_kind(&heritage, "identifier") {
+                        let parent_name = node_text(&id, code).to_string();
+                        edges.push(Edge {
+                            from_id: sym_id.to_string(),
+                            to_id: format!("__unresolved::{parent_name}"),
+                            kind: "inherits".to_string(),
+                        });
                     }
                 }
-                // TypeScript implements clause
-                let mut cursor = node.walk();
-                for child in node.children(&mut cursor) {
-                    let child_text = node_text(&child, code);
-                    if child_text.starts_with("implements") {
-                        // Extract interface names
-                        let mut inner_cursor = child.walk();
-                        for inner in child.children(&mut inner_cursor) {
-                            if inner.kind() == "type_identifier" || inner.kind() == "identifier" {
-                                let iface_name = node_text(&inner, code).to_string();
-                                edges.push(Edge {
-                                    from_id: sym_id.to_string(),
-                                    to_id: format!("__unresolved::{iface_name}"),
-                                    kind: "implements".to_string(),
-                                });
-                            }
+            }
+            // TypeScript implements clause
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                let child_text = node_text(&child, code);
+                if child_text.starts_with("implements") {
+                    // Extract interface names
+                    let mut inner_cursor = child.walk();
+                    for inner in child.children(&mut inner_cursor) {
+                        if inner.kind() == "type_identifier" || inner.kind() == "identifier" {
+                            let iface_name = node_text(&inner, code).to_string();
+                            edges.push(Edge {
+                                from_id: sym_id.to_string(),
+                                to_id: format!("__unresolved::{iface_name}"),
+                                kind: "implements".to_string(),
+                            });
                         }
                     }
                 }

@@ -169,9 +169,7 @@ impl Cli {
                 *global,
                 db.as_deref(),
             ),
-            Command::List { format, local, db } => {
-                cmd_list(&config, format, *local, db.as_deref())
-            }
+            Command::List { format, local, db } => cmd_list(&config, format, *local, db.as_deref()),
             Command::Sync { .. } => todo!("sync"),
             Command::Remove { source } => cmd_remove(&config, source),
             Command::Export {
@@ -257,13 +255,7 @@ fn cmd_init(
                         continue;
                     }
                     let upsert = store
-                        .upsert_source(
-                            &dep.name,
-                            &version,
-                            "rust",
-                            &graph.nodes,
-                            &graph.edges,
-                        )
+                        .upsert_source(&dep.name, &version, "rust", &graph.nodes, &graph.edges)
                         .and_then(|()| {
                             store.set_source_meta(
                                 &dep.name,
@@ -324,12 +316,7 @@ fn cmd_init(
             &file_graph.edges,
         )?;
         let fp = crate::fingerprint::fingerprint_dir(&cwd).ok();
-        store.set_source_meta(
-            project_name,
-            "path",
-            cwd.to_str(),
-            fp.as_deref(),
-        )?;
+        store.set_source_meta(project_name, "path", cwd.to_str(), fp.as_deref())?;
         eprintln!(
             "Indexed {} symbols, {} edges from local source",
             file_graph.nodes.len(),
@@ -443,7 +430,8 @@ fn cmd_add(
             let (dir, resolved_version) =
                 crate::source::crate_download::download_crate(crate_name, version_str)?;
             source_version = resolved_version.clone();
-            let fg = graph::extract::extract_dir(&dir, &source.name, &source_version, Some("rust"))?;
+            let fg =
+                graph::extract::extract_dir(&dir, &source.name, &source_version, Some("rust"))?;
             (
                 fg,
                 "crate",
@@ -762,12 +750,7 @@ fn cmd_list(
     Ok(())
 }
 
-fn cmd_export(
-    config: &Config,
-    output: &std::path::Path,
-    gzip: bool,
-    global: bool,
-) -> Result<()> {
+fn cmd_export(config: &Config, output: &std::path::Path, gzip: bool, global: bool) -> Result<()> {
     let local_path = std::path::PathBuf::from(".roux/db.sqlite");
     let source_db = if global {
         config.resolve_store_path(false)
@@ -866,7 +849,14 @@ mod tests {
     #[test]
     fn test_parse_init_exclude_and_timeout() {
         let cli = Cli::try_parse_from([
-            "roux", "init", "--exclude", "candle*", "--exclude", "*-sys", "--timeout", "15",
+            "roux",
+            "init",
+            "--exclude",
+            "candle*",
+            "--exclude",
+            "*-sys",
+            "--timeout",
+            "15",
         ])
         .unwrap();
         match cli.command {
@@ -1009,10 +999,8 @@ mod tests {
 
     #[test]
     fn test_parse_query_with_db() {
-        let cli = Cli::try_parse_from([
-            "roux", "query", "auth", "--db", "/tmp/index.sqlite",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["roux", "query", "auth", "--db", "/tmp/index.sqlite"]).unwrap();
         match cli.command {
             Command::Query { db, .. } => {
                 assert_eq!(db.unwrap(), std::path::PathBuf::from("/tmp/index.sqlite"));
@@ -1029,12 +1017,13 @@ mod tests {
 
     #[test]
     fn test_parse_export() {
-        let cli = Cli::try_parse_from([
-            "roux", "export", "--output", "my-index.sqlite",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["roux", "export", "--output", "my-index.sqlite"]).unwrap();
         match cli.command {
-            Command::Export { output, gzip, global } => {
+            Command::Export {
+                output,
+                gzip,
+                global,
+            } => {
                 assert_eq!(output, std::path::PathBuf::from("my-index.sqlite"));
                 assert!(!gzip);
                 assert!(!global);
@@ -1046,7 +1035,12 @@ mod tests {
     #[test]
     fn test_parse_export_gzipped() {
         let cli = Cli::try_parse_from([
-            "roux", "export", "--output", "my.sqlite.gz", "--gzip", "--global",
+            "roux",
+            "export",
+            "--output",
+            "my.sqlite.gz",
+            "--gzip",
+            "--global",
         ])
         .unwrap();
         match cli.command {

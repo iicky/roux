@@ -38,8 +38,7 @@ fn skip_file(name: &str) -> bool {
 /// Rollup fingerprint of a directory: blake3 over sorted `(rel_path, size, mtime)` tuples.
 pub fn fingerprint_dir(dir: &Path) -> Result<String> {
     let mut entries = Vec::new();
-    collect(dir, dir, &mut entries, 0)
-        .with_context(|| format!("walking {}", dir.display()))?;
+    collect(dir, dir, &mut entries, 0).with_context(|| format!("walking {}", dir.display()))?;
     entries.sort();
 
     let mut hasher = blake3::Hasher::new();
@@ -54,17 +53,11 @@ pub fn fingerprint_dir(dir: &Path) -> Result<String> {
 
 /// Fingerprint of a single file: blake3 of its contents.
 pub fn fingerprint_file(path: &Path) -> Result<String> {
-    let bytes =
-        std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     Ok(blake3::hash(&bytes).to_hex().to_string())
 }
 
-fn collect(
-    dir: &Path,
-    base: &Path,
-    out: &mut Vec<(String, u64, u64)>,
-    depth: usize,
-) -> Result<()> {
+fn collect(dir: &Path, base: &Path, out: &mut Vec<(String, u64, u64)>, depth: usize) -> Result<()> {
     if depth > MAX_DEPTH {
         return Ok(());
     }

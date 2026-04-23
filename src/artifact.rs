@@ -132,8 +132,7 @@ pub fn export(source_db: &Path, output: &Path, gzip: bool) -> Result<PathBuf> {
 /// Verify that `path` is a roux artifact this binary can read. Returns the
 /// detected `artifact_version` on success.
 pub fn check_artifact_compatibility(path: &Path) -> Result<String> {
-    let conn = Connection::open(path)
-        .with_context(|| format!("opening {}", path.display()))?;
+    let conn = Connection::open(path).with_context(|| format!("opening {}", path.display()))?;
 
     // Artifact version
     let artifact_version: Option<String> = conn
