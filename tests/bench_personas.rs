@@ -469,6 +469,7 @@ fn bench_all_personas() {
     let mut total_dev_h1 = 0.0;
     let mut total_dev_mrr = 0.0;
     let mut count = 0;
+    let mut persona_json = Vec::new();
 
     for persona in &personas {
         if let Some(r) = run_persona(persona) {
@@ -477,6 +478,23 @@ fn bench_all_personas() {
             total_dev_h1 += r.dev_h1;
             total_dev_mrr += r.dev_mrr;
             count += 1;
+            persona_json.push(serde_json::json!({
+                "name": persona.name,
+                "language": persona.language,
+                "node_count": r.node_count,
+                "edge_count": r.edge_count,
+                "extract_ms": r.extract_ms,
+                "metrics": {
+                    "h1": r.h1,
+                    "h5": r.h5,
+                    "h10": r.h10,
+                    "mrr": r.mrr,
+                    "agent_h1": r.agent_h1,
+                    "agent_mrr": r.agent_mrr,
+                    "dev_h1": r.dev_h1,
+                    "dev_mrr": r.dev_mrr,
+                },
+            }));
         }
     }
 
@@ -492,6 +510,35 @@ fn bench_all_personas() {
             total_dev_h1 / count as f64 * 100.0,
             total_dev_mrr / count as f64,
         );
+    }
+
+    // Optional JSON emission for CI. Triggered by env var so local runs stay clean.
+    if let Ok(path) = std::env::var("ROUX_BENCH_JSON_OUT") {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let commit = std::env::var("GITHUB_SHA").ok();
+        let payload = serde_json::json!({
+            "roux_version": env!("CARGO_PKG_VERSION"),
+            "timestamp": timestamp,
+            "commit": commit,
+            "personas": persona_json,
+            "aggregate": if count > 0 {
+                serde_json::json!({
+                    "count": count,
+                    "agent_h1": total_agent_h1 / count as f64,
+                    "agent_mrr": total_agent_mrr / count as f64,
+                    "dev_h1": total_dev_h1 / count as f64,
+                    "dev_mrr": total_dev_mrr / count as f64,
+                })
+            } else {
+                serde_json::json!(null)
+            },
+        });
+        std::fs::write(&path, serde_json::to_string_pretty(&payload).unwrap())
+            .unwrap_or_else(|e| panic!("writing {path}: {e}"));
+        eprintln!("\nWrote JSON metrics to {path}");
     }
 }
 
