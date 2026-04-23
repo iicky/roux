@@ -170,7 +170,7 @@ impl Cli {
                 db.as_deref(),
             ),
             Command::List { format, local, db } => cmd_list(&config, format, *local, db.as_deref()),
-            Command::Sync { .. } => todo!("sync"),
+            Command::Sync { source, dry_run } => cmd_sync(&config, source.as_deref(), *dry_run),
             Command::Remove { source } => cmd_remove(&config, source),
             Command::Export {
                 output,
@@ -780,6 +780,297 @@ fn cmd_export(config: &Config, output: &std::path::Path, gzip: bool, global: boo
     Ok(())
 }
 
+/// Per-source plan produced during `roux sync`.
+#[derive(Debug)]
+enum SyncPlan {
+    Fresh,
+    Stale { reason: String, action: SyncAction },
+    Unknown(String),
+}
+
+#[derive(Debug)]
+enum SyncAction {
+    /// Re-download and re-extract a crate at a new version.
+    Crate { new_version: String },
+    /// Re-walk a directory source and re-index.
+    Path,
+    /// Re-read and re-index a single file source.
+    File,
+}
+
+fn plan_sync(record: &crate::graph::store::SourceRecord, expected: Option<&str>) -> SyncPlan {
+    match record.source_kind.as_str() {
+        "crate" => match expected {
+            None => SyncPlan::Unknown("no lockfile entry".into()),
+            Some(v) if v == record.version => SyncPlan::Fresh,
+            Some(v) => SyncPlan::Stale {
+                reason: format!("{} → {v}", record.version),
+                action: SyncAction::Crate {
+                    new_version: v.to_string(),
+                },
+            },
+        },
+        "path" => match check_source_status(record) {
+            Status::Fresh => SyncPlan::Fresh,
+            Status::Stale(r) => SyncPlan::Stale {
+                reason: r,
+                action: SyncAction::Path,
+            },
+            Status::Unknown => SyncPlan::Unknown("origin path unavailable".into()),
+        },
+        "file" => match check_source_status(record) {
+            Status::Fresh => SyncPlan::Fresh,
+            Status::Stale(r) => SyncPlan::Stale {
+                reason: r,
+                action: SyncAction::File,
+            },
+            Status::Unknown => SyncPlan::Unknown("origin file unavailable".into()),
+        },
+        "" => SyncPlan::Unknown("no source metadata".into()),
+        other => SyncPlan::Unknown(format!("unsupported source kind: {other}")),
+    }
+}
+
+fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Result<()> {
+    use std::collections::HashMap;
+
+    let cwd = std::env::current_dir()?;
+    let project = crate::lockfile::detect_project(&cwd);
+
+    let local_path = std::path::PathBuf::from(".roux/db.sqlite");
+    let store_path = if local_path.exists() {
+        local_path
+    } else {
+        config.resolve_store_path(false)
+    };
+    if !store_path.exists() {
+        anyhow::bail!(
+            "no index found at {}. Run `roux init` or `roux add` first.",
+            store_path.display()
+        );
+    }
+
+    let store = GraphStore::open(&store_path)?;
+    let sources = store.list_sources()?;
+
+    // Map crate name → expected version from the lockfile (if any). The
+    // persisted `origin` holds the crate name; fall back to `name` for legacy
+    // sources written before staleness metadata existed.
+    let expected: HashMap<String, String> = project
+        .as_ref()
+        .map(|p| {
+            p.deps
+                .iter()
+                .filter_map(|d| d.version.clone().map(|v| (d.name.clone(), v)))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Classify every source.
+    let mut plans: Vec<(crate::graph::store::SourceRecord, SyncPlan)> = Vec::new();
+    for src in sources {
+        if let Some(f) = source_filter
+            && src.name != f
+        {
+            continue;
+        }
+        let expected_ver = src
+            .origin
+            .as_deref()
+            .or(Some(src.name.as_str()))
+            .and_then(|key| expected.get(key).map(String::as_str));
+        let plan = plan_sync(&src, expected_ver);
+        plans.push((src, plan));
+    }
+
+    if plans.is_empty() {
+        if let Some(f) = source_filter {
+            anyhow::bail!("source '{f}' not found in {}", store_path.display());
+        }
+        eprintln!("No sources indexed.");
+        return Ok(());
+    }
+
+    // Report.
+    let mut fresh = 0;
+    let mut stale = 0;
+    let mut unknown = 0;
+    for (src, plan) in &plans {
+        match plan {
+            SyncPlan::Fresh => {
+                fresh += 1;
+                eprintln!("  {:<24} {:<6} fresh", src.name, src.source_kind);
+            }
+            SyncPlan::Stale { reason, .. } => {
+                stale += 1;
+                eprintln!(
+                    "  {:<24} {:<6} stale  — {reason}",
+                    src.name, src.source_kind
+                );
+            }
+            SyncPlan::Unknown(why) => {
+                unknown += 1;
+                eprintln!("  {:<24} {:<6} ?      ({why})", src.name, src.source_kind);
+            }
+        }
+    }
+    eprintln!("\n{fresh} fresh, {stale} stale, {unknown} unknown");
+
+    if stale == 0 {
+        return Ok(());
+    }
+    if dry_run {
+        eprintln!("(dry-run — skipping re-ingest)");
+        return Ok(());
+    }
+
+    // Re-ingest stale sources.
+    let timeout = std::time::Duration::from_secs(DEFAULT_CRATE_TIMEOUT_SECS);
+    let mut updated = 0;
+    let mut failed = 0;
+    eprintln!("\nSyncing {stale} source(s)...");
+    for (src, plan) in &plans {
+        let SyncPlan::Stale { action, .. } = plan else {
+            continue;
+        };
+        match action {
+            SyncAction::Crate { new_version } => {
+                let crate_name = src.origin.as_deref().unwrap_or(&src.name);
+                eprint!("  {crate_name} v{new_version} ... ");
+                match extract_crate_with_timeout(crate_name, new_version, timeout) {
+                    CrateOutcome::Ok { version, graph } => {
+                        let count = graph.nodes.len();
+                        if let Err(e) = store
+                            .upsert_source(&src.name, &version, "rust", &graph.nodes, &graph.edges)
+                            .and_then(|()| {
+                                store.set_source_meta(
+                                    &src.name,
+                                    "crate",
+                                    Some(crate_name),
+                                    Some(&version),
+                                )
+                            })
+                        {
+                            eprintln!("failed: {e}");
+                            failed += 1;
+                        } else {
+                            eprintln!("{count} symbols");
+                            updated += 1;
+                        }
+                    }
+                    CrateOutcome::Err(e) => {
+                        eprintln!("failed: {e}");
+                        failed += 1;
+                    }
+                    CrateOutcome::Timeout => {
+                        eprintln!("timeout");
+                        failed += 1;
+                    }
+                }
+            }
+            SyncAction::Path => {
+                let Some(origin) = src.origin.as_deref() else {
+                    eprintln!("  {} (path)  skip — origin missing", src.name);
+                    failed += 1;
+                    continue;
+                };
+                let path = std::path::Path::new(origin);
+                eprint!("  {} (path) ... ", src.name);
+                match graph::extract::extract_dir(
+                    path,
+                    &src.name,
+                    &src.version,
+                    Some(&src.language),
+                ) {
+                    Ok(fg) => {
+                        let fp = crate::fingerprint::fingerprint_dir(path).ok();
+                        match store
+                            .upsert_source(
+                                &src.name,
+                                &src.version,
+                                &src.language,
+                                &fg.nodes,
+                                &fg.edges,
+                            )
+                            .and_then(|()| {
+                                store.set_source_meta(
+                                    &src.name,
+                                    "path",
+                                    Some(origin),
+                                    fp.as_deref(),
+                                )
+                            }) {
+                            Ok(()) => {
+                                eprintln!("{} symbols", fg.nodes.len());
+                                updated += 1;
+                            }
+                            Err(e) => {
+                                eprintln!("failed: {e}");
+                                failed += 1;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("failed: {e}");
+                        failed += 1;
+                    }
+                }
+            }
+            SyncAction::File => {
+                let Some(origin) = src.origin.as_deref() else {
+                    eprintln!("  {} (file)  skip — origin missing", src.name);
+                    failed += 1;
+                    continue;
+                };
+                let path = std::path::Path::new(origin);
+                eprint!("  {} (file) ... ", src.name);
+                match graph::extract::extract_file(
+                    path,
+                    &src.name,
+                    &src.version,
+                    Some(&src.language),
+                ) {
+                    Ok(fg) => {
+                        let fp = crate::fingerprint::fingerprint_file(path).ok();
+                        match store
+                            .upsert_source(
+                                &src.name,
+                                &src.version,
+                                &src.language,
+                                &fg.nodes,
+                                &fg.edges,
+                            )
+                            .and_then(|()| {
+                                store.set_source_meta(
+                                    &src.name,
+                                    "file",
+                                    Some(origin),
+                                    fp.as_deref(),
+                                )
+                            }) {
+                            Ok(()) => {
+                                eprintln!("{} symbols", fg.nodes.len());
+                                updated += 1;
+                            }
+                            Err(e) => {
+                                eprintln!("failed: {e}");
+                                failed += 1;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("failed: {e}");
+                        failed += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    eprintln!("\nDone: {updated} updated, {failed} failed");
+    Ok(())
+}
+
 fn cmd_remove(config: &Config, source_name: &str) -> Result<()> {
     let store_path = config.resolve_store_path(false);
     if !store_path.exists() {
@@ -977,6 +1268,59 @@ mod tests {
         std::fs::write(&p, "goodbye").unwrap();
         let stale = make_record("file", p.to_str(), Some(&fp));
         assert!(matches!(check_source_status(&stale), Status::Stale(_)));
+    }
+
+    #[test]
+    fn test_plan_sync_crate_fresh() {
+        let rec = make_record("crate", Some("serde"), Some("1.0.200"));
+        let mut r = rec.clone();
+        r.version = "1.0.200".into();
+        assert!(matches!(plan_sync(&r, Some("1.0.200")), SyncPlan::Fresh));
+    }
+
+    #[test]
+    fn test_plan_sync_crate_stale() {
+        let mut r = make_record("crate", Some("serde"), Some("1.0.200"));
+        r.version = "1.0.200".into();
+        match plan_sync(&r, Some("1.0.210")) {
+            SyncPlan::Stale { reason, action } => {
+                assert!(reason.contains("1.0.200"));
+                assert!(reason.contains("1.0.210"));
+                assert!(
+                    matches!(action, SyncAction::Crate { ref new_version } if new_version == "1.0.210")
+                );
+            }
+            _ => panic!("expected Stale"),
+        }
+    }
+
+    #[test]
+    fn test_plan_sync_crate_no_lockfile_entry() {
+        let r = make_record("crate", Some("serde"), Some("1.0.200"));
+        assert!(matches!(plan_sync(&r, None), SyncPlan::Unknown(_)));
+    }
+
+    #[test]
+    fn test_plan_sync_path_fresh() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("a.rs"), "fn a() {}").unwrap();
+        let fp = crate::fingerprint::fingerprint_dir(tmp.path()).unwrap();
+        let rec = make_record("path", tmp.path().to_str(), Some(&fp));
+        assert!(matches!(plan_sync(&rec, None), SyncPlan::Fresh));
+    }
+
+    #[test]
+    fn test_plan_sync_path_stale() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("a.rs"), "fn a() {}").unwrap();
+        let rec = make_record("path", tmp.path().to_str(), Some("wrongfingerprint"));
+        assert!(matches!(plan_sync(&rec, None), SyncPlan::Stale { .. }));
+    }
+
+    #[test]
+    fn test_plan_sync_unknown_kind() {
+        let rec = make_record("url", Some("https://x"), None);
+        assert!(matches!(plan_sync(&rec, None), SyncPlan::Unknown(_)));
     }
 
     #[test]

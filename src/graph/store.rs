@@ -716,6 +716,7 @@ pub struct SearchResult {
 
 use std::collections::HashMap;
 
+#[derive(Clone)]
 pub struct SourceRecord {
     pub name: String,
     pub version: String,
