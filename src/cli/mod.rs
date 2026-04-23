@@ -1,11 +1,18 @@
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::config::Config;
 use crate::graph;
+use crate::graph::extract::FileGraph;
 use crate::graph::store::GraphStore;
 use crate::source::Source;
 use crate::source::SourceKind;
+
+const DEFAULT_CRATE_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Parser)]
 #[command(name = "roux", about = "Prep fresh docs for your agents")]
@@ -24,6 +31,12 @@ enum Command {
         /// Write to .roux/db.sqlite instead of global
         #[arg(long)]
         local: bool,
+        /// Skip dependencies matching a glob pattern (repeatable, e.g. --exclude 'candle*')
+        #[arg(long = "exclude", value_name = "PATTERN")]
+        exclude: Vec<String>,
+        /// Per-crate extraction timeout in seconds
+        #[arg(long, default_value_t = DEFAULT_CRATE_TIMEOUT_SECS)]
+        timeout: u64,
     },
     /// Ingest a source into the index
     Add {
@@ -100,7 +113,12 @@ impl Cli {
         let config = Config::load()?;
 
         match &self.command {
-            Command::Init { transitive, local } => cmd_init(&config, *transitive, *local),
+            Command::Init {
+                transitive,
+                local,
+                exclude,
+                timeout,
+            } => cmd_init(&config, *transitive, *local, exclude, *timeout),
             Command::Add {
                 source,
                 lang,
@@ -138,7 +156,13 @@ impl Cli {
     }
 }
 
-fn cmd_init(config: &Config, transitive: bool, local: bool) -> Result<()> {
+fn cmd_init(
+    config: &Config,
+    transitive: bool,
+    local: bool,
+    exclude: &[String],
+    timeout_secs: u64,
+) -> Result<()> {
     let cwd = std::env::current_dir()?;
 
     let project = crate::lockfile::detect_project(&cwd)
@@ -177,24 +201,57 @@ fn cmd_init(config: &Config, transitive: bool, local: bool) -> Result<()> {
     }
     let store = GraphStore::open(&store_path)?;
 
+    let timeout = Duration::from_secs(timeout_secs);
+
     let mut success = 0;
+    let mut excluded = 0;
     let mut skipped = 0;
     let mut failed = 0;
 
     for dep in &deps {
         let version_str = dep.version.as_deref().unwrap_or("latest");
 
+        if exclude.iter().any(|p| matches_glob(p, &dep.name)) {
+            eprintln!("  {} (excluded)", dep.name);
+            excluded += 1;
+            continue;
+        }
+
         // For Rust crates, download from crates.io
         if project.kind == crate::lockfile::ProjectKind::Rust {
             eprint!("  {} v{} ... ", dep.name, version_str);
 
-            match ingest_crate(&store, &dep.name, version_str) {
-                Ok(count) => {
-                    eprintln!("{count} symbols");
-                    success += 1;
+            match extract_crate_with_timeout(&dep.name, version_str, timeout) {
+                CrateOutcome::Ok { version, graph } => {
+                    let count = graph.nodes.len();
+                    if count == 0 {
+                        eprintln!("0 symbols");
+                        success += 1;
+                        continue;
+                    }
+                    match store.upsert_source(
+                        &dep.name,
+                        &version,
+                        "rust",
+                        &graph.nodes,
+                        &graph.edges,
+                    ) {
+                        Ok(()) => {
+                            eprintln!("{count} symbols");
+                            success += 1;
+                        }
+                        Err(e) => {
+                            eprintln!("failed: {e}");
+                            failed += 1;
+                        }
+                    }
                 }
-                Err(e) => {
+                CrateOutcome::Err(e) => {
                     eprintln!("failed: {e}");
+                    failed += 1;
+                }
+                CrateOutcome::Timeout => {
+                    eprintln!("timeout after {timeout_secs}s");
                     failed += 1;
                 }
             }
@@ -209,7 +266,9 @@ fn cmd_init(config: &Config, transitive: bool, local: bool) -> Result<()> {
         }
     }
 
-    eprintln!("\nDeps: {success} ingested, {skipped} skipped, {failed} failed");
+    eprintln!(
+        "\nDeps: {success} ingested, {excluded} excluded, {skipped} skipped, {failed} failed"
+    );
 
     // Index the local source
     let project_name = cwd
@@ -244,24 +303,64 @@ fn cmd_init(config: &Config, transitive: bool, local: bool) -> Result<()> {
     Ok(())
 }
 
-/// Ingest a single crate from crates.io into the store.
-fn ingest_crate(store: &GraphStore, name: &str, version: &str) -> Result<usize> {
-    let (dir, resolved_version) = crate::source::crate_download::download_crate(name, version)?;
-    let file_graph = graph::extract::extract_dir(&dir, name, &resolved_version, Some("rust"))?;
+enum CrateOutcome {
+    Ok { version: String, graph: FileGraph },
+    Err(anyhow::Error),
+    Timeout,
+}
 
-    if file_graph.nodes.is_empty() {
-        return Ok(0);
+/// Download and extract a crate on a worker thread, bailing if it runs past
+/// `timeout`. On timeout the worker is left running — the process exits soon
+/// after init completes, and nothing SQLite-related happens in the worker so
+/// a leaked thread won't hold a write lock on the store.
+fn extract_crate_with_timeout(name: &str, version: &str, timeout: Duration) -> CrateOutcome {
+    let name = name.to_owned();
+    let version = version.to_owned();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let result = (|| -> Result<(String, FileGraph)> {
+            let (dir, resolved) = crate::source::crate_download::download_crate(&name, &version)?;
+            let graph = graph::extract::extract_dir(&dir, &name, &resolved, Some("rust"))?;
+            Ok((resolved, graph))
+        })();
+        let _ = tx.send(result);
+    });
+    match rx.recv_timeout(timeout) {
+        Ok(Ok((version, graph))) => CrateOutcome::Ok { version, graph },
+        Ok(Err(e)) => CrateOutcome::Err(e),
+        Err(_) => CrateOutcome::Timeout,
     }
+}
 
-    store.upsert_source(
-        name,
-        &resolved_version,
-        "rust",
-        &file_graph.nodes,
-        &file_graph.edges,
-    )?;
-
-    Ok(file_graph.nodes.len())
+/// Case-insensitive glob match with `*` as "zero or more characters".
+/// Supports patterns like `candle`, `candle*`, `*candle`, `*candle*`, `foo*bar`.
+fn matches_glob(pattern: &str, name: &str) -> bool {
+    let pattern = pattern.to_ascii_lowercase();
+    let name = name.to_ascii_lowercase();
+    if !pattern.contains('*') {
+        return pattern == name;
+    }
+    let parts: Vec<&str> = pattern.split('*').collect();
+    let last = parts.len() - 1;
+    let mut pos = 0usize;
+    for (i, part) in parts.iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        if i == 0 {
+            if !name[pos..].starts_with(part) {
+                return false;
+            }
+            pos += part.len();
+        } else if i == last {
+            return name[pos..].ends_with(part);
+        } else if let Some(idx) = name[pos..].find(part) {
+            pos += idx + part.len();
+        } else {
+            return false;
+        }
+    }
+    true
 }
 
 fn cmd_add(
@@ -557,6 +656,74 @@ mod tests {
     fn test_parse_init() {
         Cli::try_parse_from(["roux", "init"]).unwrap();
         Cli::try_parse_from(["roux", "init", "--transitive", "--local"]).unwrap();
+    }
+
+    #[test]
+    fn test_parse_init_exclude_and_timeout() {
+        let cli = Cli::try_parse_from([
+            "roux", "init", "--exclude", "candle*", "--exclude", "*-sys", "--timeout", "15",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Init {
+                exclude, timeout, ..
+            } => {
+                assert_eq!(exclude, vec!["candle*", "*-sys"]);
+                assert_eq!(timeout, 15);
+            }
+            _ => panic!("expected Init"),
+        }
+    }
+
+    #[test]
+    fn test_parse_init_default_timeout() {
+        let cli = Cli::try_parse_from(["roux", "init"]).unwrap();
+        match cli.command {
+            Command::Init {
+                exclude, timeout, ..
+            } => {
+                assert!(exclude.is_empty());
+                assert_eq!(timeout, DEFAULT_CRATE_TIMEOUT_SECS);
+            }
+            _ => panic!("expected Init"),
+        }
+    }
+
+    #[test]
+    fn test_matches_glob_exact() {
+        assert!(matches_glob("tokio", "tokio"));
+        assert!(matches_glob("Tokio", "tokio")); // case-insensitive
+        assert!(!matches_glob("tokio", "tokio-util"));
+    }
+
+    #[test]
+    fn test_matches_glob_prefix() {
+        assert!(matches_glob("candle*", "candle"));
+        assert!(matches_glob("candle*", "candle-core"));
+        assert!(matches_glob("candle*", "candle-nn"));
+        assert!(!matches_glob("candle*", "foo-candle"));
+    }
+
+    #[test]
+    fn test_matches_glob_suffix() {
+        assert!(matches_glob("*-sys", "libc-sys"));
+        assert!(matches_glob("*-sys", "-sys"));
+        assert!(!matches_glob("*-sys", "libc-system"));
+    }
+
+    #[test]
+    fn test_matches_glob_contains() {
+        assert!(matches_glob("*candle*", "candle"));
+        assert!(matches_glob("*candle*", "foo-candle-core"));
+        assert!(!matches_glob("*candle*", "torch-core"));
+    }
+
+    #[test]
+    fn test_matches_glob_middle() {
+        assert!(matches_glob("foo*bar", "foobar"));
+        assert!(matches_glob("foo*bar", "foo-xyz-bar"));
+        assert!(!matches_glob("foo*bar", "foo-xyz"));
+        assert!(!matches_glob("foo*bar", "bar-foo"));
     }
 
     #[test]
