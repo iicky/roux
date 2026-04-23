@@ -146,6 +146,26 @@ impl GraphStore {
             )?;
         }
 
+        if version < 6 {
+            // Staleness metadata: per-source origin and fingerprint.
+            // source_kind: "crate", "path", "file", "url", or "" if unknown
+            // origin: original input (crate name, local path, URL) the source was loaded from
+            // fingerprint: a value that changes when the upstream changes — mtime/size rollup
+            //              for path sources, file content hash for file sources, version for crates
+            for sql in [
+                "ALTER TABLE sources ADD COLUMN source_kind TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE sources ADD COLUMN origin TEXT",
+                "ALTER TABLE sources ADD COLUMN fingerprint TEXT",
+            ] {
+                // ignore "duplicate column" errors so repeated opens on already-migrated DBs work
+                let _ = self.conn.execute(sql, []);
+            }
+            self.conn.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '6')",
+                [],
+            )?;
+        }
+
         Ok(())
     }
 
@@ -611,6 +631,22 @@ impl GraphStore {
         Ok(results)
     }
 
+    /// Record the provenance of a source: how it was ingested and a cheap
+    /// fingerprint to detect upstream changes later. Called after upsert_source.
+    pub fn set_source_meta(
+        &self,
+        source_name: &str,
+        source_kind: &str,
+        origin: Option<&str>,
+        fingerprint: Option<&str>,
+    ) -> Result<()> {
+        self.conn.execute(
+            "UPDATE sources SET source_kind = ?1, origin = ?2, fingerprint = ?3 WHERE name = ?4",
+            params![source_kind, origin, fingerprint, source_name],
+        )?;
+        Ok(())
+    }
+
     pub fn set_metadata(&self, key: &str, value: &str) -> Result<()> {
         self.conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES (?1, ?2)",
@@ -635,6 +671,7 @@ impl GraphStore {
     pub fn list_sources(&self) -> Result<Vec<SourceRecord>> {
         let mut stmt = self.conn.prepare(
             "SELECT s.name, s.version, s.language, s.ingested_at,
+                    s.source_kind, s.origin, s.fingerprint,
                     COUNT(n.id) as node_count
              FROM sources s
              LEFT JOIN nodes n ON n.source_name = s.name
@@ -649,7 +686,10 @@ impl GraphStore {
                     version: row.get(1)?,
                     language: row.get(2)?,
                     ingested_at: row.get(3)?,
-                    node_count: row.get(4)?,
+                    source_kind: row.get(4)?,
+                    origin: row.get(5)?,
+                    fingerprint: row.get(6)?,
+                    node_count: row.get(7)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -681,6 +721,9 @@ pub struct SourceRecord {
     pub version: String,
     pub language: String,
     pub ingested_at: i64,
+    pub source_kind: String,
+    pub origin: Option<String>,
+    pub fingerprint: Option<String>,
     pub node_count: usize,
 }
 
@@ -1036,7 +1079,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "5");
+        assert_eq!(version, "6");
     }
 
     #[test]

@@ -229,13 +229,23 @@ fn cmd_init(
                         success += 1;
                         continue;
                     }
-                    match store.upsert_source(
-                        &dep.name,
-                        &version,
-                        "rust",
-                        &graph.nodes,
-                        &graph.edges,
-                    ) {
+                    let upsert = store
+                        .upsert_source(
+                            &dep.name,
+                            &version,
+                            "rust",
+                            &graph.nodes,
+                            &graph.edges,
+                        )
+                        .and_then(|()| {
+                            store.set_source_meta(
+                                &dep.name,
+                                "crate",
+                                Some(&dep.name),
+                                Some(&version),
+                            )
+                        });
+                    match upsert {
                         Ok(()) => {
                             eprintln!("{count} symbols");
                             success += 1;
@@ -285,6 +295,13 @@ fn cmd_init(
             project.kind.language(),
             &file_graph.nodes,
             &file_graph.edges,
+        )?;
+        let fp = crate::fingerprint::fingerprint_dir(&cwd).ok();
+        store.set_source_meta(
+            project_name,
+            "path",
+            cwd.to_str(),
+            fp.as_deref(),
         )?;
         eprintln!(
             "Indexed {} symbols, {} edges from local source",
@@ -381,19 +398,31 @@ fn cmd_add(
     eprintln!("Extracting graph from {}...", source.name);
 
     // Use tree-sitter graph extraction
-    let file_graph = match &source.kind {
+    let (file_graph, source_kind, origin, fingerprint) = match &source.kind {
         SourceKind::LocalPath(path) => {
-            graph::extract::extract_dir(path, &source.name, &source_version, Some(&language))?
+            let fg =
+                graph::extract::extract_dir(path, &source.name, &source_version, Some(&language))?;
+            let fp = crate::fingerprint::fingerprint_dir(path).ok();
+            (fg, "path", path.to_str().map(String::from), fp)
         }
         SourceKind::File(path) => {
-            graph::extract::extract_file(path, &source.name, &source_version, Some(&language))?
+            let fg =
+                graph::extract::extract_file(path, &source.name, &source_version, Some(&language))?;
+            let fp = crate::fingerprint::fingerprint_file(path).ok();
+            (fg, "file", path.to_str().map(String::from), fp)
         }
         SourceKind::Crate(crate_name) => {
             let version_str = source.version.as_deref().unwrap_or("latest");
             let (dir, resolved_version) =
                 crate::source::crate_download::download_crate(crate_name, version_str)?;
-            source_version = resolved_version;
-            graph::extract::extract_dir(&dir, &source.name, &source_version, Some("rust"))?
+            source_version = resolved_version.clone();
+            let fg = graph::extract::extract_dir(&dir, &source.name, &source_version, Some("rust"))?;
+            (
+                fg,
+                "crate",
+                Some(crate_name.clone()),
+                Some(resolved_version),
+            )
         }
         SourceKind::Url(_) => anyhow::bail!("URL sources not yet supported for graph extraction"),
     };
@@ -418,6 +447,12 @@ fn cmd_add(
         &language,
         &file_graph.nodes,
         &file_graph.edges,
+    )?;
+    store.set_source_meta(
+        &source.name,
+        source_kind,
+        origin.as_deref(),
+        fingerprint.as_deref(),
     )?;
 
     eprintln!(
@@ -533,42 +568,120 @@ fn cmd_query(
     Ok(())
 }
 
+/// Staleness verdict for an indexed source.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Status {
+    /// Indexed content still matches the origin.
+    Fresh,
+    /// Origin has drifted — re-index needed. Carries a short reason.
+    Stale(String),
+    /// We can't check (e.g. origin path isn't local, or source_kind is a crate).
+    Unknown,
+}
+
+impl Status {
+    fn label(&self) -> &'static str {
+        match self {
+            Status::Fresh => "fresh",
+            Status::Stale(_) => "stale",
+            Status::Unknown => "?",
+        }
+    }
+    fn reason(&self) -> Option<&str> {
+        match self {
+            Status::Stale(r) => Some(r.as_str()),
+            _ => None,
+        }
+    }
+}
+
+/// Check staleness using only local filesystem signals. Crate/URL sources
+/// return Unknown — their upstream-staleness check lives in `roux sync`.
+pub fn check_source_status(record: &crate::graph::store::SourceRecord) -> Status {
+    match record.source_kind.as_str() {
+        "path" => {
+            let Some(origin) = record.origin.as_deref() else {
+                return Status::Unknown;
+            };
+            let path = std::path::Path::new(origin);
+            if !path.exists() {
+                return Status::Unknown;
+            }
+            let Some(stored) = record.fingerprint.as_deref() else {
+                return Status::Unknown;
+            };
+            match crate::fingerprint::fingerprint_dir(path) {
+                Ok(current) if current == stored => Status::Fresh,
+                Ok(_) => Status::Stale("content changed".into()),
+                Err(_) => Status::Unknown,
+            }
+        }
+        "file" => {
+            let Some(origin) = record.origin.as_deref() else {
+                return Status::Unknown;
+            };
+            let path = std::path::Path::new(origin);
+            if !path.exists() {
+                return Status::Unknown;
+            }
+            let Some(stored) = record.fingerprint.as_deref() else {
+                return Status::Unknown;
+            };
+            match crate::fingerprint::fingerprint_file(path) {
+                Ok(current) if current == stored => Status::Fresh,
+                Ok(_) => Status::Stale("content changed".into()),
+                Err(_) => Status::Unknown,
+            }
+        }
+        _ => Status::Unknown,
+    }
+}
+
 fn cmd_list(config: &Config, format: &str, local: bool) -> Result<()> {
     let _ = local; // TODO: use to filter local vs global
     let store_path = config.resolve_store_path(false);
     let local_path = std::path::PathBuf::from(".roux/db.sqlite");
 
-    let mut all_sources = Vec::new();
+    let mut rows: Vec<(crate::graph::store::SourceRecord, Status, String)> = Vec::new();
 
     if local_path.exists() {
         let store = GraphStore::open(&local_path)?;
-        for mut src in store.list_sources()? {
-            src.name = format!("{} (local)", src.name);
-            all_sources.push(src);
+        for src in store.list_sources()? {
+            let status = check_source_status(&src);
+            let display_name = format!("{} (local)", src.name);
+            rows.push((src, status, display_name));
         }
     }
 
     if store_path.exists() && store_path != local_path {
         let store = GraphStore::open(&store_path)?;
-        all_sources.extend(store.list_sources()?);
+        for src in store.list_sources()? {
+            let status = check_source_status(&src);
+            let display_name = src.name.clone();
+            rows.push((src, status, display_name));
+        }
     }
 
-    if all_sources.is_empty() {
+    if rows.is_empty() {
         eprintln!("No indexed sources.");
         return Ok(());
     }
 
     match format {
         "json" => {
-            let json: Vec<serde_json::Value> = all_sources
+            let json: Vec<serde_json::Value> = rows
                 .iter()
-                .map(|s| {
+                .map(|(s, status, display)| {
                     serde_json::json!({
-                        "name": s.name,
+                        "name": display,
                         "version": s.version,
                         "language": s.language,
                         "symbols": s.node_count,
                         "ingested_at": s.ingested_at,
+                        "source_kind": s.source_kind,
+                        "origin": s.origin,
+                        "status": status.label(),
+                        "stale_reason": status.reason(),
                     })
                 })
                 .collect();
@@ -576,14 +689,18 @@ fn cmd_list(config: &Config, format: &str, local: bool) -> Result<()> {
         }
         _ => {
             println!(
-                "{:<20} {:<12} {:<10} {:>8}",
+                "{:<22} {:<12} {:<10} {:>8}  STATUS",
                 "SOURCE", "VERSION", "LANGUAGE", "SYMBOLS"
             );
-            println!("{}", "─".repeat(54));
-            for src in &all_sources {
+            println!("{}", "─".repeat(66));
+            for (src, status, display) in &rows {
+                let status_cell = match status {
+                    Status::Stale(r) => format!("stale ({r})"),
+                    _ => status.label().to_string(),
+                };
                 println!(
-                    "{:<20} {:<12} {:<10} {:>8}",
-                    src.name, src.version, src.language, src.node_count
+                    "{:<22} {:<12} {:<10} {:>8}  {}",
+                    display, src.version, src.language, src.node_count, status_cell
                 );
             }
         }
@@ -724,6 +841,64 @@ mod tests {
         assert!(matches_glob("foo*bar", "foo-xyz-bar"));
         assert!(!matches_glob("foo*bar", "foo-xyz"));
         assert!(!matches_glob("foo*bar", "bar-foo"));
+    }
+
+    fn make_record(
+        kind: &str,
+        origin: Option<&str>,
+        fingerprint: Option<&str>,
+    ) -> crate::graph::store::SourceRecord {
+        crate::graph::store::SourceRecord {
+            name: "test".into(),
+            version: "1.0".into(),
+            language: "rust".into(),
+            ingested_at: 0,
+            source_kind: kind.into(),
+            origin: origin.map(String::from),
+            fingerprint: fingerprint.map(String::from),
+            node_count: 0,
+        }
+    }
+
+    #[test]
+    fn test_status_unknown_for_crate() {
+        let rec = make_record("crate", Some("serde"), Some("1.0.200"));
+        assert_eq!(check_source_status(&rec), Status::Unknown);
+    }
+
+    #[test]
+    fn test_status_unknown_when_origin_missing() {
+        let rec = make_record("path", Some("/nonexistent/path/xyz"), Some("deadbeef"));
+        assert_eq!(check_source_status(&rec), Status::Unknown);
+    }
+
+    #[test]
+    fn test_status_fresh_and_stale_for_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("a.rs"), "fn a() {}").unwrap();
+        let fp = crate::fingerprint::fingerprint_dir(tmp.path()).unwrap();
+        let origin = tmp.path().to_str().unwrap();
+
+        let fresh = make_record("path", Some(origin), Some(&fp));
+        assert_eq!(check_source_status(&fresh), Status::Fresh);
+
+        let wrong = make_record("path", Some(origin), Some("0000000000"));
+        assert!(matches!(check_source_status(&wrong), Status::Stale(_)));
+    }
+
+    #[test]
+    fn test_status_fresh_and_stale_for_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let p = tmp.path().join("x.txt");
+        std::fs::write(&p, "hello").unwrap();
+        let fp = crate::fingerprint::fingerprint_file(&p).unwrap();
+
+        let fresh = make_record("file", p.to_str(), Some(&fp));
+        assert_eq!(check_source_status(&fresh), Status::Fresh);
+
+        std::fs::write(&p, "goodbye").unwrap();
+        let stale = make_record("file", p.to_str(), Some(&fp));
+        assert!(matches!(check_source_status(&stale), Status::Stale(_)));
     }
 
     #[test]
