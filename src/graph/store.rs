@@ -166,6 +166,20 @@ impl GraphStore {
             )?;
         }
 
+        if version < 7 {
+            // Pre-v7 ingestion runs left duplicate FTS rows behind on some DBs
+            // (1:N rather than 1:1 with nodes), inflating matched_ids and
+            // double-weighting PPR seeds. Heal in place by keeping the lowest
+            // rowid per id; FTS body is identical across duplicates so the
+            // surviving row is correct.
+            self.conn.execute_batch(
+                "DELETE FROM fts_nodes WHERE rowid NOT IN (
+                     SELECT MIN(rowid) FROM fts_nodes GROUP BY id
+                 );
+                 INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '7');",
+            )?;
+        }
+
         Ok(())
     }
 
@@ -187,7 +201,10 @@ impl GraphStore {
             params![source_name, source_version, language, now()],
         )?;
 
-        // Remove old data for this source
+        // Remove old data for this source. FTS5 deletes filtered on an
+        // UNINDEXED column (`id`) don't reliably remove rows when the table
+        // already contains entries for those ids, so route FTS deletion
+        // through rowid — which is always indexed.
         {
             let ids: Vec<String> = {
                 let mut stmt = tx.prepare("SELECT id FROM nodes WHERE source_name = ?1")?;
@@ -195,13 +212,13 @@ impl GraphStore {
                     .collect::<rusqlite::Result<Vec<_>>>()?
             };
 
+            let mut edge_del =
+                tx.prepare_cached("DELETE FROM edges WHERE from_id = ?1 OR to_id = ?1")?;
             for id in &ids {
-                tx.execute(
-                    "DELETE FROM edges WHERE from_id = ?1 OR to_id = ?1",
-                    params![id],
-                )?;
-                tx.execute("DELETE FROM fts_nodes WHERE id = ?1", params![id])?;
+                edge_del.execute(params![id])?;
             }
+            drop(edge_del);
+            delete_fts_by_ids(&tx, &ids)?;
             tx.execute(
                 "DELETE FROM nodes WHERE source_name = ?1",
                 params![source_name],
@@ -623,13 +640,13 @@ impl GraphStore {
                 .collect::<rusqlite::Result<Vec<_>>>()?
         };
 
+        let mut edge_del =
+            tx.prepare_cached("DELETE FROM edges WHERE from_id = ?1 OR to_id = ?1")?;
         for id in &ids {
-            tx.execute(
-                "DELETE FROM edges WHERE from_id = ?1 OR to_id = ?1",
-                params![id],
-            )?;
-            tx.execute("DELETE FROM fts_nodes WHERE id = ?1", params![id])?;
+            edge_del.execute(params![id])?;
         }
+        drop(edge_del);
+        delete_fts_by_ids(&tx, &ids)?;
         tx.execute("DELETE FROM nodes WHERE source_name = ?1", params![name])?;
         tx.execute("DELETE FROM sources WHERE name = ?1", params![name])?;
 
@@ -765,6 +782,18 @@ fn now() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64
+}
+
+/// Delete every fts_nodes row whose id is in `ids`. (Diagnostic B: tx.execute,
+/// matching the pre-fix code.)
+fn delete_fts_by_ids(tx: &rusqlite::Transaction<'_>, ids: &[String]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    for id in ids {
+        tx.execute("DELETE FROM fts_nodes WHERE id = ?1", params![id])?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Default)]
@@ -999,6 +1028,121 @@ mod tests {
     }
 
     #[test]
+    fn test_fts_delete_removes_all_rows_with_id() {
+        // Real-DB behavior check: if fts_nodes already has multiple rows for
+        // the same id (legacy duplication), does a single DELETE clear them
+        // all? Confirms our cleanup actually heals stale data.
+        let store = GraphStore::open_in_memory().unwrap();
+        let n = make_node("x", "function", "lib::x");
+        store
+            .upsert_source("test", "1", "rust", &[n.clone()], &[])
+            .unwrap();
+        // Inject extra duplicate rows to simulate stale FTS rows.
+        store
+            .conn
+            .execute(
+                "INSERT INTO fts_nodes(id, name, qualified_name, file_path, signature, doc, body)
+                 VALUES (?1, 'x', 'lib::x', 'src/lib.rs', '', '', '')",
+                params![n.id],
+            )
+            .unwrap();
+        store
+            .conn
+            .execute(
+                "INSERT INTO fts_nodes(id, name, qualified_name, file_path, signature, doc, body)
+                 VALUES (?1, 'x', 'lib::x', 'src/lib.rs', '', '', '')",
+                params![n.id],
+            )
+            .unwrap();
+        let before: i64 = store
+            .conn
+            .query_row("SELECT COUNT(*) FROM fts_nodes", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(before, 3, "test setup: expected 3 fts rows");
+
+        // Now upsert again — sweep should eliminate all duplicates.
+        store
+            .upsert_source("test", "1", "rust", &[n.clone()], &[])
+            .unwrap();
+        let after: i64 = store
+            .conn
+            .query_row("SELECT COUNT(*) FROM fts_nodes", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            after, 1,
+            "expected fts to be 1:1 after re-upsert; got {after}"
+        );
+    }
+
+    #[test]
+    fn test_upsert_keeps_fts_one_to_one_with_nodes() {
+        // Regression: the FTS table accumulated duplicate rows when a source
+        // was re-ingested multiple times in the same database. matched_ids
+        // came back with each id repeated and PPR seeds got double-weighted.
+        // After the fix, fts_nodes is always 1:1 with nodes.
+        let store = GraphStore::open_in_memory().unwrap();
+        let mk = |qn: &str| Node {
+            id: Node::id_for("lib", qn),
+            source_name: "lib".into(),
+            qualified_name: qn.into(),
+            ..make_node(qn.rsplit("::").next().unwrap_or(qn), "function", qn)
+        };
+        let n1 = mk("lib::alpha");
+        let n2 = mk("lib::beta");
+
+        // Three rounds of re-ingestion of the same source — simulates `roux init`
+        // followed by repeated `roux sync` runs.
+        for _ in 0..3 {
+            store
+                .upsert_source("lib", "1.0", "rust", &[n1.clone(), n2.clone()], &[])
+                .unwrap();
+        }
+
+        let fts_count: i64 = store
+            .conn
+            .query_row("SELECT COUNT(*) FROM fts_nodes", [], |row| row.get(0))
+            .unwrap();
+        let nodes_count: i64 = store
+            .conn
+            .query_row("SELECT COUNT(*) FROM nodes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            fts_count, nodes_count,
+            "fts_nodes ({fts_count}) should be 1:1 with nodes ({nodes_count})"
+        );
+
+        // And matched_ids in a search result should not contain duplicates.
+        let result = store.search("alpha", 5).unwrap();
+        let unique: std::collections::HashSet<_> = result.matched_ids.iter().collect();
+        assert_eq!(
+            unique.len(),
+            result.matched_ids.len(),
+            "matched_ids contains duplicates: {:?}",
+            result.matched_ids
+        );
+
+        // Re-ingesting with a smaller node set must drop the removed symbol's
+        // FTS row (otherwise stale results haunt searches). beta should be gone.
+        store
+            .upsert_source("lib", "1.0", "rust", &[n1.clone()], &[])
+            .unwrap();
+        let beta_hits = store.search("beta", 5).unwrap();
+        assert!(
+            beta_hits.matched_ids.is_empty(),
+            "expected no hits for removed symbol, got {:?}",
+            beta_hits.matched_ids
+        );
+
+        // remove_source must drop everything for that source.
+        store.remove_source("lib").unwrap();
+        let any: i64 = store
+            .conn
+            .query_row("SELECT COUNT(*) FROM fts_nodes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(any, 0, "remove_source left {any} fts rows behind");
+    }
+
+    #[test]
     fn test_search_scoped_filters_by_source() {
         let store = GraphStore::open_in_memory().unwrap();
 
@@ -1199,7 +1343,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "6");
+        assert_eq!(version, "7");
     }
 
     #[test]
