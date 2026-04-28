@@ -106,6 +106,18 @@ enum Command {
         /// Source name to remove
         source: String,
     },
+    /// Run as an MCP server over stdio for AI agent integration
+    Serve {
+        /// Serve the local index only (mutually exclusive with --global)
+        #[arg(long, conflicts_with = "global")]
+        local: bool,
+        /// Serve the global index only (mutually exclusive with --local)
+        #[arg(long)]
+        global: bool,
+        /// Serve a specific .sqlite index file (e.g. a downloaded artifact)
+        #[arg(long, value_name = "PATH")]
+        db: Option<std::path::PathBuf>,
+    },
     /// Export the local index to a portable artifact file for distribution
     Export {
         /// Output path (e.g. my-index.sqlite or my-index.sqlite.gz)
@@ -178,6 +190,9 @@ impl Cli {
                 global,
                 db,
             } => cmd_list(&config, format, *local, *global, db.as_deref()),
+            Command::Serve { local, global, db } => {
+                cmd_serve(&config, *local, *global, db.as_deref())
+            }
             Command::Sync { source, dry_run } => cmd_sync(&config, source.as_deref(), *dry_run),
             Command::Remove { source } => cmd_remove(&config, source),
             Command::Export {
@@ -187,6 +202,61 @@ impl Cli {
             } => cmd_export(&config, output, *gzip, *global),
         }
     }
+}
+
+/// JSON shape for a single `SearchResult` — matched IDs, ranked symbols (with
+/// graph neighborhood), and cross-edges. Shared by `roux query --format json`
+/// and the MCP `roux_query` tool.
+pub fn search_result_to_json(result: &crate::graph::store::SearchResult) -> serde_json::Value {
+    serde_json::json!({
+        "matched": result.matched_ids,
+        "symbols": result.nodes.iter().map(|s| {
+            serde_json::json!({
+                "id": s.id,
+                "kind": s.kind,
+                "name": s.name,
+                "qualified_name": s.qualified_name,
+                "file": s.file_path,
+                "line": s.start_line,
+                "signature": s.signature,
+                "doc": s.doc,
+                "parent_id": s.parent_id,
+                "matched": result.matched_ids.contains(&s.id),
+                "score": result.scores.get(&s.id),
+            })
+        }).collect::<Vec<_>>(),
+        "edges": result.edges.iter().map(|e| {
+            serde_json::json!({
+                "from": e.from_id,
+                "to": e.to_id,
+                "kind": e.kind,
+            })
+        }).collect::<Vec<_>>(),
+    })
+}
+
+/// JSON shape for `roux list`. Shared by the CLI handler and the MCP
+/// `roux_list` tool.
+pub fn list_rows_to_json(
+    rows: &[(crate::graph::store::SourceRecord, Status, String)],
+) -> serde_json::Value {
+    let arr: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|(s, status, display)| {
+            serde_json::json!({
+                "name": display,
+                "version": s.version,
+                "language": s.language,
+                "symbols": s.node_count,
+                "ingested_at": s.ingested_at,
+                "source_kind": s.source_kind,
+                "origin": s.origin,
+                "status": status.label(),
+                "stale_reason": status.reason(),
+            })
+        })
+        .collect();
+    serde_json::Value::Array(arr)
 }
 
 fn cmd_init(
@@ -522,32 +592,10 @@ fn cmd_query(
 
     match format {
         "json" => {
-            let json_result = serde_json::json!({
-                "matched": result.matched_ids,
-                "symbols": result.nodes.iter().map(|s| {
-                    serde_json::json!({
-                        "id": s.id,
-                        "kind": s.kind,
-                        "name": s.name,
-                        "qualified_name": s.qualified_name,
-                        "file": s.file_path,
-                        "line": s.start_line,
-                        "signature": s.signature,
-                        "doc": s.doc,
-                        "parent_id": s.parent_id,
-                        "matched": result.matched_ids.contains(&s.id),
-                        "score": result.scores.get(&s.id),
-                    })
-                }).collect::<Vec<_>>(),
-                "edges": result.edges.iter().map(|e| {
-                    serde_json::json!({
-                        "from": e.from_id,
-                        "to": e.to_id,
-                        "kind": e.kind,
-                    })
-                }).collect::<Vec<_>>(),
-            });
-            println!("{}", serde_json::to_string_pretty(&json_result)?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&search_result_to_json(&result))?
+            );
         }
         _ => {
             // Print matched symbols first, then neighborhood
@@ -718,23 +766,10 @@ fn cmd_list(
 
     match format {
         "json" => {
-            let json: Vec<serde_json::Value> = rows
-                .iter()
-                .map(|(s, status, display)| {
-                    serde_json::json!({
-                        "name": display,
-                        "version": s.version,
-                        "language": s.language,
-                        "symbols": s.node_count,
-                        "ingested_at": s.ingested_at,
-                        "source_kind": s.source_kind,
-                        "origin": s.origin,
-                        "status": status.label(),
-                        "stale_reason": status.reason(),
-                    })
-                })
-                .collect();
-            println!("{}", serde_json::to_string_pretty(&json)?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&list_rows_to_json(&rows))?
+            );
         }
         _ => {
             println!(
@@ -756,6 +791,33 @@ fn cmd_list(
     }
 
     Ok(())
+}
+
+fn cmd_serve(
+    config: &Config,
+    local: bool,
+    global: bool,
+    db: Option<&std::path::Path>,
+) -> Result<()> {
+    let store_path = if let Some(path) = db {
+        if !path.exists() {
+            anyhow::bail!("no index found at {}", path.display());
+        }
+        crate::artifact::check_artifact_compatibility(path)?;
+        path.to_path_buf()
+    } else {
+        let resolved = config.resolve_store_path(StoreScope::from_flags(local, global));
+        if !resolved.exists() {
+            anyhow::bail!(
+                "no index found at {}. Run `roux init` first.",
+                resolved.display()
+            );
+        }
+        resolved
+    };
+
+    eprintln!("roux MCP server: serving {}", store_path.display());
+    crate::mcp::run_stdio(store_path)
 }
 
 fn cmd_export(config: &Config, output: &std::path::Path, gzip: bool, global: bool) -> Result<()> {
