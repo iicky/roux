@@ -107,7 +107,10 @@ pub fn extract_tags(
             "definition.class" => {
                 def_captures.insert(idx, SymbolKind::Class);
             }
-            "definition.interface" | "definition.trait" => {
+            "definition.interface" => {
+                def_captures.insert(idx, SymbolKind::Interface);
+            }
+            "definition.trait" => {
                 def_captures.insert(idx, SymbolKind::Trait);
             }
             "definition.struct" => {
@@ -358,8 +361,69 @@ const TAGS_JAVASCRIPT: &str = r#"
   constructor: (_) @name) @reference.class
 "#;
 
-// TypeScript reuses JavaScript queries (same grammar base)
-const TAGS_TYPESCRIPT: &str = TAGS_JAVASCRIPT;
+// TypeScript: JavaScript queries plus interface and type-alias declarations
+// (which only exist in the TS grammar).
+const TAGS_TYPESCRIPT: &str = r#"
+(method_definition
+    name: (property_identifier) @name) @definition.method
+
+[
+    (class
+      name: (_) @name)
+    (class_declaration
+      name: (_) @name)
+] @definition.class
+
+[
+    (function_expression
+      name: (identifier) @name)
+    (function_declaration
+      name: (identifier) @name)
+    (generator_function
+      name: (identifier) @name)
+    (generator_function_declaration
+      name: (identifier) @name)
+] @definition.function
+
+(lexical_declaration
+    (variable_declarator
+      name: (identifier) @name
+      value: [(arrow_function) (function_expression)]) @definition.function)
+
+(variable_declaration
+    (variable_declarator
+      name: (identifier) @name
+      value: [(arrow_function) (function_expression)]) @definition.function)
+
+(assignment_expression
+  left: [
+    (identifier) @name
+    (member_expression
+      property: (property_identifier) @name)
+  ]
+  right: [(arrow_function) (function_expression)]
+) @definition.function
+
+(pair
+  key: (property_identifier) @name
+  value: [(arrow_function) (function_expression)]) @definition.function
+
+(call_expression
+    function: (identifier) @name) @reference.call
+
+(call_expression
+  function: (member_expression
+    property: (property_identifier) @name)) @reference.call
+
+(new_expression
+  constructor: (_) @name) @reference.class
+
+(interface_declaration
+    name: (type_identifier) @name) @definition.interface
+
+(type_alias_declaration
+    name: (type_identifier) @name) @definition.type
+"#;
 
 const TAGS_GO: &str = r#"
 (function_declaration

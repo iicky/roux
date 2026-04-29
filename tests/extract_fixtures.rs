@@ -331,10 +331,7 @@ fn python_adversarial_crlf_and_bom_handled() {
 // ─── TypeScript: realistic mini-project ────────────────────────────
 
 #[test]
-fn typescript_basic_extracts_classes_methods_functions() {
-    // Note: interface and type-alias extraction are tracked as roux-hx9.
-    // This test asserts what the extractor *does* produce today: classes,
-    // methods, and functions. Re-tighten once roux-hx9 lands.
+fn typescript_basic_extracts_classes_interfaces_types() {
     let g = extract_dir(
         &fixture("typescript/basic"),
         "tiny-ts",
@@ -345,10 +342,18 @@ fn typescript_basic_extracts_classes_methods_functions() {
 
     let all = names(&g.nodes);
 
+    // Interfaces (added in roux-hx9)
     assert!(
-        all.contains(&"UserStore"),
-        "missing class UserStore — got {all:?}"
+        all.contains(&"User"),
+        "missing interface User — got {all:?}"
     );
+    assert!(all.contains(&"AdminUser"), "missing interface AdminUser");
+
+    // Type aliases (added in roux-hx9)
+    assert!(all.contains(&"UserRole"), "missing type alias UserRole");
+
+    // Classes and functions (already worked)
+    assert!(all.contains(&"UserStore"), "missing class UserStore");
     assert!(
         all.contains(&"RequestHandler"),
         "missing class RequestHandler"
