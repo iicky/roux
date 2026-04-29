@@ -327,3 +327,231 @@ fn python_adversarial_crlf_and_bom_handled() {
         "BOM Python file should still extract its function"
     );
 }
+
+// ─── TypeScript: realistic mini-project ────────────────────────────
+
+#[test]
+fn typescript_basic_extracts_classes_methods_functions() {
+    // Note: interface and type-alias extraction are tracked as roux-hx9.
+    // This test asserts what the extractor *does* produce today: classes,
+    // methods, and functions. Re-tighten once roux-hx9 lands.
+    let g = extract_dir(
+        &fixture("typescript/basic"),
+        "tiny-ts",
+        "0.1.0",
+        Some("typescript"),
+    )
+    .expect("extract should succeed");
+
+    let all = names(&g.nodes);
+
+    assert!(
+        all.contains(&"UserStore"),
+        "missing class UserStore — got {all:?}"
+    );
+    assert!(
+        all.contains(&"RequestHandler"),
+        "missing class RequestHandler"
+    );
+    assert!(
+        all.contains(&"fetchUser"),
+        "missing async function fetchUser"
+    );
+    assert!(all.contains(&"isAdmin"), "missing user-defined type guard");
+
+    let files = names_of_kind(&g.nodes, "file");
+    assert!(files.contains(&"types.ts"));
+    assert!(files.contains(&"handlers.ts"));
+    assert!(files.contains(&"index.ts"));
+}
+
+#[test]
+fn typescript_adversarial_does_not_panic() {
+    let g = extract_dir(
+        &fixture("typescript/adversarial"),
+        "ts-adversarial",
+        "0.1.0",
+        Some("typescript"),
+    )
+    .expect("extract should not error");
+
+    let files = names_of_kind(&g.nodes, "file");
+    for expected in ["malformed.ts", "empty.ts", "bom.ts", "crlf.ts"] {
+        assert!(
+            files.contains(&expected),
+            "expected file node for {expected} — got {files:?}"
+        );
+    }
+
+    let all = names(&g.nodes);
+    assert!(
+        all.contains(&"withCrlf"),
+        "CRLF .ts should still extract — got {all:?}"
+    );
+    assert!(
+        all.contains(&"withBom"),
+        "BOM .ts should still extract — got {all:?}"
+    );
+}
+
+// ─── Go: realistic package ─────────────────────────────────────────
+
+#[test]
+fn go_basic_extracts_structs_interfaces_methods() {
+    let g = extract_dir(&fixture("go/basic"), "tiny-go", "0.1.0", Some("go"))
+        .expect("extract should succeed");
+
+    let all = names(&g.nodes);
+
+    assert!(all.contains(&"User"), "missing struct User — got {all:?}");
+    assert!(all.contains(&"Greeter"), "missing interface Greeter");
+    assert!(all.contains(&"Handler"), "missing struct Handler");
+    assert!(all.contains(&"NewHandler"), "missing func NewHandler");
+    assert!(all.contains(&"Greet"), "missing method Greet");
+    assert!(all.contains(&"Handle"), "missing method Handle");
+
+    let files = names_of_kind(&g.nodes, "file");
+    assert!(files.contains(&"models.go"));
+    assert!(files.contains(&"handlers.go"));
+}
+
+#[test]
+fn go_adversarial_does_not_panic() {
+    let g = extract_dir(
+        &fixture("go/adversarial"),
+        "go-adversarial",
+        "0.1.0",
+        Some("go"),
+    )
+    .expect("extract should not error");
+
+    let files = names_of_kind(&g.nodes, "file");
+    for expected in ["malformed.go", "empty.go", "bom.go", "crlf.go"] {
+        assert!(
+            files.contains(&expected),
+            "expected file node for {expected} — got {files:?}"
+        );
+    }
+
+    let all = names(&g.nodes);
+    assert!(
+        all.contains(&"WithCrlf"),
+        "CRLF .go should still extract — got {all:?}"
+    );
+    assert!(
+        all.contains(&"WithBom"),
+        "BOM .go should still extract — got {all:?}"
+    );
+}
+
+// ─── C++: header + implementation ──────────────────────────────────
+
+#[test]
+fn cpp_basic_extracts_classes_methods_namespace() {
+    let g = extract_dir(&fixture("cpp/basic"), "tiny-cpp", "0.1.0", Some("cpp"))
+        .expect("extract should succeed");
+
+    let all = names(&g.nodes);
+
+    assert!(all.contains(&"Node"), "missing class Node — got {all:?}");
+    assert!(all.contains(&"Edge"), "missing class Edge");
+    assert!(
+        all.contains(&"Container"),
+        "missing template class Container"
+    );
+    assert!(all.contains(&"main"), "missing main function");
+
+    let files = names_of_kind(&g.nodes, "file");
+    assert!(files.contains(&"graph.h"));
+    assert!(files.contains(&"graph.cpp"));
+    assert!(files.contains(&"main.cpp"));
+}
+
+#[test]
+fn cpp_basic_extracts_inherits_edge() {
+    let g = extract_dir(&fixture("cpp/basic"), "tiny-cpp", "0.1.0", Some("cpp"))
+        .expect("extract should succeed");
+
+    let inherits = edges_of_kind(&g.edges, "inherits");
+    let id_name = id_to_name(&g.nodes);
+
+    // class Edge : public Node — Edge inherits Node
+    let has_edge_inherits = inherits.iter().any(|e| {
+        let from = id_name.get(e.from_id.as_str()).copied().unwrap_or("");
+        let to = id_name.get(e.to_id.as_str()).copied().unwrap_or("");
+        from == "Edge" && to == "Node"
+    });
+    assert!(
+        has_edge_inherits,
+        "expected Edge inherits Node — got {} inherits edges",
+        inherits.len()
+    );
+}
+
+#[test]
+fn cpp_adversarial_does_not_panic() {
+    let g = extract_dir(
+        &fixture("cpp/adversarial"),
+        "cpp-adversarial",
+        "0.1.0",
+        Some("cpp"),
+    )
+    .expect("extract should not error");
+
+    let files = names_of_kind(&g.nodes, "file");
+    for expected in ["malformed.cpp", "empty.cpp", "bom.cpp", "crlf.cpp"] {
+        assert!(
+            files.contains(&expected),
+            "expected file node for {expected} — got {files:?}"
+        );
+    }
+
+    let all = names(&g.nodes);
+    assert!(all.contains(&"with_crlf"), "CRLF .cpp should still extract");
+    assert!(all.contains(&"with_bom"), "BOM .cpp should still extract");
+}
+
+// ─── Markdown ──────────────────────────────────────────────────────
+
+#[test]
+fn markdown_basic_extracts_doc_sections() {
+    // Markdown doesn't need a language hint; walk_dir handles .md specially.
+    let g = extract_dir(&fixture("markdown/basic"), "tiny-md", "0.1.0", None)
+        .expect("extract should succeed");
+
+    let all = names(&g.nodes);
+    let files = names_of_kind(&g.nodes, "file");
+
+    // We expect at least a file node and some doc section nodes.
+    assert!(files.contains(&"README.md"), "expected README.md file node");
+    // Section names from the markdown headings.
+    let saw_section = all.iter().any(|n| {
+        n.contains("Overview")
+            || n.contains("Quick start")
+            || n.contains("API")
+            || n.contains("Errors")
+    });
+    assert!(
+        saw_section,
+        "expected at least one heading-derived doc section — got {all:?}"
+    );
+}
+
+#[test]
+fn markdown_adversarial_does_not_panic() {
+    let g = extract_dir(
+        &fixture("markdown/adversarial"),
+        "md-adversarial",
+        "0.1.0",
+        None,
+    )
+    .expect("extract should not error on adversarial markdown");
+
+    let files = names_of_kind(&g.nodes, "file");
+    for expected in ["uneven_headings.md", "unclosed_codeblock.md", "empty.md"] {
+        assert!(
+            files.contains(&expected),
+            "expected file node for {expected} — got {files:?}"
+        );
+    }
+}
