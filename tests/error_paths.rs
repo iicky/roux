@@ -161,6 +161,71 @@ fn store_upsert_idempotent_for_same_source() {
     );
 }
 
+// ─── Store: cross-language separator handling ─────────────────────
+
+#[test]
+fn store_search_cross_language_separators() {
+    use roux_cli::graph::Node;
+
+    // Symbols indexed with different language conventions:
+    //   Rust:    tokio::task::spawn
+    //   Python:  tokio.task.spawn
+    // A user (or agent) querying with either separator — or just spaces —
+    // should match both. Pre-fix, "tokio::spawn" would collapse to a single
+    // "tokiospawn" token at query time and miss every node in the index.
+    let make_node = |source: &str, qualified: &str, lang: &str| Node {
+        id: Node::id_for(source, qualified),
+        kind: "function".into(),
+        name: "spawn".into(),
+        qualified_name: qualified.into(),
+        source_name: source.into(),
+        language: lang.into(),
+        file_path: "lib".into(),
+        start_line: 1,
+        start_col: 0,
+        end_line: 5,
+        visibility: "pub".into(),
+        signature: Some("fn spawn()".into()),
+        doc: None,
+        body: format!("function: {qualified}"),
+        parent_id: None,
+        content_hash: None,
+        line_count: 5,
+        source_url: None,
+        description: None,
+    };
+
+    let store = GraphStore::open_in_memory().unwrap();
+    store
+        .upsert_source(
+            "tokio-rs",
+            "v1",
+            "rust",
+            &[make_node("tokio-rs", "tokio::task::spawn", "rust")],
+            &[],
+        )
+        .unwrap();
+    store
+        .upsert_source(
+            "tokio-py",
+            "v1",
+            "python",
+            &[make_node("tokio-py", "tokio.task.spawn", "python")],
+            &[],
+        )
+        .unwrap();
+
+    for q in ["tokio spawn", "tokio::spawn", "tokio.spawn", "task spawn"] {
+        let result = store.search(q, 10).unwrap();
+        assert_eq!(
+            result.nodes.len(),
+            2,
+            "search({q:?}) should match both rust and python tokens, got {}",
+            result.nodes.len()
+        );
+    }
+}
+
 // ─── Lockfile: malformed input ─────────────────────────────────────
 
 #[test]

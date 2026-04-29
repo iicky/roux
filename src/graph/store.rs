@@ -875,23 +875,28 @@ fn extract_description_keywords(desc: &str) -> String {
 fn fts_query_escape(query: &str) -> String {
     let mut tokens: Vec<String> = Vec::new();
 
+    // Split on the same separators tokenize_for_fts uses at index time. Without
+    // this, queries like "tokio::spawn" collapse to the single token
+    // "tokiospawn" — which never matches anything in the index, since the
+    // index stored ["tokio", "spawn"].
     for word in query.split_whitespace() {
-        let clean: String = word
-            .chars()
-            .filter(|c| c.is_alphanumeric() || *c == '_')
-            .collect();
-        if clean.is_empty() {
-            continue;
-        }
+        for part in word.split([':', '.', '/', '(', ')']) {
+            let clean: String = part
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if clean.is_empty() {
+                continue;
+            }
 
-        // Add original word
-        tokens.push(clean.to_lowercase());
+            tokens.push(clean.to_lowercase());
 
-        // Add subword splits (camelCase/snake_case)
-        let subwords = code_tokenize(&clean);
-        for sw in &subwords {
-            if *sw != clean.to_lowercase() {
-                tokens.push(sw.clone());
+            // Add subword splits (camelCase/snake_case)
+            let subwords = code_tokenize(&clean);
+            for sw in &subwords {
+                if *sw != clean.to_lowercase() {
+                    tokens.push(sw.clone());
+                }
             }
         }
     }
