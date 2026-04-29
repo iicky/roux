@@ -542,7 +542,7 @@ fn diag_express_misses() {
         *kinds.entry(n.kind.as_str()).or_default() += 1;
     }
     let mut sorted: Vec<_> = kinds.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+    sorted.sort_by_key(|entry| std::cmp::Reverse(entry.1));
     eprintln!(
         "\n── express kind distribution ({} nodes) ──",
         graph.nodes.len()

@@ -989,6 +989,24 @@ pub fn tokenize_for_fts(text: &str) -> String {
         .join(" ")
 }
 
+fn bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
+}
+
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
+    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm_a == 0.0 || norm_b == 0.0 {
+        0.0
+    } else {
+        (dot / (norm_a * norm_b)) as f64
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1040,7 +1058,7 @@ mod tests {
         let store = GraphStore::open_in_memory().unwrap();
         let n = make_node("x", "function", "lib::x");
         store
-            .upsert_source("test", "1", "rust", &[n.clone()], &[])
+            .upsert_source("test", "1", "rust", std::slice::from_ref(&n), &[])
             .unwrap();
         // Inject extra duplicate rows to simulate stale FTS rows.
         store
@@ -1067,7 +1085,7 @@ mod tests {
 
         // Now upsert again — sweep should eliminate all duplicates.
         store
-            .upsert_source("test", "1", "rust", &[n.clone()], &[])
+            .upsert_source("test", "1", "rust", std::slice::from_ref(&n), &[])
             .unwrap();
         let after: i64 = store
             .conn
@@ -1129,7 +1147,7 @@ mod tests {
         // Re-ingesting with a smaller node set must drop the removed symbol's
         // FTS row (otherwise stale results haunt searches). beta should be gone.
         store
-            .upsert_source("lib", "1.0", "rust", &[n1.clone()], &[])
+            .upsert_source("lib", "1.0", "rust", std::slice::from_ref(&n1), &[])
             .unwrap();
         let beta_hits = store.search("beta", 5).unwrap();
         assert!(
@@ -1407,23 +1425,5 @@ mod tests {
         only_n2.content_hash = Some("hash_b".to_string());
         let (_, _, removed2) = store.diff_source("test", &[only_n2]).unwrap();
         assert_eq!(removed2.len(), 1, "foo should be removed");
-    }
-}
-
-fn bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
-    bytes
-        .chunks_exact(4)
-        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect()
-}
-
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
-    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm_a == 0.0 || norm_b == 0.0 {
-        0.0
-    } else {
-        (dot / (norm_a * norm_b)) as f64
     }
 }
