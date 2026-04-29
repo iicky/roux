@@ -1,0 +1,3 @@
+# Per-run JSONL output is reproducible — don't check in.
+*.jsonl
+*.log

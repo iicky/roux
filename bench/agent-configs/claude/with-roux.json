@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "roux": {
+      "type": "stdio",
+      "command": "/Users/mickey/Repos/iicky/roux/target/release/roux",
+      "args": ["serve", "--local"]
+    }
+  }
+}
