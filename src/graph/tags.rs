@@ -382,18 +382,60 @@ const TAGS_GO: &str = r#"
 
 const TAGS_CPP: &str = r#"
 (struct_specifier name: (type_identifier) @name body:(_)) @definition.class
-
+(class_specifier name: (type_identifier) @name) @definition.class
 (declaration type: (union_specifier name: (type_identifier) @name)) @definition.class
 
-(function_declarator declarator: (identifier) @name) @definition.function
+; Function/method definitions with bodies. Anchoring on `function_definition`
+; (rather than the bare `function_declarator`) makes the captured byte range
+; cover the body, which the call-edge walker needs to recurse into.
+(function_definition
+    declarator: (function_declarator
+        declarator: (identifier) @name)) @definition.function
 
-(function_declarator declarator: (field_identifier) @name) @definition.function
+(function_definition
+    declarator: (function_declarator
+        declarator: (field_identifier) @name)) @definition.method
+
+(function_definition
+    declarator: (function_declarator
+        declarator: (qualified_identifier
+            name: (identifier) @name))) @definition.method
+
+(function_definition
+    declarator: (function_declarator
+        declarator: (destructor_name (identifier) @name))) @definition.method
+
+; Header / out-of-line declarations (no body). These match free functions in
+; a header (`int foo(int);`) and member functions inside a class body
+; (`void bar();`). They never match inside a `function_definition`, so they
+; complement the patterns above.
+(declaration
+    declarator: (function_declarator
+        declarator: (identifier) @name)) @definition.function
+
+(field_declaration
+    declarator: (function_declarator
+        declarator: (field_identifier) @name)) @definition.method
 
 (type_definition declarator: (type_identifier) @name) @definition.type
-
 (enum_specifier name: (type_identifier) @name) @definition.type
 
-(class_specifier name: (type_identifier) @name) @definition.class
+; Call references — function calls, method calls, qualified calls, template
+; calls. Each becomes a `calls` edge resolved against in-file symbols.
+(call_expression
+    function: (identifier) @name) @reference.call
+
+(call_expression
+    function: (field_expression
+        field: (field_identifier) @name)) @reference.call
+
+(call_expression
+    function: (qualified_identifier
+        name: (identifier) @name)) @reference.call
+
+(call_expression
+    function: (template_function
+        name: (identifier) @name)) @reference.call
 "#;
 
 const TAGS_BASH: &str = r#"

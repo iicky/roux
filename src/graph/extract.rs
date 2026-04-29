@@ -557,6 +557,35 @@ fn extract_relationship_edges(
                 }
             }
         }
+        "cpp" | "c" if matches!(kind, "class_specifier" | "struct_specifier") => {
+            // class Derived : public Base, virtual Mixin, ... → inherits edges.
+            // The inheritance list is a `base_class_clause` child of the class
+            // body's parent node, containing one or more type_identifiers
+            // (optionally with access specifiers and `virtual` keyword between).
+            if let Some(base_clause) = find_child_by_kind(node, "base_class_clause") {
+                let mut cursor = base_clause.walk();
+                for child in base_clause.children(&mut cursor) {
+                    if matches!(
+                        child.kind(),
+                        "type_identifier" | "qualified_identifier" | "template_type"
+                    ) {
+                        let parent_name = node_text(&child, code).to_string();
+                        // For qualified `ns::Foo`, store the leaf — resolution
+                        // matches against `qualified_name` suffix anyway.
+                        let leaf = parent_name
+                            .rsplit("::")
+                            .next()
+                            .unwrap_or(&parent_name)
+                            .to_string();
+                        edges.push(Edge {
+                            from_id: sym_id.to_string(),
+                            to_id: format!("__unresolved::{leaf}"),
+                            kind: "inherits".to_string(),
+                        });
+                    }
+                }
+            }
+        }
         "javascript" | "typescript" | "tsx" if kind == "class_declaration" => {
             // class Foo extends Bar → inherits
             // class Foo implements Bar → implements (TS only)
@@ -609,6 +638,7 @@ fn extract_type_refs(node: &TsNode, code: &[u8], lang: &str, sym_id: &str, edges
         "python" => &["type", "identifier"], // type annotations
         "javascript" | "typescript" | "tsx" => &["type_identifier", "predefined_type"],
         "go" => &["type_identifier", "qualified_type"],
+        "cpp" | "c" => &["type_identifier", "qualified_identifier", "template_type"],
         _ => return,
     };
 
@@ -2066,6 +2096,25 @@ mod tests {
         FileGraph { nodes, edges }
     }
 
+    fn extract_cpp(code: &str) -> FileGraph {
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+        extract_from_source(
+            code,
+            tree_sitter_cpp::LANGUAGE.into(),
+            "cpp",
+            "test.cpp",
+            "test",
+            "1.0.0",
+            &mut nodes,
+            &mut edges,
+            None,
+        )
+        .unwrap();
+        resolve_references(&mut edges, &nodes);
+        FileGraph { nodes, edges }
+    }
+
     #[test]
     fn test_rust_function() {
         let g = extract_rust("pub fn spawn() {}");
@@ -2300,6 +2349,91 @@ class Child(Base):
         assert!(
             !inherits.is_empty(),
             "should have inherits edge from Child to Base"
+        );
+    }
+
+    #[test]
+    fn test_cpp_function_with_calls() {
+        // Pre-fix: tags captured `function_declarator` (declarator + params),
+        // not `function_definition` (which contains the body), so the call
+        // walker had no body to recurse into. After the fix, `inner` gets
+        // body coverage and we should pick up the calls to `helper` and
+        // `another`.
+        let g = extract_cpp(
+            r#"
+int helper(int x) { return x + 1; }
+int another(int y) { return y * 2; }
+int outer(int z) {
+    int a = helper(z);
+    int b = another(z);
+    return a + b;
+}
+            "#,
+        );
+        let funcs: Vec<_> = g.nodes.iter().filter(|n| n.kind == "function").collect();
+        assert!(
+            funcs.len() >= 3,
+            "expected helper/another/outer, got {:?}",
+            funcs.iter().map(|n| &n.name).collect::<Vec<_>>()
+        );
+        let calls: Vec<_> = g.edges.iter().filter(|e| e.kind == "calls").collect();
+        assert!(
+            calls.len() >= 2,
+            "expected at least 2 calls edges (outer→helper, outer→another), got {}: {:?}",
+            calls.len(),
+            calls,
+        );
+    }
+
+    #[test]
+    fn test_cpp_class_inherits() {
+        let g = extract_cpp(
+            r#"
+class Base {
+public:
+    virtual void run();
+};
+
+class Derived : public Base {
+public:
+    void run() override;
+};
+            "#,
+        );
+        let inherits: Vec<_> = g.edges.iter().filter(|e| e.kind == "inherits").collect();
+        assert!(
+            !inherits.is_empty(),
+            "expected inherits edge from Derived to Base, got edges {:?}",
+            g.edges.iter().map(|e| &e.kind).collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn test_cpp_method_call_and_type_ref() {
+        let g = extract_cpp(
+            r#"
+struct Config {
+    int value;
+};
+
+class Engine {
+public:
+    void start(Config cfg);
+};
+
+void Engine::start(Config cfg) {
+    int v = cfg.value;
+}
+            "#,
+        );
+        let type_refs: Vec<_> = g.edges.iter().filter(|e| e.kind == "type_ref").collect();
+        assert!(
+            !type_refs.is_empty(),
+            "expected at least one type_ref edge (Engine::start → Config), got {:?}",
+            g.edges
+                .iter()
+                .map(|e| (&e.kind, &e.from_id, &e.to_id))
+                .collect::<Vec<_>>(),
         );
     }
 
