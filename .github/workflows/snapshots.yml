@@ -1,0 +1,92 @@
+name: Persona snapshots
+
+# Builds portable persona index DBs and attaches them to a tagged release.
+# Consumed by the PR regression gate (pr-bench.yml). Refresh cadence is
+# monthly + on demand — pinned upstream refs match persona-bench.yml so
+# nightly metrics and PR-gate metrics are comparable.
+#
+# Output: a release tagged `snapshots-YYYY-MM` with five `<slug>.sqlite.gz`
+# assets (ripgrep, pandas, remix, gin, Marlin).
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # 02:00 UTC on the 1st of every month.
+    - cron: '0 2 1 * *'
+
+permissions:
+  contents: write   # to create the release and upload assets
+
+jobs:
+  build-snapshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build roux
+        run: cargo build --release --bin roux
+
+      # Persona repos. Pin to the same refs as persona-bench.yml so nightly
+      # and PR-gate metrics are directly comparable.
+      - name: Clone persona — ripgrep
+        run: git clone --depth=1 --branch=14.1.1 https://github.com/BurntSushi/ripgrep /tmp/roux-sources/ripgrep
+      - name: Clone persona — pandas
+        run: git clone --depth=1 --branch=v2.2.3 https://github.com/pandas-dev/pandas /tmp/roux-sources/pandas
+      - name: Clone persona — remix
+        run: git clone --depth=1 --branch=remix@2.13.1 https://github.com/remix-run/remix /tmp/roux-sources/remix
+      - name: Clone persona — gin
+        run: git clone --depth=1 --branch=v1.10.0 https://github.com/gin-gonic/gin /tmp/roux-sources/gin
+      - name: Clone persona — Marlin
+        run: git clone --depth=1 --branch=2.1.2.5 https://github.com/MarlinFirmware/Marlin /tmp/roux-sources/Marlin
+
+      - name: Build snapshot DBs
+        env:
+          ROUX: ${{ github.workspace }}/target/release/roux
+        run: |
+          set -euo pipefail
+          mkdir -p snapshots
+          # slug:source_path:language
+          PERSONAS=(
+            "ripgrep:/tmp/roux-sources/ripgrep:rust"
+            "pandas:/tmp/roux-sources/pandas:python"
+            "remix:/tmp/roux-sources/remix:typescript"
+            "gin:/tmp/roux-sources/gin:go"
+            "Marlin:/tmp/roux-sources/Marlin:cpp"
+          )
+          for entry in "${PERSONAS[@]}"; do
+            slug="${entry%%:*}"
+            rest="${entry#*:}"
+            src="${rest%%:*}"
+            lang="${rest#*:}"
+            echo "── building $slug ($lang) from $src"
+            workdir="$(mktemp -d)"
+            (
+              cd "$workdir"
+              "$ROUX" add "$src" --lang "$lang" --local --name "$slug"
+              "$ROUX" export --output "$GITHUB_WORKSPACE/snapshots/${slug}.sqlite.gz" --gzip
+            )
+            ls -lh "$GITHUB_WORKSPACE/snapshots/${slug}.sqlite.gz"
+          done
+
+      - name: Resolve snapshot tag
+        id: tag
+        run: echo "name=snapshots-$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      - name: Create / update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: Persona snapshots ${{ steps.tag.outputs.name }}
+          body: |
+            Pre-built persona index DBs consumed by the PR regression gate.
+
+            Built from pinned upstream refs (see snapshots.yml). Source commit:
+            `${{ github.sha }}`. Each `.sqlite.gz` opens directly with
+            `roux query --db <file> ...` after gunzip.
+          files: snapshots/*.sqlite.gz
+          # Replace assets if the tag already exists this month.
+          fail_on_unmatched_files: true
