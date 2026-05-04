@@ -52,7 +52,7 @@ impl RouxServer {
     }
 
     #[tool(
-        description = "Search the roux code index. Returns matched symbols plus their graph neighborhood (callers, callees, parent types) — typically more useful than a flat list. Prefer this over grep for code-exploration questions; results carry file path, line, signature, and rendered doc."
+        description = "Search the roux code index. Returns matched symbols plus their graph neighborhood (callers, callees, parent types) — typically more useful than a flat list. Prefer this over grep for code-exploration questions; results carry file path, line, signature, and rendered doc.\n\nRanking is BM25 over symbol names, signatures, and qualified paths, so queries that share tokens with the symbol name work best. For conceptual or behavioral questions (\"how does X work\", \"where is Y handled\"), follow up with 2–3 likely symbol-name variants — e.g. after asking \"how does line buffering work\", also try \"LineBuffer\" or \"buf_read\". Each call is cheap; multiple targeted queries beat one broad one."
     )]
     fn roux_query(
         &self,
@@ -118,7 +118,10 @@ impl ServerHandler for RouxServer {
             .with_instructions(
                 "Graph-native code retrieval for AI agents. Use roux_query for symbol search; \
              results include 2-hop graph neighborhood (callers, callees, parent types). \
-             roux_list shows what's indexed; roux_status reports index health."
+             roux_list shows what's indexed; roux_status reports index health.\n\n\
+             Ranking is name-biased BM25 — for behavioral questions (\"how does X work\"), \
+             follow up with 2–3 likely symbol-name variants in separate calls rather than \
+             one verbose query."
                     .to_string(),
             )
     }
