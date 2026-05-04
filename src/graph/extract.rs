@@ -32,6 +32,8 @@ pub fn extract_dir(
         0,
     )?;
 
+    merge_duplicate_nodes(&mut all_nodes);
+
     // Build cross-file reference edges
     resolve_references(&mut all_edges, &all_nodes);
 
@@ -110,7 +112,63 @@ pub fn extract_file(
         Some(&file_id),
     )?;
 
+    merge_duplicate_nodes(&mut nodes);
+
     Ok(FileGraph { nodes, edges })
+}
+
+/// Collapse nodes that share an `id` (same `source_name::qualified_name`)
+/// into a single row. Type-definition kinds (struct/enum/trait/type/union)
+/// take precedence over `impl` blocks, since both shapes resolve to the
+/// same qualified name but only the type definition carries the rustdoc.
+/// Without this, the in-memory dedup pass that feeds INSERT OR REPLACE
+/// would silently drop the struct's doc when the impl arrived second.
+fn merge_duplicate_nodes(nodes: &mut Vec<Node>) {
+    use std::collections::HashMap;
+
+    fn priority(kind: &str) -> u8 {
+        match kind {
+            "struct" | "enum" | "trait" | "type" | "union" | "class" | "interface" => 0,
+            "impl" => 1,
+            _ => 2,
+        }
+    }
+
+    let mut by_id: HashMap<String, usize> = HashMap::with_capacity(nodes.len());
+    let mut keep: Vec<bool> = vec![true; nodes.len()];
+
+    for i in 0..nodes.len() {
+        let id = nodes[i].id.clone();
+        match by_id.get(&id).copied() {
+            None => {
+                by_id.insert(id, i);
+            }
+            Some(j) => {
+                let (winner, loser) = if priority(&nodes[i].kind) < priority(&nodes[j].kind) {
+                    (i, j)
+                } else {
+                    (j, i)
+                };
+                if nodes[winner].doc.is_none() {
+                    let doc = nodes[loser].doc.clone();
+                    nodes[winner].doc = doc;
+                }
+                if nodes[winner].signature.is_none() {
+                    let sig = nodes[loser].signature.clone();
+                    nodes[winner].signature = sig;
+                }
+                keep[loser] = false;
+                by_id.insert(nodes[winner].id.clone(), winner);
+            }
+        }
+    }
+
+    let mut idx = 0;
+    nodes.retain(|_| {
+        let k = keep[idx];
+        idx += 1;
+        k
+    });
 }
 
 fn walk_dir(
@@ -1759,7 +1817,11 @@ fn find_child_by_kind<'a>(node: &TsNode<'a>, kind: &str) -> Option<TsNode<'a>> {
 }
 
 fn extract_doc_comment(node: &TsNode, code: &[u8]) -> Option<String> {
-    // Look for comment siblings immediately before this node
+    // Look for comment siblings immediately before this node. Attribute /
+    // decorator nodes (e.g. Rust `#[derive(...)]`, Python `@dataclass`) sit
+    // between the rustdoc and the declaration in the AST — treat them as
+    // transparent so we keep walking until we either find a comment or hit
+    // unrelated code.
     let mut comments = Vec::new();
     let mut sibling = node.prev_sibling();
 
@@ -1782,6 +1844,13 @@ fn extract_doc_comment(node: &TsNode, code: &[u8]) -> Option<String> {
                 if !cleaned.is_empty() {
                     comments.push(cleaned);
                 }
+                sibling = sib.prev_sibling();
+            }
+            "attribute_item"
+            | "inner_attribute_item"
+            | "outer_attribute_item"
+            | "attribute"
+            | "decorator" => {
                 sibling = sib.prev_sibling();
             }
             _ => break,
