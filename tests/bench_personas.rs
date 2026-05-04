@@ -160,8 +160,11 @@ const PERSONA_REMIX: Persona = Persona {
         },
         // Developer queries
         PersonaQuery {
+            // `Middleware` / `asyncContext` were removed in Remix v2; the
+            // current handler-chain entry points are `getContext` and the
+            // resource/document request dispatchers.
             query: "middleware request handling",
-            expected: &["Middleware", "asyncContext", "getContext"],
+            expected: &["getContext", "handleResourceRequest", "RequestHandler"],
             mode: QueryMode::Developer,
         },
         PersonaQuery {
@@ -170,13 +173,18 @@ const PERSONA_REMIX: Persona = Persona {
             mode: QueryMode::Developer,
         },
         PersonaQuery {
+            // The actual session storage factory is `createFileSessionStorage`
+            // (formerly `createFsSessionStorage` — renamed upstream).
             query: "file storage backend for sessions",
-            expected: &["FileStorage", "createFsSessionStorage"],
+            expected: &["createFileSessionStorage", "FileSessionStorage"],
             mode: QueryMode::Developer,
         },
         PersonaQuery {
-            query: "method override HTTP verbs",
-            expected: &["methodOverride", "MethodOverrideOptions"],
+            // `methodOverride` was removed in v2; v2 routes form HTTP verbs
+            // via the `Form` component / `_method` form field. The doc
+            // heading "HTML Form HTTP Verbs" lives at docs/route/action.md.
+            query: "form HTTP method routing",
+            expected: &["Form", "FormMethod", "useSubmit", "useFetcher"],
             mode: QueryMode::Developer,
         },
     ],
@@ -253,8 +261,10 @@ const PERSONA_MARLIN: Persona = Persona {
             mode: QueryMode::Agent,
         },
         PersonaQuery {
+            // Marlin uses `manage_hotends` for the heater management loop;
+            // there is no `manage_heater` symbol.
             query: "Temperature manage_heater PID control",
-            expected: &["Temperature", "manage_heater"],
+            expected: &["Temperature", "manage_hotends", "PID_autotune"],
             mode: QueryMode::Agent,
         },
         PersonaQuery {
@@ -269,8 +279,12 @@ const PERSONA_MARLIN: Persona = Persona {
             mode: QueryMode::Developer,
         },
         PersonaQuery {
+            // G-code symbols appear in both upper- and lowercase forms
+            // (e.g. `G29` the handler, `g29_what_command` the helper); the
+            // `name.contains(expected)` predicate is case-sensitive, so list
+            // both shapes.
             query: "bed leveling probe command",
-            expected: &["G29", "run_z_probe"],
+            expected: &["G29", "g29_", "run_z_probe", "probe_index"],
             mode: QueryMode::Developer,
         },
         PersonaQuery {
@@ -279,8 +293,11 @@ const PERSONA_MARLIN: Persona = Persona {
             mode: QueryMode::Developer,
         },
         PersonaQuery {
+            // M140/M190 are G-code parsers; `manage_heated_bed` and
+            // `setTargetBed` are the actual control logic. Either is a
+            // useful answer for an agent asking about heated-bed control.
             query: "heated bed temperature control",
-            expected: &["M140", "M190"],
+            expected: &["M140", "M190", "manage_heated_bed", "setTargetBed"],
             mode: QueryMode::Developer,
         },
     ],
