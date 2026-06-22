@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -150,12 +151,82 @@ PROMPT_TEMPLATE_ROUX_FIRST = (
 )
 
 
-def _prompt_for(arm: str, query: str) -> str:
+# context-prep (iyi) arm: roux runs ONCE up front; a compact skeleton of the
+# ranked symbols is injected into the prompt prefix, and the agent gets NO live
+# roux tool. Tests roux-as-preprocessor — removes the per-turn schema tax and
+# the turn-amplification, and the injected block is a cacheable prefix.
+PROMPT_TEMPLATE_CONTEXT_PREP = (
+    "A code-retrieval tool (roux) pre-located the most relevant symbols for this "
+    "task — ranked, with file:line, signatures, and docs:\n\n{context}\n\n"
+    "Using this as your starting point, find and explain how this codebase "
+    "implements: {query}. Cite file:line. Open files with Read/Grep only if the "
+    "context above is insufficient. Be concise — under 200 words."
+)
+
+
+# iyi+rk2 (context-prep-bodies): substitutive output. Inject the actual source
+# body of the top-K ranked symbols so the agent can answer WITHOUT re-reading
+# files. Bounded by env to keep the injected block from blowing up token count:
+#   PREP_BODY_K     = how many top symbols get bodies (default 3)
+#   PREP_BODY_LINES = source lines per body window (default 30)
+PREP_BODY_K = int(os.environ.get("PREP_BODY_K", "3"))
+PREP_BODY_LINES = int(os.environ.get("PREP_BODY_LINES", "30"))
+
+
+def _read_span(repo: Path, file_rel: str, start_line: int, n: int) -> str:
+    try:
+        text = (repo / file_rel).read_text(errors="replace")
+    except OSError:
+        return ""
+    src = text.splitlines()
+    s = max(0, int(start_line) - 1)
+    return "\n".join(src[s:s + n])
+
+
+def roux_context(pq: PQ, bodies: bool = False) -> str:
+    """Run roux once and render a COMPACT skeleton block (drop the hash-laden
+    edges/matched arrays the raw JSON carries; keep name/loc/sig/doc). When
+    bodies=True, also inline the source span of the top-PREP_BODY_K symbols so
+    the agent need not re-open the files (substitutive output / rk2)."""
+    try:
+        proc = subprocess.run(
+            [str(ROUX_BIN), "query", pq.query, "--local", "--format", "json", "--top", "5"],
+            cwd=str(pq.path), capture_output=True, text=True, timeout=60, check=False,
+        )
+        data = json.loads(proc.stdout)
+    except (json.JSONDecodeError, OSError, subprocess.SubprocessError):
+        return "(roux returned no usable context)"
+    lines = []
+    for idx, s in enumerate(data.get("symbols", [])):
+        qn = s.get("qualified_name") or s.get("name", "")
+        loc = f'{s.get("file", "?")}:{s.get("line", "?")}'
+        sig = (s.get("signature") or "").strip()
+        doc = (s.get("doc") or "").replace("\n", " ").strip()
+        if len(doc) > 160:
+            doc = doc[:160] + "…"
+        entry = f"- {qn} ({loc})"
+        if sig:
+            entry += f"\n    {sig}"
+        if doc:
+            entry += f"\n    // {doc}"
+        if bodies and idx < PREP_BODY_K:
+            span = _read_span(Path(pq.path), s.get("file", ""), s.get("line", 1), PREP_BODY_LINES)
+            if span:
+                entry += f"\n  ```\n{span}\n  ```"
+        lines.append(entry)
+    return "\n".join(lines) if lines else "(roux found no symbols)"
+
+
+def build_prompt(arm: str, pq: PQ) -> str:
+    if arm in ("context-prep", "context-prep-bodies"):
+        ctx = roux_context(pq, bodies=(arm == "context-prep-bodies"))
+        return PROMPT_TEMPLATE_CONTEXT_PREP.format(context=ctx, query=pq.query)
     tmpl = PROMPT_TEMPLATE_ROUX_FIRST if arm == "roux-first" else PROMPT_TEMPLATE
-    return tmpl.format(query=query)
+    return tmpl.format(query=pq.query)
 
 
 def _roux_enabled(arm: str) -> bool:
+    # context-prep injects roux output statically — no live MCP tool.
     return arm in ("with-roux", "roux-first")
 
 
@@ -176,7 +247,7 @@ def drive_claude(
     pq: PQ, arm: str, run_idx: int, model: str
 ) -> RunResult:
     cfg = CONFIGS_DIR / "claude" / ("with-roux.json" if _roux_enabled(arm) else "no-roux.json")
-    prompt = _prompt_for(arm, pq.query)
+    prompt = build_prompt(arm, pq)
     extra_tools: list[str] = []
     if _roux_enabled(arm):
         extra_tools = [
@@ -199,7 +270,7 @@ def drive_claude(
 def drive_codex(
     pq: PQ, arm: str, run_idx: int, model: str
 ) -> RunResult:
-    prompt = _prompt_for(arm, pq.query)
+    prompt = build_prompt(arm, pq)
     cmd = [
         "codex", "exec",
         "--json",
@@ -232,7 +303,7 @@ def drive_vibe(
     additionally allows the MCP roux tool names (which only resolve if the
     user has registered the roux MCP server in their global config — see
     docs/token-economics.md for setup)."""
-    prompt = _prompt_for(arm, pq.query)
+    prompt = build_prompt(arm, pq)
     # Use custom agent profiles instead of --enabled-tools (which made
     # Devstral 2 hallucinate tool calls as text content). Profiles live at
     # ~/.vibe/agents/roux-bench-{with,without}.toml and toggle which MCP
@@ -354,69 +425,93 @@ def parse_codex(stdout: str, stderr: str) -> dict[str, Any]:
 
 VIBE_SESSIONS_DIR = Path.home() / ".vibe" / "logs" / "session"
 
+# Devstral 2 sometimes emits tool calls as literal text content instead of
+# structured tool_calls (e.g. `read_file{"path": ...} grep{...}`). Such a
+# message is the agent failing to act, not a real answer — never grade it.
+_TOOL_NARRATION_RE = re.compile(
+    r'^\s*(read_file|grep|list_files|write_file|run_command|glob|bash|roux_\w+)\s*\{'
+)
+
+
+def _looks_like_tool_narration(text: str) -> bool:
+    return bool(_TOOL_NARRATION_RE.match(text or ""))
+
 
 def _final_assistant_text_from_messages(arr: list[dict]) -> str:
-    """Pull the last *terminal* assistant message — one whose tool_calls is
-    empty — so we grade real answers, not the agent's narration of tool calls
-    embedded in content."""
+    """Last *terminal* assistant message — tool_calls empty AND not tool-call
+    narration-as-text — so we grade real answers, not the agent's narration."""
     for msg in reversed(arr):
         if not isinstance(msg, dict) or msg.get("role") != "assistant":
             continue
         if msg.get("tool_calls"):
             continue  # not terminal — agent is still calling tools
         t = msg.get("content") or ""
-        if t:
+        if t and not _looks_like_tool_narration(t):
             return t
-    # Fallback: last assistant of any kind (may include hallucinated content,
-    # but at least gives the success metric something to grade against).
-    for msg in reversed(arr):
-        if isinstance(msg, dict) and msg.get("role") == "assistant":
-            t = msg.get("content") or ""
-            if t:
-                return t
     return ""
 
 
-def parse_vibe(stdout: str, stderr: str) -> dict[str, Any]:
-    """Vibe's `--output json` mode emits a messages array (no token stats),
-    but writes per-session metadata with token + cost stats to
-    ~/.vibe/logs/session/<id>/meta.json. Pick the session dir created during
-    this run (most-recent start_time) and read stats from it."""
-    final_text = ""
-    try:
-        data = json.loads(stdout)
-        if isinstance(data, list):
-            final_text = _final_assistant_text_from_messages(data)
-    except json.JSONDecodeError:
-        # streaming mode emits one message-JSON per line
-        msgs: list[dict] = []
-        for line in stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                msgs.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-        final_text = _final_assistant_text_from_messages(msgs)
+def _freshest_vibe_session() -> Path | None:
+    if not VIBE_SESSIONS_DIR.exists():
+        return None
+    dirs = sorted(
+        (p for p in VIBE_SESSIONS_DIR.iterdir() if p.is_dir()),
+        key=lambda p: p.stat().st_mtime, reverse=True,
+    )
+    return dirs[0] if dirs else None
 
-    # Grab the freshest meta.json (sessions are written sequentially).
-    stats: dict[str, Any] = {}
-    if VIBE_SESSIONS_DIR.exists():
-        sessions = sorted(
-            (p for p in VIBE_SESSIONS_DIR.iterdir() if p.is_dir()),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        for sd in sessions[:3]:  # only check the few most recent
-            meta = sd / "meta.json"
-            if meta.exists():
+
+def _read_messages_jsonl(path: Path) -> list[dict]:
+    msgs: list[dict] = []
+    try:
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if line:
                 try:
-                    m = json.loads(meta.read_text())
-                    stats = m.get("stats", {}) or {}
-                    break
-                except (json.JSONDecodeError, OSError):
+                    msgs.append(json.loads(line))
+                except json.JSONDecodeError:
                     continue
+    except OSError:
+        pass
+    return msgs
+
+
+def parse_vibe(stdout: str, stderr: str) -> dict[str, Any]:
+    """Read BOTH the final answer and the token stats from the SAME session dir
+    (~/.vibe/logs/session/<id>/{messages.jsonl,meta.json}) so they cannot
+    mismatch across rapid sequential runs. stdout is only a fallback when the
+    session files are unavailable."""
+    sess = _freshest_vibe_session()
+    stats: dict[str, Any] = {}
+    final_text = ""
+    if sess is not None:
+        meta = sess / "meta.json"
+        if meta.exists():
+            try:
+                stats = json.loads(meta.read_text()).get("stats") or {}
+            except (json.JSONDecodeError, OSError):
+                stats = {}
+        final_text = _final_assistant_text_from_messages(
+            _read_messages_jsonl(sess / "messages.jsonl")
+        )
+
+    if not final_text:
+        # Fallback: parse stdout (--output json array, or streamed JSON lines).
+        try:
+            data = json.loads(stdout)
+            if isinstance(data, list):
+                final_text = _final_assistant_text_from_messages(data)
+        except json.JSONDecodeError:
+            msgs: list[dict] = []
+            for line in stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msgs.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+            final_text = _final_assistant_text_from_messages(msgs)
 
     return {
         "input_tokens": int(stats.get("session_prompt_tokens", 0) or 0),
@@ -425,7 +520,7 @@ def parse_vibe(stdout: str, stderr: str) -> dict[str, Any]:
         "cache_creation_tokens": 0,
         "reasoning_output_tokens": 0,
         "num_turns": int(stats.get("steps", 0) or 0),
-        "result_preview": _preview(final_text or stdout[-400:]),
+        "result_preview": _preview(final_text),
     }
 
 
