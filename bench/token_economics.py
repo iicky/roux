@@ -137,6 +137,27 @@ PROMPT_TEMPLATE = (
     "Cite file:line for the key symbols you find. Be concise — under 200 words."
 )
 
+# roux-first arm: same task, but instruct the agent to treat roux as the primary
+# retrieval surface and avoid re-reading files it already found via roux. Tests
+# whether the with-roux cost penalty is behavioral (over-reading) vs structural
+# (MCP schema + output overhead).
+PROMPT_TEMPLATE_ROUX_FIRST = (
+    "Find and explain how this codebase implements: {query}. "
+    "Use the roux_query tool as your PRIMARY way to locate code — it returns "
+    "symbols with file:line, signatures, docs, and their caller/callee neighborhood. "
+    "Rely on roux's output; only open a file with Read/Grep if roux's results are "
+    "genuinely insufficient to answer. Cite file:line. Be concise — under 200 words."
+)
+
+
+def _prompt_for(arm: str, query: str) -> str:
+    tmpl = PROMPT_TEMPLATE_ROUX_FIRST if arm == "roux-first" else PROMPT_TEMPLATE
+    return tmpl.format(query=query)
+
+
+def _roux_enabled(arm: str) -> bool:
+    return arm in ("with-roux", "roux-first")
+
 
 def _success(result_text: str, expected: list[str]) -> bool:
     if not result_text:
@@ -154,10 +175,10 @@ def _preview(result_text: str, n: int = 240) -> str:
 def drive_claude(
     pq: PQ, arm: str, run_idx: int, model: str
 ) -> RunResult:
-    cfg = CONFIGS_DIR / "claude" / f"{arm}.json"
-    prompt = PROMPT_TEMPLATE.format(query=pq.query)
+    cfg = CONFIGS_DIR / "claude" / ("with-roux.json" if _roux_enabled(arm) else "no-roux.json")
+    prompt = _prompt_for(arm, pq.query)
     extra_tools: list[str] = []
-    if arm == "with-roux":
+    if _roux_enabled(arm):
         extra_tools = [
             "mcp__roux__roux_query",
             "mcp__roux__roux_list",
@@ -178,11 +199,14 @@ def drive_claude(
 def drive_codex(
     pq: PQ, arm: str, run_idx: int, model: str
 ) -> RunResult:
-    prompt = PROMPT_TEMPLATE.format(query=pq.query)
+    prompt = _prompt_for(arm, pq.query)
     cmd = [
         "codex", "exec",
         "--json",
-        "--full-auto",  # workspace-write + low-friction approvals
+        # codex 0.139 dropped --full-auto. The task is read+explain only, so a
+        # read-only sandbox is the safest match; never prompt (non-interactive).
+        "--sandbox", "read-only",
+        "-c", "approval_policy=\"never\"",
         "--skip-git-repo-check",
         "--ephemeral",  # avoid session-persistence races across rapid runs
         # Pin reasoning effort for reproducibility / cost control.
@@ -190,7 +214,7 @@ def drive_codex(
     ]
     if model:
         cmd += ["--model", model]
-    if arm == "with-roux":
+    if _roux_enabled(arm):
         cmd += [
             "-c", f'mcp_servers.roux.command="{ROUX_BIN}"',
             "-c", 'mcp_servers.roux.args=["serve","--local"]',
@@ -208,13 +232,13 @@ def drive_vibe(
     additionally allows the MCP roux tool names (which only resolve if the
     user has registered the roux MCP server in their global config — see
     docs/token-economics.md for setup)."""
-    prompt = PROMPT_TEMPLATE.format(query=pq.query)
+    prompt = _prompt_for(arm, pq.query)
     # Use custom agent profiles instead of --enabled-tools (which made
     # Devstral 2 hallucinate tool calls as text content). Profiles live at
     # ~/.vibe/agents/roux-bench-{with,without}.toml and toggle which MCP
     # tools are exposed; setup is one-shot per machine — see the harness
     # docstring or docs/token-economics.md for the file contents.
-    agent = "roux-bench-with" if arm == "with-roux" else "roux-bench-without"
+    agent = "roux-bench-with" if _roux_enabled(arm) else "roux-bench-without"
     cmd = [
         "vibe",
         "--prompt", prompt,
@@ -423,6 +447,7 @@ def main() -> int:
     only_personas = set(filter(None, os.environ.get("ONLY_PERSONAS", "").split(",")))
     only_queries_n = int(os.environ.get("ONLY_QUERIES", "0") or 0)
     runs_per_task = int(os.environ.get("RUNS_PER_TASK", "3"))
+    arms = tuple(filter(None, os.environ.get("ARMS", "no-roux,with-roux").split(",")))
 
     queries = parse_personas()
     if only_personas:
@@ -452,9 +477,9 @@ def main() -> int:
         print("no agents available", file=sys.stderr)
         return 1
 
-    total = len(queries) * len(only_agents) * 2 * runs_per_task
+    total = len(queries) * len(only_agents) * len(arms) * runs_per_task
     done = 0
-    print(f"[harness] {len(queries)} queries × {len(only_agents)} agents × 2 arms × {runs_per_task} runs = {total} runs → {out_path}", file=sys.stderr)
+    print(f"[harness] {len(queries)} queries × {len(only_agents)} agents × {len(arms)} arms ({','.join(arms)}) × {runs_per_task} runs = {total} runs → {out_path}", file=sys.stderr)
     if skipped_agents:
         print(f"[harness] skipped: {','.join(skipped_agents)}", file=sys.stderr)
 
@@ -463,7 +488,7 @@ def main() -> int:
             for agent in sorted(only_agents):
                 drive, model_fn = DRIVERS[agent]
                 model = model_fn()
-                for arm in ("no-roux", "with-roux"):
+                for arm in arms:
                     for run_idx in range(1, runs_per_task + 1):
                         done += 1
                         print(
