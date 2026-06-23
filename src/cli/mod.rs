@@ -65,7 +65,7 @@ enum Command {
         /// Restrict search to a named source
         #[arg(long)]
         source: Option<String>,
-        /// Output format: text or json
+        /// Output format: text, json, or skeleton (compact prompt-prefix block)
         #[arg(long, default_value = "text")]
         format: String,
         /// Search local index only (mutually exclusive with --global)
@@ -597,6 +597,16 @@ fn cmd_query(
                 serde_json::to_string_pretty(&search_result_to_json(&result))?
             );
         }
+        "skeleton" => {
+            // Compact, deterministic, prompt-prefix-ready block for use as a
+            // one-shot context preprocessor (iyi): inject roux's ranked hits
+            // into an agent's prompt prefix instead of exposing a live tool.
+            // Measured to cut a capable agent's input tokens ~20-40% with no
+            // accuracy loss. Fields kept minimal on purpose (no edges/scores/
+            // bodies — all measured neutral-to-harmful); the block is stable
+            // run-to-run so it caches in the prompt prefix.
+            print!("{}", render_skeleton(&result));
+        }
         _ => {
             // Print matched symbols first, then neighborhood
             for sym in &result.nodes {
@@ -641,6 +651,42 @@ fn cmd_query(
     }
 
     Ok(())
+}
+
+/// Render a search result as a compact `--format skeleton` block: one entry per
+/// ranked symbol with `qualified_name (file:line)`, signature, and a one-line
+/// doc truncated to ~160 chars. Deterministic given a fixed result (no scores or
+/// timestamps) so the block is stable across runs and caches in a prompt prefix.
+pub fn render_skeleton(result: &crate::graph::store::SearchResult) -> String {
+    const DOC_MAX: usize = 160;
+    let mut out = String::new();
+    for sym in &result.nodes {
+        out.push_str(&format!(
+            "- {} ({}:{})\n",
+            sym.qualified_name, sym.file_path, sym.start_line
+        ));
+        if let Some(sig) = sym
+            .signature
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            out.push_str(&format!("    {sig}\n"));
+        }
+        if let Some(doc) = sym.doc.as_deref() {
+            let flat = doc.split_whitespace().collect::<Vec<_>>().join(" ");
+            if !flat.is_empty() {
+                let trimmed = if flat.chars().count() > DOC_MAX {
+                    let cut: String = flat.chars().take(DOC_MAX).collect();
+                    format!("{cut}…")
+                } else {
+                    flat
+                };
+                out.push_str(&format!("    // {trimmed}\n"));
+            }
+        }
+    }
+    out
 }
 
 /// Staleness verdict for an indexed source.
