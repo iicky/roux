@@ -872,7 +872,66 @@ fn extract_description_keywords(desc: &str) -> String {
         .join(" ")
 }
 
+/// Natural-language filler words that pollute lexical search. A query like
+/// "how does line buffering work during search" should match on
+/// line/buffer/search, not on the generic symbols that "how/does/work" hit.
+/// Deliberately conservative: only words that are never meaningful code terms.
+const QUERY_STOPWORDS: &[&str] = &[
+    "how", "does", "do", "did", "what", "when", "where", "why", "which", "who", "work", "works",
+    "working", "during", "the", "a", "an", "of", "for", "to", "from", "is", "are", "be", "this",
+    "that", "these", "those", "with", "and", "or", "into", "its", "it", "as", "at", "on", "in",
+    "by", "use", "using", "used", "via", "should", "would", "could", "can", "will",
+];
+
+/// Cheap morphological stem variants so NL phrasing matches indexed identifiers:
+/// "buffering"→"buffer" (LineBuffer), "results"→"result", "mapped"→"map".
+/// Returned as ADDITIONAL OR-terms — extra variants only widen recall; PPR and
+/// the description rerank handle precision. Garbage stems (rare) match nothing.
+fn stem_variants(t: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let push = |out: &mut Vec<String>, s: String| {
+        if s.len() > 2 && s != t {
+            out.push(s);
+        }
+    };
+    if let Some(b) = t.strip_suffix("ing") {
+        push(&mut out, b.to_string());
+    } else if let Some(b) = t.strip_suffix("ed") {
+        // "mapped" → "mapp" → strip the doubled consonant → "map"
+        let chars: Vec<char> = b.chars().collect();
+        if chars.len() >= 2 && chars[chars.len() - 1] == chars[chars.len() - 2] {
+            push(&mut out, b[..b.len() - 1].to_string());
+        } else {
+            push(&mut out, b.to_string());
+        }
+    } else if let Some(b) = t.strip_suffix('s')
+        && !b.ends_with('s')
+    {
+        push(&mut out, b.to_string());
+    }
+    out
+}
+
 fn fts_query_escape(query: &str) -> String {
+    // Query-side NLP. Stem variants let NL phrasing reach indexed identifiers
+    // ("buffering"→"buffer"→LineBuffer) — measured a clean win (ripgrep NL MRR
+    // 0.599→0.760, Hit@10 88%→100%) with no CI-gate regression, so ON by default.
+    // Stopword removal measured HARMFUL (starves the PPR seed set / desc rerank),
+    // so OFF by default; kept behind a flag for future list refinement.
+    //   ROUX_QUERY_STEM=0  disable stem variants
+    //   ROUX_QUERY_STOP=1  enable stopword removal (experimental)
+    //   ROUX_QUERY_NLP=0   master off-switch (disables both)
+    let nlp = std::env::var("ROUX_QUERY_NLP")
+        .map(|v| v != "0")
+        .unwrap_or(true);
+    let do_stop = nlp
+        && std::env::var("ROUX_QUERY_STOP")
+            .map(|v| v == "1")
+            .unwrap_or(false);
+    let do_stem = nlp
+        && std::env::var("ROUX_QUERY_STEM")
+            .map(|v| v != "0")
+            .unwrap_or(true);
     let mut tokens: Vec<String> = Vec::new();
 
     // Split on the same separators tokenize_for_fts uses at index time. Without
@@ -889,13 +948,25 @@ fn fts_query_escape(query: &str) -> String {
                 continue;
             }
 
-            tokens.push(clean.to_lowercase());
+            let lower = clean.to_lowercase();
+            if do_stop && QUERY_STOPWORDS.contains(&lower.as_str()) {
+                continue;
+            }
+
+            tokens.push(lower.clone());
 
             // Add subword splits (camelCase/snake_case)
             let subwords = code_tokenize(&clean);
             for sw in &subwords {
-                if *sw != clean.to_lowercase() {
+                if *sw != lower {
                     tokens.push(sw.clone());
+                }
+            }
+
+            // Stem variants so NL phrasing reaches indexed identifiers.
+            if do_stem {
+                for stem in stem_variants(&lower) {
+                    tokens.push(stem);
                 }
             }
         }
