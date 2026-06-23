@@ -183,11 +183,38 @@ def _read_span(repo: Path, file_rel: str, start_line: int, n: int) -> str:
     return "\n".join(src[s:s + n])
 
 
-def roux_context(pq: PQ, bodies: bool = False) -> str:
+def _neighbor_names(target: dict, symbols: list[dict], edges: list[dict],
+                    id_to_qn: dict[str, str]) -> list[str]:
+    """1-hop neighbor NAMES for the iyi --neighbors layer (names only, no bodies).
+    Best-effort from CLI JSON: parent (parent_id), children (symbols whose parent
+    is this one), and edge peers. Neighbors whose id is not in the result set are
+    unresolvable from CLI JSON (the graph has the name; the export doesn't) — those
+    are skipped. The native roux --format skeleton --neighbors would resolve all."""
+    tid = target.get("id")
+    names: list[str] = []
+    seen = {tid}
+    pid = target.get("parent_id")
+    if pid and pid in id_to_qn and pid not in seen:
+        names.append(id_to_qn[pid]); seen.add(pid)
+    for s in symbols:
+        sid = s.get("id")
+        if s.get("parent_id") == tid and sid not in seen:
+            names.append(id_to_qn.get(sid, s.get("name", ""))); seen.add(sid)
+    for e in edges:
+        peer = e.get("to") if e.get("from") == tid else (e.get("from") if e.get("to") == tid else None)
+        if peer and peer in id_to_qn and peer not in seen:
+            names.append(id_to_qn[peer]); seen.add(peer)
+    return [n.split("::")[-1] for n in names if n]
+
+
+def roux_context(pq: PQ, bodies: bool = False, neighbors: bool = False,
+                 scores: bool = False) -> str:
     """Run roux once and render a COMPACT skeleton block (drop the hash-laden
-    edges/matched arrays the raw JSON carries; keep name/loc/sig/doc). When
-    bodies=True, also inline the source span of the top-PREP_BODY_K symbols so
-    the agent need not re-open the files (substitutive output / rk2)."""
+    edges/matched arrays the raw JSON carries; keep name/loc/sig/doc). Layers:
+    bodies=True inlines top-PREP_BODY_K source spans (rk2, disproven — kept for
+    reference). neighbors=True adds a names-only `near:` line (iyi Layer 1).
+    scores=True prefixes each entry with roux's raw score (iyi Layer 2 — raw,
+    UNCALIBRATED, the test is whether even raw scores shift agent behavior)."""
     try:
         proc = subprocess.run(
             [str(ROUX_BIN), "query", pq.query, "--local", "--format", "json", "--top", "5"],
@@ -196,19 +223,27 @@ def roux_context(pq: PQ, bodies: bool = False) -> str:
         data = json.loads(proc.stdout)
     except (json.JSONDecodeError, OSError, subprocess.SubprocessError):
         return "(roux returned no usable context)"
+    symbols = data.get("symbols", [])
+    edges = data.get("edges", [])
+    id_to_qn = {s.get("id"): (s.get("qualified_name") or s.get("name", "")) for s in symbols}
     lines = []
-    for idx, s in enumerate(data.get("symbols", [])):
+    for idx, s in enumerate(symbols):
         qn = s.get("qualified_name") or s.get("name", "")
         loc = f'{s.get("file", "?")}:{s.get("line", "?")}'
         sig = (s.get("signature") or "").strip()
         doc = (s.get("doc") or "").replace("\n", " ").strip()
         if len(doc) > 160:
             doc = doc[:160] + "…"
-        entry = f"- {qn} ({loc})"
+        prefix = f"[{s.get('score', 0):.2f}] " if scores else ""
+        entry = f"- {prefix}{qn} ({loc})"
         if sig:
             entry += f"\n    {sig}"
         if doc:
             entry += f"\n    // {doc}"
+        if neighbors:
+            near = _neighbor_names(s, symbols, edges, id_to_qn)
+            if near:
+                entry += f"\n    near: {', '.join(near[:5])}"
         if bodies and idx < PREP_BODY_K:
             span = _read_span(Path(pq.path), s.get("file", ""), s.get("line", 1), PREP_BODY_LINES)
             if span:
@@ -218,8 +253,14 @@ def roux_context(pq: PQ, bodies: bool = False) -> str:
 
 
 def build_prompt(arm: str, pq: PQ) -> str:
-    if arm in ("context-prep", "context-prep-bodies"):
-        ctx = roux_context(pq, bodies=(arm == "context-prep-bodies"))
+    prep = {
+        "context-prep": dict(),
+        "context-prep-bodies": dict(bodies=True),
+        "context-prep-neighbors": dict(neighbors=True),
+        "context-prep-scores": dict(scores=True),
+    }
+    if arm in prep:
+        ctx = roux_context(pq, **prep[arm])
         return PROMPT_TEMPLATE_CONTEXT_PREP.format(context=ctx, query=pq.query)
     tmpl = PROMPT_TEMPLATE_ROUX_FIRST if arm == "roux-first" else PROMPT_TEMPLATE
     return tmpl.format(query=pq.query)
