@@ -196,7 +196,11 @@ pub fn rank_subgraph_with(
     // IDF-weighted (a rare query term counts more than a common one) and stemmed
     // (so "buffering" matches a description that says "buffer"), mirroring the
     // stem variants the FTS query path already emits.
-    let scored = if let Some(query_str) = query {
+    //   ROUX_DESC_RERANK=0  disable this pass (for A/B isolation of its effect)
+    let desc_rerank_on = std::env::var("ROUX_DESC_RERANK")
+        .map(|v| v != "0")
+        .unwrap_or(true);
+    let scored = if let (true, Some(query_str)) = (desc_rerank_on, query) {
         // Query terms → match keys (the term plus its stem roots), deduped.
         let mut raw_terms: Vec<String> = query_str
             .split_whitespace()
