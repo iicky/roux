@@ -887,7 +887,7 @@ const QUERY_STOPWORDS: &[&str] = &[
 /// "buffering"→"buffer" (LineBuffer), "results"→"result", "mapped"→"map".
 /// Returned as ADDITIONAL OR-terms — extra variants only widen recall; PPR and
 /// the description rerank handle precision. Garbage stems (rare) match nothing.
-fn stem_variants(t: &str) -> Vec<String> {
+pub(crate) fn stem_variants(t: &str) -> Vec<String> {
     let mut out = Vec::new();
     let push = |out: &mut Vec<String>, s: String| {
         if s.len() > 2 && s != t {

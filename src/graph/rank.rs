@@ -192,46 +192,85 @@ pub fn rank_subgraph_with(
         })
         .collect();
 
-    // Description re-ranking: boost scores by query-description term overlap
+    // Description re-ranking: boost scores by query-description term overlap,
+    // IDF-weighted (a rare query term counts more than a common one) and stemmed
+    // (so "buffering" matches a description that says "buffer"), mirroring the
+    // stem variants the FTS query path already emits.
     let scored = if let Some(query_str) = query {
-        let query_terms: HashSet<&str> = query_str
+        // Query terms → match keys (the term plus its stem roots), deduped.
+        let mut raw_terms: Vec<String> = query_str
             .split_whitespace()
-            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
+            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
             .filter(|w| w.len() > 2)
             .collect();
+        raw_terms.sort();
+        raw_terms.dedup();
+        let term_keys: Vec<Vec<String>> = raw_terms
+            .iter()
+            .map(|t| {
+                let mut keys = vec![t.clone()];
+                keys.extend(super::store::stem_variants(t));
+                keys
+            })
+            .collect();
 
-        let node_map: HashMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+        // Tokenize each candidate description once.
+        let desc_words_by_id: HashMap<&str, HashSet<String>> = nodes
+            .iter()
+            .filter_map(|n| {
+                n.description.as_ref().map(|desc| {
+                    let words: HashSet<String> = desc
+                        .to_lowercase()
+                        .split_whitespace()
+                        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+                        .filter(|w| !w.is_empty())
+                        .collect();
+                    (n.id.as_str(), words)
+                })
+            })
+            .collect();
+
+        // A query term matches a description if any desc word contains any of its keys.
+        let matches = |keys: &[String], words: &HashSet<String>| -> bool {
+            keys.iter()
+                .any(|k| words.iter().any(|w| w.contains(k.as_str())))
+        };
+
+        // IDF per query term over the candidate descriptions (smoothed).
+        let n_docs = desc_words_by_id.len().max(1) as f64;
+        let idf: Vec<f64> = term_keys
+            .iter()
+            .map(|keys| {
+                let df = desc_words_by_id
+                    .values()
+                    .filter(|words| matches(keys, words))
+                    .count() as f64;
+                ((n_docs + 1.0) / (df + 1.0)).ln() + 1.0
+            })
+            .collect();
+        let idf_total: f64 = idf.iter().sum();
         let desc_alpha = 0.3;
 
         let mut boosted: Vec<(String, f64)> = scored
             .into_iter()
             .map(|(id, score)| {
-                let desc_score = node_map
+                let desc_score = desc_words_by_id
                     .get(id.as_str())
-                    .and_then(|n| n.description.as_ref())
-                    .map(|desc| {
-                        let desc_lower = desc.to_lowercase();
-                        let desc_words: HashSet<&str> = desc_lower
-                            .split_whitespace()
-                            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
-                            .collect();
-                        let hits = query_terms
-                            .iter()
-                            .filter(|t| {
-                                let tl = t.to_lowercase();
-                                desc_words.iter().any(|dw| dw.contains(&tl))
-                            })
-                            .count();
-                        if query_terms.is_empty() {
-                            0.0
-                        } else {
-                            hits as f64 / query_terms.len() as f64
+                    .map(|words| {
+                        if idf_total <= 0.0 {
+                            return 0.0;
                         }
+                        let matched: f64 = term_keys
+                            .iter()
+                            .zip(&idf)
+                            .filter(|(keys, _)| matches(keys, words))
+                            .map(|(_, &w)| w)
+                            .sum();
+                        matched / idf_total
                     })
                     .unwrap_or(0.0);
-                // Multiplicative boost: score × (1 + α × desc_match)
-                let boosted_score = score * (1.0 + desc_alpha * desc_score);
-                (id, boosted_score)
+                // Multiplicative boost: score × (1 + α × idf-weighted desc match)
+                (id, score * (1.0 + desc_alpha * desc_score))
             })
             .collect();
         boosted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
