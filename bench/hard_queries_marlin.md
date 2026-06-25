@@ -156,6 +156,37 @@ dominates and promotes its refs, #3->#6). Personas with promotion OFF = baseline
 (Hit@5 95%, MRR 0.791); ON = Hit@5 92%, MRR 0.787 (CI gate Hit@10/MRR still holds).
 Productionizing needs doc-match precision + real-doc (non-planted) validation.
 
+## REAL-DOC VALIDATION (2026-06-25) — the planted 8/8 does NOT survive
+
+The 8/8 above was measured against a hand-planted fixture
+(`ROUX_DOCBRIDGE_TEST.md`): 8 sections, one per S query, each parroting the
+query's exact human vocabulary next to a backtick ref to the exact gold symbol.
+That is circular — I authored the bridge the test needed. Honest test: delete
+the fixture, rebuild the Marlin index from its REAL docs (101 doc_sections, 0
+planted), re-measure.
+
+```
+                         S (THE TEST)   L control      B control
+baseline (lexical+graph) 0/8  MRR .000  Hit@5 1/1      Hit@5 1/1
+doc-bridge ON (RRF)      0/8  MRR .000  Hit@5 1/1      Hit@5 0/1  (B1 #3->#10)
+```
+
+S moves by exactly ZERO on real docs, and the RRF companion lever demotes a real
+lexical control. Root cause (verified): Marlin's firmware-feature vocabulary
+(input shaping, thermal runaway, linear advance, jerk, runout, babystep, EEPROM,
+homing) does NOT live in markdown — all 9 concepts are covered in the two
+`Configuration*.h` C++ comment blocks, which `extract_markdown_doc` never reads.
+Real `.md` files are READMEs / wire-protocols / build notes. The bridge cannot
+fire because the markdown layer it depends on doesn't carry the vocabulary.
+
+VERDICT (approach-scoped this time): doc-bridge-via-markdown is inert on Marlin.
+To make it real for firmware/systems code the doc source must include inline code
+comments (config block comments) as doc_section nodes — a strictly bigger feature
+than backtick-ref resolution. Until then, doc-bridge stays opt-in + default OFF,
+proven only on planted docs. Reproduce: `rm /tmp/roux-sources/Marlin/ROUX_DOCBRIDGE_TEST.md
+&& rm -rf /tmp/roux-sources/Marlin/.roux && (cd /tmp/roux-sources/Marlin && roux add . --lang cpp --local --name Marlin)
+&& ROUX_DOC_PROMOTE=1 ROUX_FUSION=rrf python3 bench/hard_eval.py marlin --show`
+
 ## Status
 
 Batch 1 = 8 S queries + 2 controls, all DB-verified; runner = `bench/hard_eval.py`.
