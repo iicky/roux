@@ -128,6 +128,12 @@ returns are conceptually wrong regardless of gold string.
 
 ## DOC-BRIDGE RESULT (2026-06-24) — the CPU win embeddings missed
 
+> **Removed in the minimal-release consolidation (2026-06-25).** Doc-promotion
+> was falsified for vocabulary mismatch (see REAL-DOC VALIDATION below) and the
+> `ROUX_DOC_PROMOTE`/`ROUX_FUSION` flags + the planted `docbridge_marlin_fixture.md`
+> are gone. The two sections below are a historical record; the repro commands no
+> longer run. Structured doc→code edges survive as graph enrichment, not a bridge.
+
 Thesis: human-written docs carry the vocabulary the code lacks, next to backtick
 refs that resolve to code symbols (doc_section --references--> code edge). So a
 lexical query hits the doc, and the graph hops to the code — semantic bridging
