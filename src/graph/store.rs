@@ -337,13 +337,7 @@ impl GraphStore {
                 );
             }
         }
-        self.search_with_opts(
-            query,
-            limit,
-            super::rank::FusionMethod::ScoreFusion,
-            true,
-            source,
-        )
+        self.search_with_opts(query, limit, fusion_from_env(), true, source)
     }
 
     pub fn search_with_opts(
@@ -782,6 +776,17 @@ fn now() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64
+}
+
+/// Default fusion method, overridable via `ROUX_FUSION=rrf` for A/B testing.
+/// RRF (additive over ranks) lets a purely graph-reachable node — zero BM25,
+/// e.g. one bridged in via a doc `references` edge — still surface, which the
+/// multiplicative ScoreFusion (bm25^α × ppr^β) zeroes out.
+fn fusion_from_env() -> super::rank::FusionMethod {
+    match std::env::var("ROUX_FUSION").as_deref() {
+        Ok("rrf") => super::rank::FusionMethod::RRF,
+        _ => super::rank::FusionMethod::ScoreFusion,
+    }
 }
 
 /// Delete every fts_nodes row whose id is in `ids`. (Diagnostic B: tx.execute,
