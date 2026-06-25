@@ -283,6 +283,82 @@ pub fn rank_subgraph_with(
         scored
     };
 
+    // Doc-reference promotion: when a *matched* doc_section bridges to a code
+    // symbol via a `references` edge, lift that symbol to near the doc's score.
+    // Human-written docs carry the vocabulary the code lacks, so this is a
+    // CPU-only bridge for vocabulary-mismatch queries — without it the target
+    // (often bm25=0) is buried by lexical-noise seeds or zeroed by score fusion.
+    // Skips index/changelog-style docs (many refs). Proven to reclaim
+    // vocabulary-mismatch (S-bucket 0/8 -> 8/8 on a doc-bridged Marlin) but
+    // validated only on planted docs, and it nicks one real persona query via
+    // close-but-wrong doc dominance — so OFF by default pending real-doc
+    // validation + doc-match precision. ROUX_DOC_PROMOTE=1 enables.
+    let mut promoted_ids: HashSet<String> = HashSet::new();
+    let scored = if std::env::var("ROUX_DOC_PROMOTE")
+        .map(|v| v == "1")
+        .unwrap_or(false)
+    {
+        const PROMOTE_FACTOR: f64 = 0.95;
+        // A doc section that points at ONE specific symbol is a high-signal
+        // concept bridge; one linking many is an overview/changelog whose refs
+        // are weak signals — promoting them all floods and displaces real hits.
+        const MAX_REFS: usize = 3;
+        // Only promote from a doc that DOMINATES the result set — i.e. the query
+        // is genuinely "about" this doc. An incidental changelog/README match
+        // ranks low and must not promote its refs (avoids persona regressions).
+        const DOMINANCE: f64 = 0.9;
+        let top_score = scored.first().map(|(_, s)| *s).unwrap_or(0.0);
+        let gate = DOMINANCE * top_score;
+        let seed_set: HashSet<&str> = seed_ids.iter().map(|s| s.as_str()).collect();
+        // Promotion RESCUES buried doc-bridges; it must never re-rank symbols the
+        // query already surfaces on its own (which only displaces real hits). So
+        // skip any target already in the natural top-k (pre-promotion order).
+        let natural_top: HashSet<&str> =
+            scored.iter().take(top_k).map(|(id, _)| id.as_str()).collect();
+        let mut score_map: HashMap<String, f64> = scored.iter().cloned().collect();
+
+        // Collect code targets referenced by each matched doc_section seed.
+        let mut refs_by_doc: HashMap<&str, Vec<&str>> = HashMap::new();
+        for e in &edges {
+            if e.kind == "references"
+                && seed_set.contains(e.from_id.as_str())
+                && kind_map.get(e.from_id.as_str()).copied() == Some("doc_section")
+                && kind_map
+                    .get(e.to_id.as_str())
+                    .map(|k| *k != "doc_section" && *k != "file")
+                    .unwrap_or(false)
+            {
+                refs_by_doc
+                    .entry(e.from_id.as_str())
+                    .or_default()
+                    .push(e.to_id.as_str());
+            }
+        }
+        for (doc_id, targets) in &refs_by_doc {
+            if targets.len() > MAX_REFS {
+                continue; // index/changelog doc, not a concept bridge
+            }
+            let doc_score = score_map.get(*doc_id).copied().unwrap_or(0.0);
+            if doc_score <= 0.0 || doc_score < gate {
+                continue; // not a dominant doc match — don't promote its refs
+            }
+            for t in targets {
+                if natural_top.contains(*t) {
+                    continue; // already surfaced — don't displace real hits
+                }
+                let entry = score_map.entry((*t).to_string()).or_insert(0.0);
+                *entry = entry.max(PROMOTE_FACTOR * doc_score);
+                promoted_ids.insert((*t).to_string());
+            }
+        }
+
+        let mut v: Vec<(String, f64)> = score_map.into_iter().collect();
+        v.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        v
+    } else {
+        scored
+    };
+
     // Take top-k
     let seed_set: HashSet<&str> = seed_ids.iter().map(|s| s.as_str()).collect();
     let top_ids: HashSet<String> = scored
@@ -291,10 +367,13 @@ pub fn rank_subgraph_with(
         .map(|(id, _)| id.clone())
         .collect();
 
-    // Build result — seed nodes always included
+    // Build result — seed nodes and doc-promoted nodes always included
     let mut result_ids: HashSet<String> = top_ids;
     for seed in seed_ids {
         result_ids.insert(seed.clone());
+    }
+    for id in &promoted_ids {
+        result_ids.insert(id.clone());
     }
 
     let node_map: HashMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
@@ -306,7 +385,9 @@ pub fn rank_subgraph_with(
             node_map.get(id.as_str()).map(|n| ScoredNode {
                 node: (*n).clone(),
                 score: *score,
-                is_seed: seed_set.contains(id.as_str()),
+                // Doc-promoted nodes rank with the seeds (they are answers, not
+                // incidental graph neighbors), ordered by their promoted score.
+                is_seed: seed_set.contains(id.as_str()) || promoted_ids.contains(id.as_str()),
             })
         })
         .collect();
