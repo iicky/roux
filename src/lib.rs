@@ -3,7 +3,6 @@
 pub mod artifact;
 pub mod cli;
 pub mod config;
-pub mod embed;
 pub mod fingerprint;
 pub mod graph;
 pub mod lockfile;

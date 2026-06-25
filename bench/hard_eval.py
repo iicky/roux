@@ -25,10 +25,8 @@ ROUX = ROOT / "target" / "release" / "roux"
 BENCH = ROOT / "bench"
 
 
-def run_query(path: str, query: str, top: int = 10, dense: bool = False) -> list[str]:
+def run_query(path: str, query: str, top: int = 10) -> list[str]:
     cmd = [str(ROUX), "query", query, "--local", "--format", "json", "--top", str(top)]
-    if dense:
-        cmd.append("--dense")
     try:
         proc = subprocess.run(
             cmd, cwd=path, capture_output=True, text=True, timeout=120, check=False,
@@ -46,16 +44,15 @@ def first_hit_rank(names: list[str], gold: list[str]) -> int | None:
     return None
 
 
-def eval_set(spec: dict, show: bool, dense: bool = False) -> dict:
+def eval_set(spec: dict, show: bool) -> dict:
     path = spec["index_path"]
     if not (Path(path) / ".roux" / "db.sqlite").exists():
         print(f"— skip {spec['source_name']} (no index at {path}; run bench/build_persona_indexes.sh)")
         return {}
-    arm = "DENSE" if dense else "lexical+graph"
-    print(f"\n=== {spec['source_name']} [{arm}] ===")
+    print(f"\n=== {spec['source_name']} [lexical+graph] ===")
     by_bucket: dict[str, list[tuple[int | None, dict]]] = defaultdict(list)
     for q in spec["queries"]:
-        names = run_query(path, q["query"], dense=dense)
+        names = run_query(path, q["query"])
         rank = first_hit_rank(names, q["gold"])
         by_bucket[q["bucket"]].append((rank, q))
         if show:
@@ -76,18 +73,12 @@ def eval_set(spec: dict, show: bool, dense: bool = False) -> dict:
 def main() -> None:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     show = "--show" in sys.argv
-    dense = "--dense" in sys.argv
-    both = "--both" in sys.argv
     files = sorted(BENCH.glob("hard_queries_*.json"))
     if args:
         files = [f for f in files if any(a.lower() in f.stem.lower() for a in args)]
     for f in files:
         spec = json.loads(f.read_text())
-        if both:
-            eval_set(spec, show, dense=False)
-            eval_set(spec, show, dense=True)
-        else:
-            eval_set(spec, show, dense=dense)
+        eval_set(spec, show)
 
 
 if __name__ == "__main__":
