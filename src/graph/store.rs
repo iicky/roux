@@ -288,22 +288,7 @@ impl GraphStore {
 
     /// Search by keyword, return matching nodes + their graph neighborhood.
     pub fn search(&self, query: &str, limit: usize) -> Result<SearchResult> {
-        self.search_with_opts(
-            query,
-            limit,
-            super::rank::FusionMethod::ScoreFusion,
-            true,
-            None,
-        )
-    }
-
-    pub fn search_with_fusion(
-        &self,
-        query: &str,
-        limit: usize,
-        fusion: super::rank::FusionMethod,
-    ) -> Result<SearchResult> {
-        self.search_with_opts(query, limit, fusion, true, None)
+        self.search_with_opts(query, limit, super::rank::FusionMethod::ScoreFusion, None)
     }
 
     /// Search restricted to a named source. Returns an error if the source doesn't exist.
@@ -328,7 +313,7 @@ impl GraphStore {
                 );
             }
         }
-        self.search_with_opts(query, limit, fusion_from_env(), true, source)
+        self.search_with_opts(query, limit, super::rank::FusionMethod::ScoreFusion, source)
     }
 
     /// Run several queries and fuse their results — the agent-reformulation
@@ -411,7 +396,6 @@ impl GraphStore {
         query: &str,
         limit: usize,
         fusion: super::rank::FusionMethod,
-        desc_rerank: bool,
         source: Option<&str>,
     ) -> Result<SearchResult> {
         let safe_query = fts_query_escape(query);
@@ -516,7 +500,6 @@ impl GraphStore {
         let edges = self.fetch_edges(&all_ids)?;
 
         // Run PPR ranking on the subgraph, fused with BM25 scores
-        let q = if desc_rerank { Some(query) } else { None };
         let ranked = super::rank::rank_subgraph_with(
             nodes,
             edges,
@@ -524,7 +507,6 @@ impl GraphStore {
             &bm25_scores,
             limit,
             fusion,
-            q,
         );
 
         let scores: HashMap<String, f64> = ranked
@@ -788,17 +770,6 @@ fn now() -> i64 {
         .as_secs() as i64
 }
 
-/// Default fusion method, overridable via `ROUX_FUSION=rrf` for A/B testing.
-/// RRF (additive over ranks) lets a purely graph-reachable node — zero BM25,
-/// e.g. one bridged in via a doc `references` edge — still surface, which the
-/// multiplicative ScoreFusion (bm25^α × ppr^β) zeroes out.
-fn fusion_from_env() -> super::rank::FusionMethod {
-    match std::env::var("ROUX_FUSION").as_deref() {
-        Ok("rrf") => super::rank::FusionMethod::RRF,
-        _ => super::rank::FusionMethod::ScoreFusion,
-    }
-}
-
 /// Delete every fts_nodes row whose id is in `ids`. (Diagnostic B: tx.execute,
 /// matching the pre-fix code.)
 fn delete_fts_by_ids(tx: &rusqlite::Transaction<'_>, ids: &[String]) -> Result<()> {
@@ -887,17 +858,6 @@ fn extract_description_keywords(desc: &str) -> String {
         .join(" ")
 }
 
-/// Natural-language filler words that pollute lexical search. A query like
-/// "how does line buffering work during search" should match on
-/// line/buffer/search, not on the generic symbols that "how/does/work" hit.
-/// Deliberately conservative: only words that are never meaningful code terms.
-const QUERY_STOPWORDS: &[&str] = &[
-    "how", "does", "do", "did", "what", "when", "where", "why", "which", "who", "work", "works",
-    "working", "during", "the", "a", "an", "of", "for", "to", "from", "is", "are", "be", "this",
-    "that", "these", "those", "with", "and", "or", "into", "its", "it", "as", "at", "on", "in",
-    "by", "use", "using", "used", "via", "should", "would", "could", "can", "will",
-];
-
 /// Cheap morphological stem variants so NL phrasing matches indexed identifiers:
 /// "buffering"→"buffer" (LineBuffer), "results"→"result", "mapped"→"map".
 /// Returned as ADDITIONAL OR-terms — extra variants only widen recall; PPR and
@@ -928,25 +888,9 @@ pub(crate) fn stem_variants(t: &str) -> Vec<String> {
 }
 
 fn fts_query_escape(query: &str) -> String {
-    // Query-side NLP. Stem variants let NL phrasing reach indexed identifiers
-    // ("buffering"→"buffer"→LineBuffer) — measured a clean win (ripgrep NL MRR
-    // 0.599→0.760, Hit@10 88%→100%) with no CI-gate regression, so ON by default.
-    // Stopword removal measured HARMFUL (starves the PPR seed set / desc rerank),
-    // so OFF by default; kept behind a flag for future list refinement.
-    //   ROUX_QUERY_STEM=0  disable stem variants
-    //   ROUX_QUERY_STOP=1  enable stopword removal (experimental)
-    //   ROUX_QUERY_NLP=0   master off-switch (disables both)
-    let nlp = std::env::var("ROUX_QUERY_NLP")
-        .map(|v| v != "0")
-        .unwrap_or(true);
-    let do_stop = nlp
-        && std::env::var("ROUX_QUERY_STOP")
-            .map(|v| v == "1")
-            .unwrap_or(false);
-    let do_stem = nlp
-        && std::env::var("ROUX_QUERY_STEM")
-            .map(|v| v != "0")
-            .unwrap_or(true);
+    // Query-side stemming: emit stem variants so natural-language phrasing reaches
+    // indexed identifiers ("buffering"→"buffer"→LineBuffer). Measured a clean win
+    // (ripgrep NL MRR 0.599→0.760, Hit@10 88%→100%) with no CI-gate regression.
     let mut tokens: Vec<String> = Vec::new();
 
     // Split on the same separators tokenize_for_fts uses at index time. Without
@@ -964,25 +908,18 @@ fn fts_query_escape(query: &str) -> String {
             }
 
             let lower = clean.to_lowercase();
-            if do_stop && QUERY_STOPWORDS.contains(&lower.as_str()) {
-                continue;
-            }
-
             tokens.push(lower.clone());
 
             // Add subword splits (camelCase/snake_case)
-            let subwords = code_tokenize(&clean);
-            for sw in &subwords {
+            for sw in &code_tokenize(&clean) {
                 if *sw != lower {
                     tokens.push(sw.clone());
                 }
             }
 
             // Stem variants so NL phrasing reaches indexed identifiers.
-            if do_stem {
-                for stem in stem_variants(&lower) {
-                    tokens.push(stem);
-                }
+            for stem in stem_variants(&lower) {
+                tokens.push(stem);
             }
         }
     }

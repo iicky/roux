@@ -43,13 +43,11 @@ pub fn rank_subgraph(
         bm25_scores,
         top_k,
         FusionMethod::ScoreFusion,
-        None,
     )
 }
 
 /// Build a petgraph from nodes + edges, run PPR from seed nodes,
 /// fuse with BM25 scores using the specified fusion method, return the top-k scored subgraph.
-/// If `query` is provided, applies description re-ranking as a boost pass.
 pub fn rank_subgraph_with(
     nodes: Vec<Node>,
     edges: Vec<Edge>,
@@ -57,7 +55,6 @@ pub fn rank_subgraph_with(
     bm25_scores: &HashMap<String, f64>,
     top_k: usize,
     fusion: FusionMethod,
-    query: Option<&str>,
 ) -> RankedSubgraph {
     if nodes.is_empty() {
         return RankedSubgraph {
@@ -192,173 +189,6 @@ pub fn rank_subgraph_with(
         })
         .collect();
 
-    // Description re-ranking: boost scores by query-description term overlap,
-    // IDF-weighted (a rare query term counts more than a common one) and stemmed
-    // (so "buffering" matches a description that says "buffer"), mirroring the
-    // stem variants the FTS query path already emits.
-    //   ROUX_DESC_RERANK=0  disable this pass (for A/B isolation of its effect)
-    let desc_rerank_on = std::env::var("ROUX_DESC_RERANK")
-        .map(|v| v != "0")
-        .unwrap_or(true);
-    let scored = if let (true, Some(query_str)) = (desc_rerank_on, query) {
-        // Query terms → match keys (the term plus its stem roots), deduped.
-        let mut raw_terms: Vec<String> = query_str
-            .split_whitespace()
-            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
-            .filter(|w| w.len() > 2)
-            .collect();
-        raw_terms.sort();
-        raw_terms.dedup();
-        let term_keys: Vec<Vec<String>> = raw_terms
-            .iter()
-            .map(|t| {
-                let mut keys = vec![t.clone()];
-                keys.extend(super::store::stem_variants(t));
-                keys
-            })
-            .collect();
-
-        // Tokenize each candidate description once.
-        let desc_words_by_id: HashMap<&str, HashSet<String>> = nodes
-            .iter()
-            .filter_map(|n| {
-                n.description.as_ref().map(|desc| {
-                    let words: HashSet<String> = desc
-                        .to_lowercase()
-                        .split_whitespace()
-                        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
-                        .filter(|w| !w.is_empty())
-                        .collect();
-                    (n.id.as_str(), words)
-                })
-            })
-            .collect();
-
-        // A query term matches a description if any desc word contains any of its keys.
-        let matches = |keys: &[String], words: &HashSet<String>| -> bool {
-            keys.iter()
-                .any(|k| words.iter().any(|w| w.contains(k.as_str())))
-        };
-
-        // IDF per query term over the candidate descriptions (smoothed).
-        let n_docs = desc_words_by_id.len().max(1) as f64;
-        let idf: Vec<f64> = term_keys
-            .iter()
-            .map(|keys| {
-                let df = desc_words_by_id
-                    .values()
-                    .filter(|words| matches(keys, words))
-                    .count() as f64;
-                ((n_docs + 1.0) / (df + 1.0)).ln() + 1.0
-            })
-            .collect();
-        let idf_total: f64 = idf.iter().sum();
-        let desc_alpha = 0.3;
-
-        let mut boosted: Vec<(String, f64)> = scored
-            .into_iter()
-            .map(|(id, score)| {
-                let desc_score = desc_words_by_id
-                    .get(id.as_str())
-                    .map(|words| {
-                        if idf_total <= 0.0 {
-                            return 0.0;
-                        }
-                        let matched: f64 = term_keys
-                            .iter()
-                            .zip(&idf)
-                            .filter(|(keys, _)| matches(keys, words))
-                            .map(|(_, &w)| w)
-                            .sum();
-                        matched / idf_total
-                    })
-                    .unwrap_or(0.0);
-                // Multiplicative boost: score × (1 + α × idf-weighted desc match)
-                (id, score * (1.0 + desc_alpha * desc_score))
-            })
-            .collect();
-        boosted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        boosted
-    } else {
-        scored
-    };
-
-    // Doc-reference promotion: when a *matched* doc_section bridges to a code
-    // symbol via a `references` edge, lift that symbol to near the doc's score.
-    // Human-written docs carry the vocabulary the code lacks, so this is a
-    // CPU-only bridge for vocabulary-mismatch queries — without it the target
-    // (often bm25=0) is buried by lexical-noise seeds or zeroed by score fusion.
-    // Skips index/changelog-style docs (many refs). Proven to reclaim
-    // vocabulary-mismatch (S-bucket 0/8 -> 8/8 on a doc-bridged Marlin) but
-    // validated only on planted docs, and it nicks one real persona query via
-    // close-but-wrong doc dominance — so OFF by default pending real-doc
-    // validation + doc-match precision. ROUX_DOC_PROMOTE=1 enables.
-    let mut promoted_ids: HashSet<String> = HashSet::new();
-    let scored = if std::env::var("ROUX_DOC_PROMOTE")
-        .map(|v| v == "1")
-        .unwrap_or(false)
-    {
-        const PROMOTE_FACTOR: f64 = 0.95;
-        // A doc section that points at ONE specific symbol is a high-signal
-        // concept bridge; one linking many is an overview/changelog whose refs
-        // are weak signals — promoting them all floods and displaces real hits.
-        const MAX_REFS: usize = 3;
-        // Only promote from a doc that DOMINATES the result set — i.e. the query
-        // is genuinely "about" this doc. An incidental changelog/README match
-        // ranks low and must not promote its refs (avoids persona regressions).
-        const DOMINANCE: f64 = 0.9;
-        let top_score = scored.first().map(|(_, s)| *s).unwrap_or(0.0);
-        let gate = DOMINANCE * top_score;
-        let seed_set: HashSet<&str> = seed_ids.iter().map(|s| s.as_str()).collect();
-        // Promotion RESCUES buried doc-bridges; it must never re-rank symbols the
-        // query already surfaces on its own (which only displaces real hits). So
-        // skip any target already in the natural top-k (pre-promotion order).
-        let natural_top: HashSet<&str> =
-            scored.iter().take(top_k).map(|(id, _)| id.as_str()).collect();
-        let mut score_map: HashMap<String, f64> = scored.iter().cloned().collect();
-
-        // Collect code targets referenced by each matched doc_section seed.
-        let mut refs_by_doc: HashMap<&str, Vec<&str>> = HashMap::new();
-        for e in &edges {
-            if e.kind == "references"
-                && seed_set.contains(e.from_id.as_str())
-                && kind_map.get(e.from_id.as_str()).copied() == Some("doc_section")
-                && kind_map
-                    .get(e.to_id.as_str())
-                    .map(|k| *k != "doc_section" && *k != "file")
-                    .unwrap_or(false)
-            {
-                refs_by_doc
-                    .entry(e.from_id.as_str())
-                    .or_default()
-                    .push(e.to_id.as_str());
-            }
-        }
-        for (doc_id, targets) in &refs_by_doc {
-            if targets.len() > MAX_REFS {
-                continue; // index/changelog doc, not a concept bridge
-            }
-            let doc_score = score_map.get(*doc_id).copied().unwrap_or(0.0);
-            if doc_score <= 0.0 || doc_score < gate {
-                continue; // not a dominant doc match — don't promote its refs
-            }
-            for t in targets {
-                if natural_top.contains(*t) {
-                    continue; // already surfaced — don't displace real hits
-                }
-                let entry = score_map.entry((*t).to_string()).or_insert(0.0);
-                *entry = entry.max(PROMOTE_FACTOR * doc_score);
-                promoted_ids.insert((*t).to_string());
-            }
-        }
-
-        let mut v: Vec<(String, f64)> = score_map.into_iter().collect();
-        v.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        v
-    } else {
-        scored
-    };
-
     // Take top-k
     let seed_set: HashSet<&str> = seed_ids.iter().map(|s| s.as_str()).collect();
     let top_ids: HashSet<String> = scored
@@ -367,13 +197,10 @@ pub fn rank_subgraph_with(
         .map(|(id, _)| id.clone())
         .collect();
 
-    // Build result — seed nodes and doc-promoted nodes always included
+    // Build result — seed nodes always included
     let mut result_ids: HashSet<String> = top_ids;
     for seed in seed_ids {
         result_ids.insert(seed.clone());
-    }
-    for id in &promoted_ids {
-        result_ids.insert(id.clone());
     }
 
     let node_map: HashMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
@@ -385,9 +212,7 @@ pub fn rank_subgraph_with(
             node_map.get(id.as_str()).map(|n| ScoredNode {
                 node: (*n).clone(),
                 score: *score,
-                // Doc-promoted nodes rank with the seeds (they are answers, not
-                // incidental graph neighbors), ordered by their promoted score.
-                is_seed: seed_set.contains(id.as_str()) || promoted_ids.contains(id.as_str()),
+                is_seed: seed_set.contains(id.as_str()),
             })
         })
         .collect();

@@ -462,14 +462,9 @@ fn bench_rrf_ab_test() {
         .upsert_source("roux", "dev", "rust", &graph.nodes, &graph.edges)
         .unwrap();
 
-    let variants: Vec<(&str, FusionMethod, bool)> = vec![
-        (
-            "ScoreFusion (no desc rerank)",
-            FusionMethod::ScoreFusion,
-            false,
-        ),
-        ("ScoreFusion + desc rerank", FusionMethod::ScoreFusion, true),
-        ("RRF (k=60)", FusionMethod::RRF, false),
+    let variants: Vec<(&str, FusionMethod)> = vec![
+        ("ScoreFusion", FusionMethod::ScoreFusion),
+        ("RRF (k=60)", FusionMethod::RRF),
     ];
 
     eprintln!(
@@ -477,12 +472,12 @@ fn bench_rrf_ab_test() {
         ROUX_QUERIES.len()
     );
 
-    for (label, method, desc_rerank) in &variants {
+    for (label, method) in &variants {
         let mut results: Vec<(Vec<String>, &[&str])> = Vec::new();
 
         for case in ROUX_QUERIES {
             let result = store
-                .search_with_opts(case.query, 10, *method, *desc_rerank, None)
+                .search_with_opts(case.query, 10, *method, None)
                 .unwrap();
             let names: Vec<String> = result.nodes.iter().map(|n| n.name.clone()).collect();
             results.push((names, case.expected));
@@ -1054,12 +1049,9 @@ fn bench_multi_repo() {
     use roux_cli::graph::store::GraphStore;
     use std::time::Instant;
 
-    eprintln!("\n═══ multi-repo desc rerank A/B ═══\n");
+    eprintln!("\n═══ multi-repo retrieval ═══\n");
 
-    let variants: &[(&str, bool)] = &[
-        ("baseline (no desc rerank)", false),
-        ("+ desc rerank", true),
-    ];
+    let variants: &[&str] = &["ScoreFusion"];
 
     // Index all repos once, store handles for reuse
     struct IndexedRepo<'a> {
@@ -1101,7 +1093,7 @@ fn bench_multi_repo() {
 
     eprintln!();
 
-    for (label, desc_rerank) in variants {
+    for label in variants {
         eprintln!("── {label} ──");
 
         let mut all_results: Vec<(Vec<String>, &[&str])> = Vec::new();
@@ -1112,13 +1104,7 @@ fn bench_multi_repo() {
             for case in indexed.bench.queries {
                 let result = indexed
                     .store
-                    .search_with_opts(
-                        case.query,
-                        10,
-                        FusionMethod::ScoreFusion,
-                        *desc_rerank,
-                        None,
-                    )
+                    .search_with_opts(case.query, 10, FusionMethod::ScoreFusion, None)
                     .unwrap();
                 let names: Vec<String> = result.nodes.iter().map(|n| n.name.clone()).collect();
                 repo_results.push((names, case.expected));
