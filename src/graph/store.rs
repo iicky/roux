@@ -340,6 +340,81 @@ impl GraphStore {
         self.search_with_opts(query, limit, fusion_from_env(), true, source)
     }
 
+    /// Run several queries and fuse their results — the agent-reformulation
+    /// path. An LLM caller closes the vocabulary gap by reformulating one
+    /// human question into N domain-jargon variants ("jolts" → "jerk",
+    /// "CLASSIC_JERK", "M205"); firing them in one call and RRF-fusing the
+    /// matched symbols recovers hits a single lexical query misses, with no
+    /// embedding model. Falls back to a plain scoped search for a single query.
+    pub fn search_multi(
+        &self,
+        queries: &[String],
+        limit: usize,
+        source: Option<&str>,
+    ) -> Result<SearchResult> {
+        let queries: Vec<&String> = queries.iter().filter(|q| !q.trim().is_empty()).collect();
+        match queries.as_slice() {
+            [] => return Ok(SearchResult::default()),
+            [only] => return self.search_scoped(only, limit, source),
+            _ => {}
+        }
+
+        // Reciprocal-rank fusion across each query's matched ordering. Pull a
+        // wider slice per query (limit*2) so a symbol ranked modestly by several
+        // variants can still win the fused top-k.
+        const RRF_K: f64 = 60.0;
+        let per_query = limit.saturating_mul(2).max(limit);
+        let mut rrf: HashMap<String, f64> = HashMap::new();
+        let mut node_map: HashMap<String, Node> = HashMap::new();
+        let mut edge_set: std::collections::HashSet<(String, String, String)> =
+            std::collections::HashSet::new();
+        let mut edges: Vec<Edge> = Vec::new();
+
+        for q in &queries {
+            let res = self.search_scoped(q, per_query, source)?;
+            for (rank, id) in res.matched_ids.iter().enumerate() {
+                *rrf.entry(id.clone()).or_insert(0.0) += 1.0 / (RRF_K + (rank + 1) as f64);
+            }
+            for n in res.nodes {
+                node_map.entry(n.id.clone()).or_insert(n);
+            }
+            for e in res.edges {
+                let key = (e.from_id.clone(), e.to_id.clone(), e.kind.clone());
+                if edge_set.insert(key) {
+                    edges.push(e);
+                }
+            }
+        }
+
+        // Fused matched set: top-`limit` symbols by RRF score.
+        let mut fused: Vec<(String, f64)> = rrf.into_iter().collect();
+        fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let matched_ids: Vec<String> =
+            fused.iter().take(limit).map(|(id, _)| id.clone()).collect();
+        let scores: HashMap<String, f64> = fused.into_iter().collect();
+
+        // Output nodes: matched first (RRF order), then their neighborhood.
+        let mut nodes: Vec<Node> = Vec::new();
+        for id in &matched_ids {
+            if let Some(n) = node_map.remove(id) {
+                nodes.push(n);
+            }
+        }
+        let mut neighbors: Vec<Node> = node_map.into_values().collect();
+        neighbors.sort_by(|a, b| a.id.cmp(&b.id));
+        nodes.extend(neighbors);
+
+        let kept: std::collections::HashSet<&String> = nodes.iter().map(|n| &n.id).collect();
+        edges.retain(|e| kept.contains(&e.from_id) && kept.contains(&e.to_id));
+
+        Ok(SearchResult {
+            matched_ids,
+            nodes,
+            edges,
+            scores,
+        })
+    }
+
     pub fn search_with_opts(
         &self,
         query: &str,
@@ -1282,6 +1357,43 @@ mod tests {
             .unwrap();
         assert_eq!(only_alpha.nodes.len(), 1);
         assert_eq!(only_alpha.nodes[0].source_name, "alpha");
+    }
+
+    #[test]
+    fn test_search_multi_fuses_variants() {
+        let store = GraphStore::open_in_memory().unwrap();
+        // Two distinct symbols, each reachable only by its own jargon term —
+        // the agent-reformulation scenario.
+        let ringing = make_node("InputShaping", "function", "s::InputShaping");
+        let jerk = make_node("JunctionDeviation", "function", "s::JunctionDeviation");
+        store
+            .upsert_source("s", "1.0", "rust", &[ringing, jerk], &[])
+            .unwrap();
+
+        // Each single query finds only its own symbol.
+        let a = store.search_scoped("InputShaping", 10, None).unwrap();
+        assert_eq!(a.matched_ids.len(), 1);
+        let b = store.search_scoped("JunctionDeviation", 10, None).unwrap();
+        assert_eq!(b.matched_ids.len(), 1);
+
+        // Fused: one call surfaces BOTH — the union a single query can't reach.
+        let fused = store
+            .search_multi(
+                &["InputShaping".into(), "JunctionDeviation".into()],
+                10,
+                None,
+            )
+            .unwrap();
+        let names: Vec<&str> = fused.nodes.iter().map(|n| n.name.as_str()).collect();
+        assert!(names.contains(&"InputShaping"), "got {names:?}");
+        assert!(names.contains(&"JunctionDeviation"), "got {names:?}");
+
+        // A single-element multi search is equivalent to a plain scoped search.
+        let single = store.search_multi(&["InputShaping".into()], 10, None).unwrap();
+        assert_eq!(single.matched_ids, a.matched_ids);
+
+        // Empty input is a no-op, not an error.
+        assert!(store.search_multi(&[], 10, None).unwrap().nodes.is_empty());
     }
 
     #[test]

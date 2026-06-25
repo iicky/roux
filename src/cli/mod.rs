@@ -62,6 +62,10 @@ enum Command {
     Query {
         /// Query string
         query: String,
+        /// Extra query variant(s), fused with the main query via reciprocal-rank
+        /// fusion. Repeatable: reformulate one question into the code's jargon.
+        #[arg(long = "also", value_name = "QUERY")]
+        also: Vec<String>,
         /// Number of results
         #[arg(long, default_value = "3")]
         top: usize,
@@ -176,6 +180,7 @@ impl Cli {
             ),
             Command::Query {
                 query,
+                also,
                 top,
                 source,
                 format,
@@ -186,6 +191,7 @@ impl Cli {
             } => cmd_query(
                 &config,
                 query,
+                also,
                 *top,
                 source.as_deref(),
                 format,
@@ -669,6 +675,7 @@ fn dense_search(
 fn cmd_query(
     config: &Config,
     query: &str,
+    also: &[String],
     top: usize,
     source: Option<&str>,
     format: &str,
@@ -694,8 +701,12 @@ fn cmd_query(
     let store = GraphStore::open(&store_path)?;
     let result = if dense {
         dense_search(&store, query, top)?
-    } else {
+    } else if also.is_empty() {
         store.search_scoped(query, top, source)?
+    } else {
+        let mut queries = vec![query.to_string()];
+        queries.extend(also.iter().cloned());
+        store.search_multi(&queries, top, source)?
     };
 
     if result.nodes.is_empty() {

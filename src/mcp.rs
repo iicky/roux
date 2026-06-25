@@ -23,6 +23,15 @@ pub struct QueryArgs {
     /// signatures, docstrings, and bodies. Returned hits include 2-hop graph
     /// neighbors (callers, callees, parent types).
     pub query: String,
+    /// Optional extra query variants, fused with `query` via reciprocal-rank
+    /// fusion in one call. Use your domain knowledge to reformulate a plain
+    /// question into the jargon/identifiers the code likely uses, then pass
+    /// them here — e.g. for "limit sudden jolts" pass
+    /// ["jerk limit", "junction deviation", "M205"]. This is the main lever
+    /// for conceptual/behavioral questions where the code's words differ from
+    /// the user's; firing several cheap variants beats one broad query.
+    #[serde(default)]
+    pub queries: Option<Vec<String>>,
     /// Number of matched hits to return. Defaults to 5.
     #[serde(default)]
     pub top: Option<usize>,
@@ -52,7 +61,7 @@ impl RouxServer {
     }
 
     #[tool(
-        description = "Search the roux code index. Returns matched symbols plus their graph neighborhood (callers, callees, parent types) — typically more useful than a flat list. Prefer this over grep for code-exploration questions; results carry file path, line, signature, and rendered doc.\n\nRanking is BM25 over symbol names, signatures, and qualified paths, so queries that share tokens with the symbol name work best. For conceptual or behavioral questions (\"how does X work\", \"where is Y handled\"), follow up with 2–3 likely symbol-name variants — e.g. after asking \"how does line buffering work\", also try \"LineBuffer\" or \"buf_read\". Each call is cheap; multiple targeted queries beat one broad one."
+        description = "Search the roux code index. Returns matched symbols plus their graph neighborhood (callers, callees, parent types) — typically more useful than a flat list. Prefer this over grep for code-exploration questions; results carry file path, line, signature, and rendered doc.\n\nRanking is BM25 over symbol names, signatures, and qualified paths, so queries that share tokens with the symbol name work best. For conceptual or behavioral questions (\"how does X work\", \"where is Y handled\") the code rarely uses the user's words — so reformulate into the jargon and identifiers the code likely uses and pass them together in the `queries` array (RRF-fused in one call). E.g. for \"limit sudden jolts when speed changes\" pass queries=[\"jerk limit\", \"junction deviation\", \"M205\"]. Measured to recover behavioral hits a single literal query misses. Each call is cheap; reformulating beats one broad query."
     )]
     fn roux_query(
         &self,
@@ -60,8 +69,12 @@ impl RouxServer {
     ) -> Result<CallToolResult, McpError> {
         let store = self.open_store()?;
         let top = args.top.unwrap_or(5);
+        let mut queries = vec![args.query];
+        if let Some(extra) = args.queries {
+            queries.extend(extra);
+        }
         let result = store
-            .search_scoped(&args.query, top, args.source.as_deref())
+            .search_multi(&queries, top, args.source.as_deref())
             .map_err(|e| McpError::internal_error(format!("search: {e}"), None))?;
         let json = search_result_to_json(&result);
         let body = serde_json::to_string_pretty(&json)
