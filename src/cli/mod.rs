@@ -54,6 +54,9 @@ enum Command {
         /// Override display name for the source
         #[arg(long)]
         name: Option<String>,
+        /// Precompute dense embeddings for each symbol (downloads the model on first use)
+        #[arg(long)]
+        embed: bool,
     },
     /// Retrieve relevant chunks for a query
     Query {
@@ -77,6 +80,9 @@ enum Command {
         /// Query a specific .sqlite index file (e.g. a downloaded artifact)
         #[arg(long, value_name = "PATH")]
         db: Option<std::path::PathBuf>,
+        /// Experimental: pure dense (vector) retrieval instead of lexical+graph
+        #[arg(long)]
+        dense: bool,
     },
     /// List all indexed sources
     List {
@@ -158,6 +164,7 @@ impl Cli {
                 local,
                 version,
                 name,
+                embed,
             } => cmd_add(
                 &config,
                 source,
@@ -165,6 +172,7 @@ impl Cli {
                 lang.clone(),
                 version.clone(),
                 *local,
+                *embed,
             ),
             Command::Query {
                 query,
@@ -174,6 +182,7 @@ impl Cli {
                 local,
                 global,
                 db,
+                dense,
             } => cmd_query(
                 &config,
                 query,
@@ -183,6 +192,7 @@ impl Cli {
                 *local,
                 *global,
                 db.as_deref(),
+                *dense,
             ),
             Command::List {
                 format,
@@ -479,6 +489,7 @@ fn cmd_add(
     lang: Option<String>,
     version: Option<String>,
     local: bool,
+    embed: bool,
 ) -> Result<()> {
     let source = Source::from_raw(raw_source, name, lang, version);
     let mut source_version = source
@@ -555,7 +566,104 @@ fn cmd_add(
         store_path.display()
     );
 
+    if embed {
+        embed_nodes(&store, &file_graph.nodes)?;
+    }
+
     Ok(())
+}
+
+/// Build the text embedded for a symbol: identity + human-readable context,
+/// then a truncated body. Capped to stay well under the model's 512-token limit.
+fn node_embed_text(node: &crate::graph::Node) -> String {
+    const MAX_CHARS: usize = 1200;
+    let mut parts: Vec<&str> = vec![&node.qualified_name];
+    if let Some(sig) = node.signature.as_deref() {
+        parts.push(sig);
+    }
+    if let Some(doc) = node.doc.as_deref() {
+        parts.push(doc);
+    }
+    if let Some(desc) = node.description.as_deref() {
+        parts.push(desc);
+    }
+    if !node.body.is_empty() {
+        parts.push(&node.body);
+    }
+    let mut text = parts.join("\n");
+    if text.len() > MAX_CHARS {
+        // truncate on a char boundary
+        let mut end = MAX_CHARS;
+        while end > 0 && !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+    }
+    text
+}
+
+/// Precompute dense embeddings for every node and store them as vectors.
+fn embed_nodes(store: &GraphStore, nodes: &[crate::graph::Node]) -> Result<()> {
+    use crate::embed::{Embedder, candle::CandleEmbedder, model_id};
+
+    let mid = model_id();
+    eprintln!("Loading embedding model ({mid})...");
+    let embedder = CandleEmbedder::from_pretrained(&mid)?;
+
+    const BATCH: usize = 64;
+    let texts: Vec<String> = nodes.iter().map(node_embed_text).collect();
+    let mut done = 0usize;
+    for chunk in nodes.chunks(BATCH) {
+        let batch_texts: Vec<&str> = texts[done..done + chunk.len()]
+            .iter()
+            .map(String::as_str)
+            .collect();
+        let vectors = embedder.embed_passages(&batch_texts)?;
+        let pairs: Vec<(String, Vec<f32>)> = chunk
+            .iter()
+            .zip(vectors)
+            .map(|(n, v)| (n.id.clone(), v))
+            .collect();
+        store.store_vectors(&pairs)?;
+        done += chunk.len();
+        eprint!("\r  embedded {done}/{} symbols", nodes.len());
+    }
+    eprintln!();
+    Ok(())
+}
+
+/// Pure dense (vector) retrieval: embed the query, cosine-rank against stored
+/// vectors, return the top hits in similarity order. Experimental probe to
+/// isolate dense reach from lexical+graph fusion (roux-pc7u).
+fn dense_search(
+    store: &GraphStore,
+    query: &str,
+    top: usize,
+) -> Result<crate::graph::store::SearchResult> {
+    use crate::embed::{Embedder, candle::CandleEmbedder, model_id};
+    use std::collections::HashMap;
+
+    let embedder = CandleEmbedder::from_pretrained(&model_id())?;
+    let qvec = embedder.embed_query(query)?;
+    let hits = store.vector_search(&qvec, top)?;
+
+    let ids: Vec<String> = hits.iter().map(|(id, _)| id.clone()).collect();
+    let fetched = store.fetch_nodes(&ids)?;
+    // fetch_nodes ignores order; restore dense rank order.
+    let by_id: HashMap<&str, &crate::graph::Node> =
+        fetched.iter().map(|n| (n.id.as_str(), n)).collect();
+    let nodes: Vec<crate::graph::Node> = ids
+        .iter()
+        .filter_map(|id| by_id.get(id.as_str()).map(|n| (*n).clone()))
+        .collect();
+    let scores: HashMap<String, f64> = hits.into_iter().collect();
+
+    Ok(crate::graph::store::SearchResult {
+        matched_ids: ids,
+        nodes,
+        edges: vec![],
+        scores,
+    })
 }
 
 fn cmd_query(
@@ -567,6 +675,7 @@ fn cmd_query(
     local: bool,
     global: bool,
     db: Option<&std::path::Path>,
+    dense: bool,
 ) -> Result<()> {
     let store_path = if let Some(path) = db {
         path.to_path_buf()
@@ -583,7 +692,11 @@ fn cmd_query(
     }
 
     let store = GraphStore::open(&store_path)?;
-    let result = store.search_scoped(query, top, source)?;
+    let result = if dense {
+        dense_search(&store, query, top)?
+    } else {
+        store.search_scoped(query, top, source)?
+    };
 
     if result.nodes.is_empty() {
         eprintln!("No results found.");
