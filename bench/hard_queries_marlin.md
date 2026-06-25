@@ -126,6 +126,36 @@ Note: gold matchers are somewhat narrow (S2 should accept runaway/TRState/
 RunawayIndex), but widening them doesn't change the verdict — the non-jargon dense
 returns are conceptually wrong regardless of gold string.
 
+## DOC-BRIDGE RESULT (2026-06-24) — the CPU win embeddings missed
+
+Thesis: human-written docs carry the vocabulary the code lacks, next to backtick
+refs that resolve to code symbols (doc_section --references--> code edge). So a
+lexical query hits the doc, and the graph hops to the code — semantic bridging
+with no model.
+
+Validated by planting `bench/docbridge_marlin_fixture.md` in the Marlin tree (one
+section per S query, each pointing at its gold symbol), re-indexing (all 8 refs
+resolved), and adding opt-in doc-reference promotion (`ROUX_DOC_PROMOTE=1`):
+
+```
+S bucket:   lexical 0/8   |   e5 dense 0/8   |   doc-bridge+promotion 8/8 (Hit@5 & @10, MRR 0.500)
+```
+
+Every S gold lands at #2, right behind its explanatory doc. Reproduce:
+`cp bench/docbridge_marlin_fixture.md /tmp/roux-sources/Marlin/ && (cd /tmp/roux-sources/Marlin && roux add . --lang cpp --local --name Marlin) && ROUX_DOC_PROMOTE=1 python3 bench/hard_eval.py marlin`
+
+Promotion mechanics (rank.rs): when a *dominant* (≥0.9× top score) matched
+doc_section with ≤3 refs bridges to a code symbol, lift that symbol to 0.95× the
+doc score and rank it among the seeds; rescue-only (never re-rank a symbol already
+in the natural top-k). Multiplicative score fusion zeroes bm25=0 nodes, so RRF
+(`ROUX_FUSION=rrf`) is the companion lever.
+
+OFF by default: validated only on planted docs, and it nicks one real persona query
+(remix "file storage backend for sessions": a close-but-wrong *cookie*-session doc
+dominates and promotes its refs, #3->#6). Personas with promotion OFF = baseline
+(Hit@5 95%, MRR 0.791); ON = Hit@5 92%, MRR 0.787 (CI gate Hit@10/MRR still holds).
+Productionizing needs doc-match precision + real-doc (non-planted) validation.
+
 ## Status
 
 Batch 1 = 8 S queries + 2 controls, all DB-verified; runner = `bench/hard_eval.py`.
