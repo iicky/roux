@@ -6,8 +6,10 @@
 
 use std::fs;
 
+use roux_cli::config::Config;
 use roux_cli::graph::store::GraphStore;
 use roux_cli::lockfile;
+use roux_cli::source::Source;
 
 // ─── Store: open / migrate ─────────────────────────────────────────
 
@@ -302,4 +304,119 @@ fn lockfile_detect_project_skips_directories_named_like_lockfiles() {
             info.lockfile
         );
     }
+}
+
+// ─── Config: parsing bad input ─────────────────────────────────────
+
+#[test]
+fn config_parse_malformed_toml_errors() {
+    // Syntactically broken TOML must surface an error, not panic or silently
+    // hand back defaults (which would mask a typo'd config).
+    let result = Config::parse("this is = = not valid toml [[[");
+    assert!(result.is_err(), "malformed TOML should error");
+}
+
+#[test]
+fn config_parse_wrong_type_errors() {
+    // A known key with the wrong value type is a user mistake worth surfacing.
+    let result = Config::parse("[search]\ndefault_top_k = \"lots\"");
+    assert!(
+        result.is_err(),
+        "a string where a number is expected should error"
+    );
+}
+
+#[test]
+fn config_parse_empty_and_unknown_keys_are_lenient() {
+    // Empty config → defaults. Unknown keys are ignored (forward-compatible),
+    // not fatal — so an older binary tolerates a newer config.
+    assert!(Config::parse("").is_ok());
+    assert!(
+        Config::parse("[search]\ndefault_top_k = 9\nfuture_knob = true").is_ok(),
+        "unknown keys should be tolerated"
+    );
+}
+
+// ─── Source: name / kind inference on odd input ────────────────────
+
+#[test]
+fn source_from_raw_nonexistent_path_is_treated_as_crate() {
+    // A bare token that isn't an existing path is assumed to be a crate name —
+    // it must not panic or try to read the filesystem as if it existed.
+    let src = Source::from_raw("definitely-not-a-real-path-xyz", None, None, None);
+    assert_eq!(src.name, "definitely-not-a-real-path-xyz");
+}
+
+#[test]
+fn source_from_raw_local_dir_name_from_basename() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sub = tmp.path().join("my_proj");
+    fs::create_dir(&sub).unwrap();
+    let src = Source::from_raw(sub.to_str().unwrap(), None, None, None);
+    assert_eq!(src.name, "my_proj", "name should derive from dir basename");
+}
+
+#[test]
+fn source_detected_language_unknown_extension_is_none() {
+    let tmp = tempfile::tempdir().unwrap();
+    let f = tmp.path().join("data.xyzzy");
+    fs::write(&f, "blob").unwrap();
+    let src = Source::from_raw(f.to_str().unwrap(), None, None, None);
+    // Unknown extension → no detected language, rather than a wrong guess.
+    assert!(src.detected_language().is_none());
+}
+
+#[test]
+fn source_explicit_language_overrides_detection() {
+    let src = Source::from_raw("whatever.py", None, Some("rust".into()), None);
+    assert_eq!(src.detected_language(), Some("rust"));
+}
+
+// ─── Artifact: compatibility refusal paths ─────────────────────────
+
+#[test]
+fn artifact_check_rejects_plain_index() {
+    // A normal index DB has no `artifact_version` manifest row, so querying it
+    // as a downloadable artifact must be refused with a clear message — not
+    // accepted as if it were a published artifact.
+    let tmp = tempfile::tempdir().unwrap();
+    let db = tmp.path().join("db.sqlite");
+    let _ = GraphStore::open(&db).unwrap(); // creates a plain index, no manifest
+
+    let err = roux_cli::artifact::check_artifact_compatibility(&db)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("not a roux artifact"),
+        "expected a clear non-artifact message, got: {err}"
+    );
+}
+
+#[test]
+fn artifact_check_missing_file_errors() {
+    let tmp = tempfile::tempdir().unwrap();
+    let missing = tmp.path().join("nope.sqlite");
+    assert!(roux_cli::artifact::check_artifact_compatibility(&missing).is_err());
+}
+
+// ─── Extraction: empty / unsupported sources ───────────────────────
+
+#[test]
+fn extract_dir_empty_directory_yields_no_symbols() {
+    let tmp = tempfile::tempdir().unwrap();
+    let g = roux_cli::graph::extract::extract_dir(tmp.path(), "empty", "0", Some("rust")).unwrap();
+    assert!(g.nodes.is_empty(), "empty dir should produce no symbols");
+}
+
+#[test]
+fn extract_dir_only_unsupported_files_yields_no_code_symbols() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("notes.bin"), [0u8, 1, 2, 255]).unwrap();
+    fs::write(tmp.path().join("data.unknownext"), "nothing parseable").unwrap();
+    // Must not panic on binary/unknown content; produces no code symbols.
+    let g = roux_cli::graph::extract::extract_dir(tmp.path(), "weird", "0", None).unwrap();
+    assert!(
+        g.nodes.iter().all(|n| n.kind != "function" && n.kind != "class"),
+        "unsupported files should not yield code symbols"
+    );
 }
