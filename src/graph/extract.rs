@@ -512,6 +512,7 @@ fn extract_from_source(
             node.body = node.build_body();
 
             let node_kind = node.kind.clone();
+            let doc_for_refs = node.doc.clone();
             nodes.push(node);
 
             // Run edge inference on the AST node
@@ -522,6 +523,21 @@ fn extract_from_source(
                     extract_raise_edges(n, code_bytes, lang, &id, edges);
                     extract_route_registrations(n, code_bytes, lang, &id, edges);
                     extract_call_references(n, code_bytes, &id, edges);
+                }
+            }
+
+            // Structured doc cross-references: author-MARKED refs in the
+            // doc-comment (rustdoc `[Foo]`, Javadoc `{@link X}`, Sphinx
+            // `:func:`x``, C# `cref`) resolve to `references` edges. These
+            // bridge query→docstring→symbol when the target is defined
+            // elsewhere — the parent edge can't reach a cross-file symbol.
+            if let Some(ref d) = doc_for_refs {
+                for target in extract_doc_refs(d) {
+                    edges.push(Edge {
+                        from_id: id.clone(),
+                        to_id: format!("__unresolved::{target}"),
+                        kind: "references".to_string(),
+                    });
                 }
             }
         }
@@ -1805,6 +1821,184 @@ fn extract_backtick_refs(text: &str) -> Vec<String> {
     refs
 }
 
+/// Extract structured cross-reference targets from a doc-comment.
+///
+/// High precision by design: only author-MARKED references are recognized,
+/// never bare prose tokens. This is the generalizable, cross-language
+/// vocabulary bridge — the markup *is* the "this is code" signal, so there is
+/// no English-word/symbol-name collision risk.
+///
+/// Recognized markup:
+///   - rustdoc intra-doc links: `[Foo]`, `[`Foo`]`, `[a::b::C]`, `[txt](Foo)`
+///   - Javadoc / JSDoc / KDoc:  `{@link Foo#bar}`, `{@linkplain Foo}`, `@see Foo`
+///   - Sphinx / reST roles:     `:func:`mod.foo``, `:class:`Bar``
+///   - C# XML doc:              `<see cref="T:Ns.Type.Member"/>`
+///
+/// Returns the last path component of each target (matching the
+/// `resolve_references` name-resolution semantics), deduped.
+fn extract_doc_refs(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+
+    // Javadoc / JSDoc inline tags: {@link TARGET ...}, {@linkplain TARGET ...}
+    for tag in ["{@link", "{@linkplain"] {
+        let mut from = 0;
+        while let Some(p) = text[from..].find(tag) {
+            let start = from + p + tag.len();
+            // Boundary: `{@link` must not swallow `{@linkplain` (and vice versa);
+            // the tag is followed by whitespace before the target.
+            if !text[start..]
+                .chars()
+                .next()
+                .map(|c| c.is_whitespace())
+                .unwrap_or(false)
+            {
+                from = start;
+                continue;
+            }
+            match text[start..].find('}') {
+                Some(end_rel) => {
+                    let inner = text[start..start + end_rel].trim();
+                    // Target is the first token, ending at whitespace or '(' (params).
+                    let target = inner.split([' ', '\t', '\n', '(']).next().unwrap_or("");
+                    push_doc_ref(&mut out, target);
+                    from = start + end_rel + 1;
+                }
+                None => break,
+            }
+        }
+    }
+
+    // C# XML doc: cref="TARGET" (also seealso, exception, etc.)
+    {
+        let mut from = 0;
+        while let Some(p) = text[from..].find("cref=\"") {
+            let start = from + p + 6;
+            match text[start..].find('"') {
+                Some(end_rel) => {
+                    push_doc_ref(&mut out, &text[start..start + end_rel]);
+                    from = start + end_rel + 1;
+                }
+                None => break,
+            }
+        }
+    }
+
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        // Javadoc / JSDoc block tag: @see TARGET (single token; skip URL/prose)
+        if let Some(rest) = trimmed.strip_prefix("@see") {
+            let rest = rest.trim();
+            if let Some(tok) = rest.split([' ', '\t', '(']).next()
+                && !tok.is_empty()
+                && !tok.contains("://")
+                && !tok.starts_with(['"', '<'])
+            {
+                push_doc_ref(&mut out, tok);
+            }
+        }
+    }
+
+    // Sphinx roles: a backtick span immediately preceded by `:` (`:func:`x``).
+    // The closing `:` of the role sits right before the opening backtick — a
+    // signal that does not occur in ordinary prose backticks.
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'`' {
+            // find closing backtick
+            if let Some(close_rel) = text[i + 1..].find('`') {
+                let inner = &text[i + 1..i + 1 + close_rel];
+                if i > 0 && bytes[i - 1] == b':' {
+                    push_doc_ref(&mut out, inner);
+                }
+                i = i + 1 + close_rel + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+
+    // rustdoc intra-doc links: [TARGET] or [`TARGET`], and [text](TARGET).
+    // Bracketed form only — distinguishes a link from a bare `code` span and
+    // from normal markdown links/refs (followed by '(' URL, '[' ref, or ':' def).
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        // Skip the label half of a reference-style link `[text][id]`: a '['
+        // immediately preceded by ']' is a label, not an intra-doc link.
+        if bytes[i] == b'[' && i > 0 && bytes[i - 1] == b']' {
+            i += 1;
+            continue;
+        }
+        if bytes[i] == b'['
+            && let Some(close_rel) = text[i + 1..].find(']')
+        {
+            let inner = text[i + 1..i + 1 + close_rel].trim();
+            let after = bytes.get(i + 1 + close_rel + 1).copied();
+            match after {
+                // [text](TARGET): take the parenthesized target if it's a
+                // code path, not a URL.
+                Some(b'(') => {
+                    let tstart = i + 1 + close_rel + 2;
+                    if let Some(tend_rel) = text[tstart..].find(')') {
+                        let target = text[tstart..tstart + tend_rel].trim();
+                        if !target.contains("://") && !target.starts_with(['#', '/', '.']) {
+                            push_doc_ref(&mut out, target);
+                        }
+                    }
+                }
+                // [ref][id] reference-style link or [id]: def — not intra-doc.
+                Some(b'[') | Some(b':') => {}
+                // [Foo] / [`Foo`] shortcut intra-doc link.
+                _ => push_doc_ref(&mut out, inner),
+            }
+            i = i + 1 + close_rel + 1;
+            continue;
+        }
+        i += 1;
+    }
+
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Normalize a raw cross-reference target to a resolvable symbol name: strip
+/// markup/decorations, drop any path qualifier, and keep only identifier-shaped
+/// results. Pushes the last path component onto `out`.
+fn push_doc_ref(out: &mut Vec<String>, raw: &str) {
+    let raw = raw.trim().trim_matches('`').trim();
+    // C# cref kind prefix: "T:Ns.Type" / "M:Ns.M" / "!:Unresolved" -> drop "X:".
+    let raw = match raw.split_once(':') {
+        Some((p, rest))
+            if p.len() == 1 && p.chars().all(|c| c.is_ascii_uppercase() || c == '!') =>
+        {
+            rest
+        }
+        _ => raw,
+    };
+    // Sphinx "~" = render last component only; leading "." = relative ref.
+    let raw = raw.trim_start_matches('~').trim_start_matches('.').trim();
+    if raw.is_empty() || raw.len() > 100 || raw.contains(' ') || raw.contains("://") {
+        return;
+    }
+    // Last component across path separators (Rust ::, Python/C# ., Java #, paths).
+    let name = raw.rsplit([':', '.', '/', '#']).next().unwrap_or(raw);
+    // Drop Java/JSDoc method parens: bar() -> bar.
+    let name = name.split('(').next().unwrap_or(name);
+    if name.is_empty() {
+        return;
+    }
+    let first_ok = name
+        .chars()
+        .next()
+        .map(|c| c.is_alphabetic() || c == '_')
+        .unwrap_or(false);
+    if first_ok && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        out.push(name.to_string());
+    }
+}
+
 // ─── Language-specific node extraction ───────────────────────────────
 
 fn node_text<'a>(node: &TsNode, code: &'a [u8]) -> &'a str {
@@ -2107,6 +2301,60 @@ fn extract_signature_text(node: &TsNode, code: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_extract_doc_refs_structured() {
+        // rustdoc intra-doc links
+        assert_eq!(extract_doc_refs("see [Foo] for details"), vec!["Foo"]);
+        assert_eq!(extract_doc_refs("uses [`Bar`] internally"), vec!["Bar"]);
+        assert_eq!(extract_doc_refs("path [a::b::Thing] link"), vec!["Thing"]);
+        assert_eq!(
+            extract_doc_refs("call [the method](Type::run) now"),
+            vec!["run"]
+        );
+        // Javadoc / JSDoc / KDoc
+        assert_eq!(extract_doc_refs("{@link Widget#render}"), vec!["render"]);
+        assert_eq!(extract_doc_refs("{@linkplain Helper}"), vec!["Helper"]);
+        assert_eq!(extract_doc_refs("@see SomeClass#doThing(int, int)"), vec!["doThing"]);
+        // Sphinx / reST roles
+        assert_eq!(extract_doc_refs(":func:`pkg.mod.compute`"), vec!["compute"]);
+        assert_eq!(extract_doc_refs("see :class:`~pkg.Model`"), vec!["Model"]);
+        // C# XML doc
+        assert_eq!(
+            extract_doc_refs("<see cref=\"T:Ns.Sub.Service\"/>"),
+            vec!["Service"]
+        );
+
+        // Precision: bare prose and ordinary markdown links must NOT match.
+        assert!(extract_doc_refs("just set the value and loop until done").is_empty());
+        assert!(extract_doc_refs("a `code` span without a link").is_empty());
+        assert!(extract_doc_refs("[docs](https://example.com/x)").is_empty());
+        assert!(extract_doc_refs("ref style [text][id] and [id]: http://x").is_empty());
+    }
+
+    #[test]
+    fn test_doc_refs_emit_reference_edges() {
+        // A docstring on `dispatch` links to `handle`, defined elsewhere in the
+        // file: the structured ref must become a resolved `references` edge.
+        let g = extract_rust(
+            "/// Routes the request; delegates to [`handle`].\n\
+             pub fn dispatch() { let _ = 1; }\n\
+             /// The real worker.\n\
+             pub fn handle() { let _ = 2; }\n",
+        );
+        let dispatch = g
+            .nodes
+            .iter()
+            .find(|n| n.name == "dispatch")
+            .expect("dispatch node");
+        let handle = g.nodes.iter().find(|n| n.name == "handle").expect("handle node");
+        assert!(
+            g.edges.iter().any(|e| e.from_id == dispatch.id
+                && e.to_id == handle.id
+                && e.kind == "references"),
+            "expected resolved references edge dispatch -> handle"
+        );
+    }
 
     fn extract_rust(code: &str) -> FileGraph {
         let mut nodes = Vec::new();
