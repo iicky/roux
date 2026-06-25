@@ -1921,7 +1921,6 @@ fn extract_doc_refs(text: &str) -> Vec<String> {
     // rustdoc intra-doc links: [TARGET] or [`TARGET`], and [text](TARGET).
     // Bracketed form only — distinguishes a link from a bare `code` span and
     // from normal markdown links/refs (followed by '(' URL, '[' ref, or ':' def).
-    let bytes = text.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
         // Skip the label half of a reference-style link `[text][id]`: a '['
