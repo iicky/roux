@@ -14,6 +14,15 @@ impl GraphStore {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("creating directory {}", parent.display()))?;
+            // Keep the local index out of the user's git status: a self-ignoring
+            // `.roux/.gitignore` covers the whole dir without touching the repo's
+            // root .gitignore. Only for the local `.roux` dir, and only if absent.
+            if parent.file_name().is_some_and(|n| n == ".roux") {
+                let ignore = parent.join(".gitignore");
+                if !ignore.exists() {
+                    std::fs::write(&ignore, "*\n").ok();
+                }
+            }
         }
 
         let conn = Connection::open(path)
