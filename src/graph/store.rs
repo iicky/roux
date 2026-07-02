@@ -469,46 +469,86 @@ impl GraphStore {
             return Ok(SearchResult::default());
         }
 
-        // Pull 2-hop ego-graph around seed nodes via recursive expansion
-        let mut all_ids: Vec<String> = matched_ids.clone();
+        // Pull a 2-hop ego-graph around the seed nodes via BFS. Expansion is
+        // bounded so a hub symbol (a widely-called function, or a module that
+        // "contains" hundreds of children) can't drag the whole graph into the
+        // working set and blow up the downstream PPR pass. Two guards, both
+        // tunable via `ROUX_*` env (see the `settings` module):
+        //   * max_node_degree — skip expanding *through* an ultra-high-degree
+        //     node. Hubs connect to everything, so their neighbors are low-signal
+        //     for ranking while enormously inflating the set. The hub itself
+        //     still stays in the graph; only its neighbors are skipped.
+        //   * max_subgraph_nodes — hard backstop on total working-set size so
+        //     PPR cost stays bounded regardless of seed count or graph shape.
+        let max_node_degree = cfg.max_node_degree;
+        let max_subgraph_nodes = cfg.max_subgraph_nodes;
 
-        // Hop 1 + Hop 2: expand edges + parent/children for each seed
+        // Pull one past the cap so a node sitting exactly at the threshold is
+        // kept while a genuine hub (strictly more) is detected and skipped.
+        let degree_probe = (max_node_degree + 1) as i64;
+        let mut seen: std::collections::HashSet<String> = matched_ids.iter().cloned().collect();
+        let mut frontier: Vec<String> = matched_ids.clone();
+
+        // Hop 1 + Hop 2: expand edges + parent/children from the frontier only.
         for _hop in 0..2 {
-            let mut new_ids = Vec::new();
-            for id in &all_ids {
-                // Edge neighbors (both directions)
+            if seen.len() >= max_subgraph_nodes {
+                break;
+            }
+            let mut next_frontier = Vec::new();
+            for id in &frontier {
+                let mut candidates: Vec<String> = Vec::new();
+
+                // Edge neighbors (both directions), capped to detect hubs.
                 let mut stmt = self.conn.prepare_cached(
                     "SELECT to_id FROM edges WHERE from_id = ?1
                      UNION
-                     SELECT from_id FROM edges WHERE to_id = ?1",
+                     SELECT from_id FROM edges WHERE to_id = ?1
+                     LIMIT ?2",
                 )?;
                 let neighbors: Vec<String> = stmt
-                    .query_map(params![id], |row| row.get(0))?
+                    .query_map(params![id, degree_probe], |row| row.get(0))?
                     .collect::<rusqlite::Result<Vec<_>>>()?;
-                new_ids.extend(neighbors);
+                if neighbors.len() <= max_node_degree {
+                    candidates.extend(neighbors);
+                }
 
-                // Parent
+                // Parent (at most one)
                 if let Ok(pid) = self.conn.query_row(
                     "SELECT parent_id FROM nodes WHERE id = ?1 AND parent_id IS NOT NULL",
                     params![id],
                     |row| row.get::<_, String>(0),
                 ) {
-                    new_ids.push(pid);
+                    candidates.push(pid);
                 }
 
-                // Children
+                // Children, capped the same way so a giant container doesn't flood.
                 let mut stmt = self
                     .conn
-                    .prepare_cached("SELECT id FROM nodes WHERE parent_id = ?1")?;
+                    .prepare_cached("SELECT id FROM nodes WHERE parent_id = ?1 LIMIT ?2")?;
                 let children: Vec<String> = stmt
-                    .query_map(params![id], |row| row.get(0))?
+                    .query_map(params![id, degree_probe], |row| row.get(0))?
                     .collect::<rusqlite::Result<Vec<_>>>()?;
-                new_ids.extend(children);
+                if children.len() <= max_node_degree {
+                    candidates.extend(children);
+                }
+
+                for c in candidates {
+                    if seen.len() >= max_subgraph_nodes {
+                        break;
+                    }
+                    if seen.insert(c.clone()) {
+                        next_frontier.push(c);
+                    }
+                }
+                if seen.len() >= max_subgraph_nodes {
+                    break;
+                }
             }
-            all_ids.extend(new_ids);
-            all_ids.sort();
-            all_ids.dedup();
+            frontier = next_frontier;
         }
+
+        let mut all_ids: Vec<String> = seen.into_iter().collect();
+        all_ids.sort();
 
         // Fetch full subgraph
         let nodes = self.fetch_nodes(&all_ids)?;
@@ -1482,5 +1522,61 @@ mod tests {
         only_n2.content_hash = Some("hash_b".to_string());
         let (_, _, removed2) = store.diff_source("test", &[only_n2]).unwrap();
         assert_eq!(removed2.len(), 1, "foo should be removed");
+    }
+
+    #[test]
+    fn test_hub_expansion_is_capped() {
+        // A hub symbol called by hundreds of functions must not drag its entire
+        // neighborhood into the working set. Expansion skips *through* nodes
+        // above max_node_degree (default 128) — the hub stays, callers don't flood in.
+        let store = GraphStore::open_in_memory().unwrap();
+
+        let hub = make_node("dispatch", "function", "lib::dispatch");
+        let mut nodes = vec![hub.clone()];
+        let mut edges = Vec::new();
+        for i in 0..300 {
+            let caller = make_node(&format!("caller_{i}"), "function", &format!("lib::caller_{i}"));
+            edges.push(Edge {
+                from_id: caller.id.clone(),
+                to_id: hub.id.clone(),
+                kind: "calls".to_string(),
+            });
+            nodes.push(caller);
+        }
+        store
+            .upsert_source("lib", "1.0", "rust", &nodes, &edges)
+            .unwrap();
+
+        // Only the hub matches "dispatch"; its 300 callers do not. Because the
+        // hub's degree (300) exceeds the cap, none of the callers are expanded.
+        let result = store.search("dispatch", 10).unwrap();
+        assert_eq!(result.matched_ids, vec![hub.id.clone()], "hub is the sole seed");
+        assert!(
+            result.nodes.len() < 128,
+            "hub neighborhood should be capped, got {} nodes",
+            result.nodes.len()
+        );
+    }
+
+    #[test]
+    fn test_small_neighborhood_still_expands() {
+        // Guard against over-capping: a node with a handful of neighbors must
+        // still pull them into the subgraph (the cap only bites on hubs).
+        let store = GraphStore::open_in_memory().unwrap();
+
+        let seed = make_node("authenticate", "function", "lib::authenticate");
+        let callee = make_node("validate_token", "function", "lib::validate_token");
+        let edges = vec![Edge {
+            from_id: seed.id.clone(),
+            to_id: callee.id.clone(),
+            kind: "calls".to_string(),
+        }];
+        store
+            .upsert_source("lib", "1.0", "rust", &[seed.clone(), callee.clone()], &edges)
+            .unwrap();
+
+        let result = store.search("authenticate", 10).unwrap();
+        let ids: std::collections::HashSet<&String> = result.nodes.iter().map(|n| &n.id).collect();
+        assert!(ids.contains(&callee.id), "connected neighbor should be expanded in");
     }
 }
