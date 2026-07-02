@@ -235,7 +235,7 @@ fn walk_dir(
                 Ok(c) => c,
                 Err(_) => continue,
             };
-            if content.len() > 10 * 1024 * 1024 {
+            if content.len() > crate::settings::get().max_file_bytes {
                 continue;
             }
             let rel_path = path
@@ -266,7 +266,7 @@ fn walk_dir(
             Err(_) => continue,
         };
 
-        if code.len() > 10 * 1024 * 1024 {
+        if code.len() > crate::settings::get().max_file_bytes {
             continue;
         }
 

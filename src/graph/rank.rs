@@ -100,7 +100,9 @@ pub fn rank_subgraph_with(
         .filter_map(|id| id_to_idx.get(id).copied())
         .collect();
 
-    let ppr_scores = personalized_pagerank(&graph, &seed_indices, 0.15, 20);
+    let cfg = crate::settings::get();
+    let ppr_scores =
+        personalized_pagerank(&graph, &seed_indices, cfg.ppr_alpha, cfg.ppr_iterations);
 
     // Normalize PPR scores to [0,1]
     let ppr_max = ppr_scores.values().cloned().fold(0.0f64, f64::max);
@@ -115,9 +117,9 @@ pub fn rank_subgraph_with(
 
     let scored: Vec<(String, f64)> = match fusion {
         FusionMethod::ScoreFusion => {
-            // Fuse: combined = BM25^0.7 × PPR^0.3
-            let alpha = 0.7;
-            let beta = 0.3;
+            // Fuse: combined = BM25^α × PPR^β (α, β from settings)
+            let alpha = cfg.fusion_bm25_exp;
+            let beta = cfg.fusion_ppr_exp;
             let mut s: Vec<(String, f64)> = nodes
                 .iter()
                 .map(|n| {
@@ -132,7 +134,7 @@ pub fn rank_subgraph_with(
         }
         FusionMethod::RRF => {
             // Reciprocal Rank Fusion: score = 1/(k+rank_bm25) + 1/(k+rank_ppr)
-            let k = 60.0;
+            let k = cfg.rrf_k;
 
             // BM25 ranking (by normalized score, descending)
             let mut bm25_ranked: Vec<(&String, f64)> = nodes
@@ -181,8 +183,8 @@ pub fn rank_subgraph_with(
         .into_iter()
         .map(|(id, score)| {
             let multiplier = match kind_map.get(id.as_str()).copied().unwrap_or("") {
-                "file" => 0.5,
-                "doc_section" => 0.7,
+                "file" => cfg.kind_weight_file,
+                "doc_section" => cfg.kind_weight_doc,
                 _ => 1.0,
             };
             (id, score * multiplier)

@@ -7,4 +7,5 @@ pub mod fingerprint;
 pub mod graph;
 pub mod lockfile;
 pub mod mcp;
+pub mod settings;
 pub mod source;

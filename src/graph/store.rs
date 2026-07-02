@@ -347,8 +347,9 @@ impl GraphStore {
         // Reciprocal-rank fusion across each query's matched ordering. Pull a
         // wider slice per query (limit*2) so a symbol ranked modestly by several
         // variants can still win the fused top-k.
-        const RRF_K: f64 = 60.0;
-        let per_query = limit.saturating_mul(2).max(limit);
+        let cfg = crate::settings::get();
+        let rrf_k = cfg.rrf_k;
+        let per_query = limit.saturating_mul(cfg.candidate_multiplier).max(limit);
         let mut rrf: HashMap<String, f64> = HashMap::new();
         let mut node_map: HashMap<String, Node> = HashMap::new();
         let mut edge_set: std::collections::HashSet<(String, String, String)> =
@@ -358,7 +359,7 @@ impl GraphStore {
         for q in &queries {
             let res = self.search_scoped(q, per_query, source)?;
             for (rank, id) in res.matched_ids.iter().enumerate() {
-                *rrf.entry(id.clone()).or_insert(0.0) += 1.0 / (RRF_K + (rank + 1) as f64);
+                *rrf.entry(id.clone()).or_insert(0.0) += 1.0 / (rrf_k + (rank + 1) as f64);
             }
             for n in res.nodes {
                 node_map.entry(n.id.clone()).or_insert(n);
@@ -412,6 +413,11 @@ impl GraphStore {
             return Ok(SearchResult::default());
         }
 
+        let cfg = crate::settings::get();
+        // Over-fetch BM25 candidates so graph re-ranking has room to promote
+        // neighbors over raw lexical hits.
+        let candidate_limit = limit.saturating_mul(cfg.candidate_multiplier) as i64;
+
         // BM25 search on FTS index — capture scores. When a source filter is
         // set, join against nodes to restrict matches to that source.
         let bm25_results: Vec<(String, f64)> = if let Some(src) = source {
@@ -421,7 +427,7 @@ impl GraphStore {
                  WHERE fts_nodes MATCH ?1 AND n.source_name = ?2
                  ORDER BY f.rank LIMIT ?3",
             )?;
-            stmt.query_map(params![safe_query, src, (limit * 2) as i64], |row| {
+            stmt.query_map(params![safe_query, src, candidate_limit], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?
@@ -429,7 +435,7 @@ impl GraphStore {
             let mut stmt = self.conn.prepare(
                 "SELECT id, rank FROM fts_nodes WHERE fts_nodes MATCH ?1 ORDER BY rank LIMIT ?2",
             )?;
-            stmt.query_map(params![safe_query, (limit * 2) as i64], |row| {
+            stmt.query_map(params![safe_query, candidate_limit], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?
