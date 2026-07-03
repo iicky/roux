@@ -75,18 +75,21 @@ impl Source {
 
         match &self.kind {
             SourceKind::Crate(_) => Some("rust"),
-            SourceKind::File(p) => match p.extension().and_then(|e| e.to_str()) {
-                Some("rs") => Some("rust"),
-                Some("py") => Some("python"),
-                Some("ts" | "tsx") => Some("typescript"),
-                Some("js" | "jsx") => Some("javascript"),
-                Some("go") => Some("go"),
-                Some("pl" | "pm") => Some("perl"),
-                Some("md" | "markdown") => Some("markdown"),
-                Some("html" | "htm") => Some("html"),
-                Some("yaml" | "yml" | "json") => None, // could be openapi or anything
-                _ => None,
-            },
+            SourceKind::File(p) => {
+                // Code: reuse the canonical extension→grammar map so the `add`
+                // path only ever claims languages roux can actually parse and
+                // stays in lockstep with directory extraction.
+                if let Some(lang) = crate::graph::extract::detect_language(p) {
+                    return Some(lang);
+                }
+                // Markup/doc formats have dedicated extractors (not tree-sitter).
+                match p.extension().and_then(|e| e.to_str()) {
+                    Some("md" | "markdown") => Some("markdown"),
+                    Some("html" | "htm") => Some("html"),
+                    // yaml/yml/json could be OpenAPI or anything — leave to routing.
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
@@ -174,8 +177,17 @@ mod tests {
             ("foo.tsx", Some("typescript")),
             ("foo.js", Some("javascript")),
             ("foo.go", Some("go")),
+            // Code languages now claimed (were silently missing -> add errored).
+            ("foo.cpp", Some("cpp")),
+            ("foo.h", Some("cpp")),
+            ("foo.ino", Some("cpp")),
+            ("foo.c", Some("c")),
+            ("foo.sh", Some("bash")),
+            // Markup handled by dedicated extractors.
             ("foo.md", Some("markdown")),
             ("foo.html", Some("html")),
+            // No grammar -> no longer claimed (was "perl").
+            ("foo.pl", None),
             ("foo.yaml", None),
             ("foo.unknown", None),
         ];

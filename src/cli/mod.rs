@@ -544,21 +544,23 @@ fn cmd_add(
         .version
         .clone()
         .unwrap_or_else(|| "unknown".to_string());
-    let language = source.detected_language().unwrap_or("unknown").to_string();
+    // The extraction hint is an Option: when detection is unsure, pass None so
+    // extract_dir/extract_file fall back to their own per-file detection rather
+    // than being pinned to a bogus "unknown" that fails as an unsupported lang.
+    let hint = source.detected_language();
+    let language = hint.unwrap_or("unknown").to_string();
 
     eprintln!("Extracting graph from {}...", source.name);
 
     // Use tree-sitter graph extraction
     let (file_graph, source_kind, origin, fingerprint) = match &source.kind {
         SourceKind::LocalPath(path) => {
-            let fg =
-                graph::extract::extract_dir(path, &source.name, &source_version, Some(&language))?;
+            let fg = graph::extract::extract_dir(path, &source.name, &source_version, hint)?;
             let fp = crate::fingerprint::fingerprint_dir(path).ok();
             (fg, "path", path.to_str().map(String::from), fp)
         }
         SourceKind::File(path) => {
-            let fg =
-                graph::extract::extract_file(path, &source.name, &source_version, Some(&language))?;
+            let fg = graph::extract::extract_file(path, &source.name, &source_version, hint)?;
             let fp = crate::fingerprint::fingerprint_file(path).ok();
             (fg, "file", path.to_str().map(String::from), fp)
         }

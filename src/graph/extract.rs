@@ -341,7 +341,10 @@ fn walk_dir(
     Ok(())
 }
 
-fn detect_language(path: &Path) -> Option<&'static str> {
+/// Map a file extension to a language roux has a tree-sitter grammar for
+/// (see [`get_ts_language`]). The single source of truth for code-extension
+/// detection, shared with the `roux add` path.
+pub(crate) fn detect_language(path: &Path) -> Option<&'static str> {
     match path.extension().and_then(|e| e.to_str()) {
         Some("rs") => Some("rust"),
         Some("py") => Some("python"),
