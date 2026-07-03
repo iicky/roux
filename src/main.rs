@@ -5,7 +5,8 @@ use roux_cli::cli::Cli;
 
 fn main() -> Result<()> {
     // Use a large stack for the main thread to handle deeply nested ASTs
-    let builder = std::thread::Builder::new().stack_size(64 * 1024 * 1024);
+    // (same knob the extraction worker uses; see roux_cli::settings).
+    let builder = std::thread::Builder::new().stack_size(roux_cli::settings::get().worker_stack_bytes);
     let handler = builder
         .spawn(|| -> Result<()> {
             let cli = Cli::parse();

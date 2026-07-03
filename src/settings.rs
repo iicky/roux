@@ -3,8 +3,9 @@
 //!
 //! These are the internal levers of the retrieval pipeline — PPR parameters,
 //! score-fusion exponents, ego-graph expansion caps, the extraction file-size
-//! limit. They are read once, at first access, from the process environment
-//! (see [`get`]); an unset or unparseable variable falls back to the default.
+//! limit, the extraction thread stack. They are read once, at first access,
+//! from the process environment (see [`get`]); an unset or unparseable variable
+//! falls back to the default.
 //!
 //! | Variable                    | Default    | Meaning                                             |
 //! |-----------------------------|------------|-----------------------------------------------------|
@@ -19,6 +20,7 @@
 //! | `ROUX_MAX_SUBGRAPH_NODES`  | `4000`     | Hard cap on the ego-graph working set               |
 //! | `ROUX_CANDIDATE_MULTIPLIER`| `2`        | BM25 over-fetch factor (`limit × N`)                 |
 //! | `ROUX_MAX_FILE_BYTES`      | `10485760` | Max file size (bytes) considered during extraction  |
+//! | `ROUX_WORKER_STACK_BYTES`  | `67108864` | Stack size for threads running the recursive AST walk |
 
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -50,6 +52,10 @@ pub struct Settings {
     pub candidate_multiplier: usize,
     /// Files larger than this (in bytes) are skipped during extraction.
     pub max_file_bytes: usize,
+    /// Stack size (bytes) for threads that run the recursive-descent AST walk.
+    /// Deeply nested syntax recurses as deep as it nests, so extraction needs a
+    /// far larger stack than the ~2 MB thread default (see roux-s3s1).
+    pub worker_stack_bytes: usize,
 }
 
 impl Default for Settings {
@@ -66,6 +72,7 @@ impl Default for Settings {
             max_subgraph_nodes: 4000,
             candidate_multiplier: 2,
             max_file_bytes: 10 * 1024 * 1024,
+            worker_stack_bytes: 64 * 1024 * 1024,
         }
     }
 }
@@ -93,6 +100,8 @@ impl Settings {
             candidate_multiplier: parse_or(&get, "ROUX_CANDIDATE_MULTIPLIER", d.candidate_multiplier)
                 .max(1),
             max_file_bytes: parse_or(&get, "ROUX_MAX_FILE_BYTES", d.max_file_bytes),
+            worker_stack_bytes: parse_or(&get, "ROUX_WORKER_STACK_BYTES", d.worker_stack_bytes)
+                .max(1024 * 1024),
         }
     }
 }
@@ -135,6 +144,7 @@ mod tests {
         assert_eq!(d.max_subgraph_nodes, 4000);
         assert_eq!(d.candidate_multiplier, 2);
         assert_eq!(d.max_file_bytes, 10 * 1024 * 1024);
+        assert_eq!(d.worker_stack_bytes, 64 * 1024 * 1024);
     }
 
     #[test]

@@ -432,14 +432,21 @@ fn extract_crate_with_timeout(name: &str, version: &str, timeout: Duration) -> C
     let name = name.to_owned();
     let version = version.to_owned();
     let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let result = (|| -> Result<(String, FileGraph)> {
-            let (dir, resolved) = crate::source::crate_download::download_crate(&name, &version)?;
-            let graph = graph::extract::extract_dir(&dir, &name, &resolved, Some("rust"))?;
-            Ok((resolved, graph))
-        })();
-        let _ = tx.send(result);
-    });
+    // Extraction recurses over the syntax tree as deep as the source nests, so
+    // this worker needs the same large stack `main` reserves — the default
+    // ~2 MB thread stack overflows on deeply nested dependency ASTs (roux-s3s1).
+    thread::Builder::new()
+        .stack_size(crate::settings::get().worker_stack_bytes)
+        .spawn(move || {
+            let result = (|| -> Result<(String, FileGraph)> {
+                let (dir, resolved) =
+                    crate::source::crate_download::download_crate(&name, &version)?;
+                let graph = graph::extract::extract_dir(&dir, &name, &resolved, Some("rust"))?;
+                Ok((resolved, graph))
+            })();
+            let _ = tx.send(result);
+        })
+        .expect("failed to spawn extraction worker");
     match rx.recv_timeout(timeout) {
         Ok(Ok((version, graph))) => CrateOutcome::Ok { version, graph },
         Ok(Err(e)) => CrateOutcome::Err(e),
