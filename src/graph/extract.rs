@@ -351,8 +351,10 @@ fn detect_language(path: &Path) -> Option<&'static str> {
         Some("cpp" | "cc" | "cxx" | "c++" | "hpp" | "hh" | "hxx" | "h" | "ino") => Some("cpp"),
         Some("c") => Some("c"),
         Some("sh" | "bash" | "zsh") => Some("bash"),
-        Some("java") => Some("java"),
-        Some("rb") => Some("ruby"),
+        // Only claim languages we have a tree-sitter grammar for (see
+        // get_ts_language). Extensions without a grammar — .java, .rb — fall
+        // through to None and are skipped, rather than being "detected" and
+        // then silently dropped at parse time.
         _ => None,
     }
 }
@@ -2328,6 +2330,24 @@ fn extract_signature_text(node: &TsNode, code: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn detect_language_only_claims_parseable_languages() {
+        // Every language detect_language returns must have a wired grammar,
+        // otherwise the file is "detected" then silently dropped at parse time.
+        for ext in ["rs", "py", "ts", "tsx", "js", "jsx", "mjs", "go", "cpp", "cc", "hpp", "hh", "hxx", "h", "ino", "c", "sh", "bash"] {
+            let lang = detect_language(Path::new(&format!("f.{ext}")))
+                .unwrap_or_else(|| panic!(".{ext} should be detected"));
+            assert!(
+                get_ts_language(lang).is_some(),
+                ".{ext} -> {lang:?} has no tree-sitter grammar"
+            );
+        }
+        // Extensions without a grammar must not be claimed.
+        assert_eq!(detect_language(Path::new("Main.java")), None);
+        assert_eq!(detect_language(Path::new("app.rb")), None);
+    }
 
     #[test]
     fn test_extract_doc_refs_structured() {
