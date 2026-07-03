@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -274,36 +275,6 @@ fn cmd_init(
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
 
-    let project = crate::lockfile::detect_project(&cwd)
-        .ok_or_else(|| anyhow::anyhow!("No lockfile or manifest found in current directory"))?;
-
-    let direct_count = project.deps.iter().filter(|d| d.direct).count();
-    let total_count = project.deps.len();
-    eprintln!(
-        "Detected {:?} project ({} direct deps, {} total) from {}",
-        project.kind,
-        direct_count,
-        total_count,
-        project
-            .lockfile
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy(),
-    );
-
-    let deps: Vec<_> = if transitive {
-        project.deps
-    } else {
-        project.deps.into_iter().filter(|d| d.direct).collect()
-    };
-
-    if deps.is_empty() {
-        eprintln!("No dependencies to ingest.");
-        return Ok(());
-    }
-
-    eprintln!("Ingesting {} dependencies...\n", deps.len());
-
     let store_path = config.resolve_store_path(StoreScope::from_flags(local, false));
     if let Some(parent) = store_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -311,13 +282,112 @@ fn cmd_init(
     let store = GraphStore::open(&store_path)?;
 
     let timeout = Duration::from_secs(timeout_secs);
+    index_project(&cwd, &store, transitive, exclude, timeout)
+}
 
+/// Ingest a project into `store`: dependencies when a manifest is present, plus
+/// the local source in every case. A repo without a lockfile/manifest — a C++
+/// firmware tree, a monorepo root with no root deps — still gets its own source
+/// indexed rather than erroring out or silently indexing nothing.
+fn index_project(
+    dir: &Path,
+    store: &GraphStore,
+    transitive: bool,
+    exclude: &[String],
+    timeout: Duration,
+) -> Result<()> {
+    let project = crate::lockfile::detect_project(dir);
+
+    // 1. Dependencies — only when a manifest is present.
+    if let Some(project) = &project {
+        let direct_count = project.deps.iter().filter(|d| d.direct).count();
+        eprintln!(
+            "Detected {:?} project ({} direct deps, {} total) from {}",
+            project.kind,
+            direct_count,
+            project.deps.len(),
+            project
+                .lockfile
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy(),
+        );
+
+        let deps: Vec<&crate::lockfile::Dependency> = if transitive {
+            project.deps.iter().collect()
+        } else {
+            project.deps.iter().filter(|d| d.direct).collect()
+        };
+
+        if deps.is_empty() {
+            // Not an error: a monorepo root or an app with no declared deps
+            // still has local source worth indexing below.
+            eprintln!("No dependencies to ingest.");
+        } else {
+            eprintln!("Ingesting {} dependencies...\n", deps.len());
+            ingest_deps(&deps, project.kind, exclude, timeout, store);
+        }
+    } else {
+        eprintln!("No lockfile or manifest found — indexing local source only.");
+    }
+
+    // 2. Local source — always. `None` language hint so each file is parsed by
+    // its own extension (a mixed/monorepo tree isn't forced to one language).
+    let project_name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("project");
+    eprintln!("\nIndexing local source as '{project_name}'...");
+    let file_graph = graph::extract::extract_dir(dir, project_name, "dev", None)?;
+    if file_graph.nodes.is_empty() {
+        eprintln!("No indexable source found.");
+    } else {
+        // Conservative label: the project kind when known, else the dominant
+        // language among the extracted symbols.
+        let language = match &project {
+            Some(p) => p.kind.language().to_string(),
+            None => dominant_language(&file_graph.nodes),
+        };
+        store.upsert_source(
+            project_name,
+            "dev",
+            &language,
+            &file_graph.nodes,
+            &file_graph.edges,
+        )?;
+        let fp = crate::fingerprint::fingerprint_dir(dir).ok();
+        store.set_source_meta(project_name, "path", dir.to_str(), fp.as_deref())?;
+        eprintln!(
+            "Indexed {} symbols, {} edges from local source",
+            file_graph.nodes.len(),
+            file_graph.edges.len()
+        );
+    }
+
+    // 3. Lockfile hash for staleness detection — only when a manifest exists.
+    if let Some(project) = &project
+        && let Ok(content) = std::fs::read(&project.lockfile)
+    {
+        let hash = blake3::hash(&content).to_hex().to_string();
+        store.set_metadata("lockfile_hash", &hash)?;
+        store.set_metadata("lockfile_path", &project.lockfile.to_string_lossy())?;
+    }
+
+    Ok(())
+}
+
+/// Download + ingest each Rust crate dependency; other ecosystems have no
+/// registry support yet and are skipped.
+fn ingest_deps(
+    deps: &[&crate::lockfile::Dependency],
+    kind: crate::lockfile::ProjectKind,
+    exclude: &[String],
+    timeout: Duration,
+    store: &GraphStore,
+) {
     let mut success = 0;
     let mut excluded = 0;
     let mut skipped = 0;
     let mut failed = 0;
 
-    for dep in &deps {
+    for dep in deps {
         let version_str = dep.version.as_deref().unwrap_or("latest");
 
         if exclude.iter().any(|p| matches_glob(p, &dep.name)) {
@@ -327,7 +397,7 @@ fn cmd_init(
         }
 
         // For Rust crates, download from crates.io
-        if project.kind == crate::lockfile::ProjectKind::Rust {
+        if kind == crate::lockfile::ProjectKind::Rust {
             eprint!("  {} v{} ... ", dep.name, version_str);
 
             match extract_crate_with_timeout(&dep.name, version_str, timeout) {
@@ -364,17 +434,14 @@ fn cmd_init(
                     failed += 1;
                 }
                 CrateOutcome::Timeout => {
-                    eprintln!("timeout after {timeout_secs}s");
+                    eprintln!("timeout after {}s", timeout.as_secs());
                     failed += 1;
                 }
             }
         } else {
             // For other languages, we can only ingest local paths
             // TODO: add PyPI, npm registry support
-            eprintln!(
-                "  {} (skip — no registry support for {:?} yet)",
-                dep.name, project.kind
-            );
+            eprintln!("  {} (skip — no registry support for {kind:?} yet)", dep.name);
             skipped += 1;
         }
     }
@@ -382,40 +449,19 @@ fn cmd_init(
     eprintln!(
         "\nDeps: {success} ingested, {excluded} excluded, {skipped} skipped, {failed} failed"
     );
+}
 
-    // Index the local source
-    let project_name = cwd
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("project");
-    eprintln!("\nIndexing local source as '{project_name}'...");
-    let file_graph =
-        graph::extract::extract_dir(&cwd, project_name, "dev", Some(project.kind.language()))?;
-    if !file_graph.nodes.is_empty() {
-        store.upsert_source(
-            project_name,
-            "dev",
-            project.kind.language(),
-            &file_graph.nodes,
-            &file_graph.edges,
-        )?;
-        let fp = crate::fingerprint::fingerprint_dir(&cwd).ok();
-        store.set_source_meta(project_name, "path", cwd.to_str(), fp.as_deref())?;
-        eprintln!(
-            "Indexed {} symbols, {} edges from local source",
-            file_graph.nodes.len(),
-            file_graph.edges.len()
-        );
+/// Most frequent per-file language among extracted nodes; `"unknown"` if empty.
+fn dominant_language(nodes: &[graph::Node]) -> String {
+    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for n in nodes {
+        *counts.entry(n.language.as_str()).or_default() += 1;
     }
-
-    // Store lockfile hash for staleness detection
-    if let Ok(content) = std::fs::read(&project.lockfile) {
-        let hash = blake3::hash(&content).to_hex().to_string();
-        store.set_metadata("lockfile_hash", &hash)?;
-        store.set_metadata("lockfile_path", &project.lockfile.to_string_lossy())?;
-    }
-
-    Ok(())
+    counts
+        .into_iter()
+        .max_by_key(|(_, c)| *c)
+        .map(|(lang, _)| lang.to_string())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 enum CrateOutcome {
@@ -1541,5 +1587,67 @@ mod tests {
     #[test]
     fn test_parse_unknown_command_fails() {
         assert!(Cli::try_parse_from(["roux", "unknown"]).is_err());
+    }
+
+    // --- roux-8trh: index_project on manifest-less / monorepo / mixed trees ---
+
+    fn index_temp(dir: &Path) -> GraphStore {
+        let store = GraphStore::open_in_memory().unwrap();
+        index_project(dir, &store, false, &[], Duration::from_secs(1)).unwrap();
+        store
+    }
+
+    #[test]
+    fn init_indexes_manifestless_cpp_repo() {
+        // Marlin-shape: C++ firmware, no lockfile/manifest. Must index anyway.
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("motion.cpp"),
+            "void plan_buffer_line() { int steps = 0; }\n",
+        )
+        .unwrap();
+        std::fs::write(tmp.path().join("temperature.h"), "void manage_heater();\n").unwrap();
+
+        let store = index_temp(tmp.path());
+        let sources = store.list_sources().unwrap();
+        assert_eq!(sources.len(), 1, "local source should be indexed");
+        assert!(sources[0].node_count > 0, "expected symbols from cpp files");
+        assert_eq!(sources[0].language, "cpp", "dominant language should be cpp");
+        assert!(
+            !store.search("plan_buffer_line", 5).unwrap().matched_ids.is_empty(),
+            "a known cpp symbol should be searchable"
+        );
+    }
+
+    #[test]
+    fn init_indexes_monorepo_with_no_root_deps() {
+        // remix-shape: manifest present but no root deps; source lives in packages/*.
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("package.json"), "{\"name\":\"root\"}\n").unwrap();
+        let pkg = tmp.path().join("packages").join("app");
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(pkg.join("index.js"), "function handleRequest() { return 1; }\n").unwrap();
+
+        let store = index_temp(tmp.path());
+        assert!(
+            !store.search("handleRequest", 5).unwrap().matched_ids.is_empty(),
+            "monorepo package source should be indexed even with no root deps"
+        );
+    }
+
+    #[test]
+    fn init_detects_language_per_file_in_mixed_tree() {
+        // The old single-language hint parsed every file as the project language;
+        // per-file detection must parse each by its own extension.
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("lib.rs"), "pub fn rusty_fn() {}\n").unwrap();
+        std::fs::write(tmp.path().join("script.py"), "def pythonic_fn():\n    pass\n").unwrap();
+
+        let store = index_temp(tmp.path());
+        // If either file were parsed as the other's language, its symbol would
+        // not extract — so both hits prove per-file detection.
+        let rust_hit = !store.search("rusty_fn", 5).unwrap().matched_ids.is_empty();
+        let py_hit = !store.search("pythonic_fn", 5).unwrap().matched_ids.is_empty();
+        assert!(rust_hit && py_hit, "both rust and python symbols should index");
     }
 }
