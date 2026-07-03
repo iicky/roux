@@ -68,7 +68,26 @@ impl RouxServer {
         Parameters(args): Parameters<QueryArgs>,
     ) -> Result<CallToolResult, McpError> {
         let store = self.open_store()?;
-        let top = args.top.unwrap_or(5);
+        // Bound `top` so a caller can't request an unreasonable result set.
+        const MAX_TOP: usize = 1000;
+        let top = args.top.unwrap_or(5).clamp(1, MAX_TOP);
+
+        // Validate the source against the index up front so an unknown name
+        // gives an actionable error listing what's available, rather than an
+        // opaque failure deeper in the search.
+        if let Some(src) = args.source.as_deref() {
+            let known = store
+                .list_sources()
+                .map_err(|e| McpError::internal_error(format!("list sources: {e}"), None))?;
+            if !known.iter().any(|s| s.name == src) {
+                let names: Vec<&str> = known.iter().map(|s| s.name.as_str()).collect();
+                return Err(McpError::invalid_params(
+                    format!("unknown source {src:?}; available: [{}]", names.join(", ")),
+                    None,
+                ));
+            }
+        }
+
         let mut queries = vec![args.query];
         if let Some(extra) = args.queries {
             queries.extend(extra);
@@ -151,4 +170,72 @@ pub fn run_stdio(store_path: PathBuf) -> Result<()> {
         service.waiting().await?;
         anyhow::Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph::Node;
+
+    fn server_with_source(name: &str) -> (RouxServer, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db.sqlite");
+        {
+            let store = GraphStore::open(&path).unwrap();
+            let node = Node {
+                id: Node::id_for(name, &format!("{name}::foo")),
+                kind: "function".into(),
+                name: "foo".into(),
+                qualified_name: format!("{name}::foo"),
+                source_name: name.into(),
+                language: "rust".into(),
+                file_path: "lib.rs".into(),
+                start_line: 1,
+                start_col: 0,
+                end_line: 2,
+                visibility: "pub".into(),
+                signature: Some("fn foo()".into()),
+                doc: None,
+                body: "fn foo()".into(),
+                parent_id: None,
+                content_hash: None,
+                line_count: 1,
+                source_url: None,
+                description: None,
+            };
+            store.upsert_source(name, "1.0", "rust", &[node], &[]).unwrap();
+        }
+        (RouxServer::new(path), dir)
+    }
+
+    fn query(source: Option<&str>) -> QueryArgs {
+        QueryArgs {
+            query: "foo".into(),
+            queries: None,
+            top: None,
+            source: source.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn unknown_source_is_rejected() {
+        let (server, _dir) = server_with_source("known");
+        let err = server
+            .roux_query(Parameters(query(Some("nope"))))
+            .expect_err("unknown source should be rejected");
+        assert!(err.message.contains("unknown source"), "got: {}", err.message);
+        assert!(err.message.contains("known"), "should list available: {}", err.message);
+    }
+
+    #[test]
+    fn known_source_is_accepted() {
+        let (server, _dir) = server_with_source("known");
+        assert!(server.roux_query(Parameters(query(Some("known")))).is_ok());
+    }
+
+    #[test]
+    fn no_source_filter_is_accepted() {
+        let (server, _dir) = server_with_source("known");
+        assert!(server.roux_query(Parameters(query(None))).is_ok());
+    }
 }
