@@ -21,6 +21,7 @@ pub fn extract_dir(
     let mut all_nodes = Vec::new();
     let mut all_edges = Vec::new();
 
+    let mut stats = WalkStats::default();
     walk_dir(
         dir,
         dir,
@@ -30,7 +31,14 @@ pub fn extract_dir(
         &mut all_nodes,
         &mut all_edges,
         0,
+        &mut stats,
     )?;
+    if stats.read_errors > 0 || stats.parse_errors > 0 {
+        eprintln!(
+            "  skipped {} unreadable file(s), {} failed to parse",
+            stats.read_errors, stats.parse_errors
+        );
+    }
 
     merge_duplicate_nodes(&mut all_nodes);
 
@@ -171,6 +179,14 @@ fn merge_duplicate_nodes(nodes: &mut Vec<Node>) {
     });
 }
 
+/// Files walk_dir couldn't read or parse, tallied so a partial index is
+/// diagnosable rather than silently incomplete.
+#[derive(Default)]
+struct WalkStats {
+    read_errors: usize,
+    parse_errors: usize,
+}
+
 fn walk_dir(
     dir: &Path,
     base: &Path,
@@ -180,6 +196,7 @@ fn walk_dir(
     nodes: &mut Vec<Node>,
     edges: &mut Vec<Edge>,
     depth: usize,
+    stats: &mut WalkStats,
 ) -> Result<()> {
     if depth > 100 {
         return Ok(());
@@ -224,7 +241,16 @@ fn walk_dir(
                 nodes,
                 edges,
                 depth + 1,
+                stats,
             )?;
+            continue;
+        }
+
+        // Skip oversized files by their on-disk size, before reading the whole
+        // thing into memory. (A file at exactly the limit is kept.)
+        if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0)
+            > crate::settings::get().max_file_bytes as u64
+        {
             continue;
         }
 
@@ -233,11 +259,11 @@ fn walk_dir(
         if matches!(ext, Some("md" | "markdown")) {
             let content = match std::fs::read_to_string(&path) {
                 Ok(c) => c,
-                Err(_) => continue,
+                Err(_) => {
+                    stats.read_errors += 1;
+                    continue;
+                }
             };
-            if content.len() > crate::settings::get().max_file_bytes {
-                continue;
-            }
             let rel_path = path
                 .strip_prefix(base)
                 .unwrap_or(&path)
@@ -263,12 +289,11 @@ fn walk_dir(
 
         let code = match std::fs::read_to_string(&path) {
             Ok(c) => c,
-            Err(_) => continue,
+            Err(_) => {
+                stats.read_errors += 1;
+                continue;
+            }
         };
-
-        if code.len() > crate::settings::get().max_file_bytes {
-            continue;
-        }
 
         let rel_path = path
             .strip_prefix(base)
@@ -297,7 +322,7 @@ fn walk_dir(
             file_lines,
         ));
 
-        let _ = extract_from_source(
+        if let Err(e) = extract_from_source(
             &code,
             ts_lang,
             lang,
@@ -307,7 +332,10 @@ fn walk_dir(
             nodes,
             edges,
             Some(&file_id),
-        );
+        ) {
+            stats.parse_errors += 1;
+            eprintln!("  warning: failed to extract {rel_path}: {e}");
+        }
     }
 
     Ok(())
