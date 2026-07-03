@@ -348,7 +348,7 @@ fn detect_language(path: &Path) -> Option<&'static str> {
         Some("ts" | "tsx") => Some("typescript"),
         Some("js" | "jsx" | "mjs") => Some("javascript"),
         Some("go") => Some("go"),
-        Some("cpp" | "cc" | "cxx" | "c++" | "hpp" | "h") => Some("cpp"),
+        Some("cpp" | "cc" | "cxx" | "c++" | "hpp" | "hh" | "hxx" | "h" | "ino") => Some("cpp"),
         Some("c") => Some("c"),
         Some("sh" | "bash" | "zsh") => Some("bash"),
         Some("java") => Some("java"),
