@@ -7,3 +7,6 @@ CLAUDE.md
 .beads
 .claude
 .roux/
+# Locally-built persona snapshot DBs (baseline-metrics.json is generated from
+# these but the DBs themselves are large and rebuilt by snapshots.yml).
+bench/snapshots/

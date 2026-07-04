@@ -1,0 +1,92 @@
+{
+  "timestamp": 1783208236,
+  "commit": "7be7d473130b8ae08fa0403e4ce6d3029e5eac1a",
+  "personas": [
+    {
+      "name": "rust-cli (ripgrep)",
+      "slug": "ripgrep",
+      "language": "rust",
+      "metrics": {
+        "h1": 0.375,
+        "h5": 0.5,
+        "h10": 0.75,
+        "mrr": 0.4708333333333333,
+        "agent_h1": 0.75,
+        "agent_mrr": 0.875,
+        "dev_h1": 0.0,
+        "dev_mrr": 0.06666666666666667
+      }
+    },
+    {
+      "name": "data-scientist (pandas)",
+      "slug": "pandas",
+      "language": "python",
+      "metrics": {
+        "h1": 0.875,
+        "h5": 1.0,
+        "h10": 1.0,
+        "mrr": 0.90625,
+        "agent_h1": 0.75,
+        "agent_mrr": 0.8125,
+        "dev_h1": 1.0,
+        "dev_mrr": 1.0
+      }
+    },
+    {
+      "name": "js-frontend (remix)",
+      "slug": "remix",
+      "language": "typescript",
+      "metrics": {
+        "h1": 0.375,
+        "h5": 1.0,
+        "h10": 1.0,
+        "mrr": 0.5666666666666667,
+        "agent_h1": 0.5,
+        "agent_mrr": 0.6875,
+        "dev_h1": 0.25,
+        "dev_mrr": 0.4458333333333333
+      }
+    },
+    {
+      "name": "go-backend (gin)",
+      "slug": "gin",
+      "language": "go",
+      "metrics": {
+        "h1": 0.75,
+        "h5": 0.875,
+        "h10": 1.0,
+        "mrr": 0.8072916666666666,
+        "agent_h1": 1.0,
+        "agent_mrr": 1.0,
+        "dev_h1": 0.5,
+        "dev_mrr": 0.6145833333333333
+      }
+    },
+    {
+      "name": "firmware-cpp (Marlin)",
+      "slug": "Marlin",
+      "language": "cpp",
+      "metrics": {
+        "h1": 0.5,
+        "h5": 1.0,
+        "h10": 1.0,
+        "mrr": 0.65,
+        "agent_h1": 0.75,
+        "agent_mrr": 0.875,
+        "dev_h1": 0.25,
+        "dev_mrr": 0.425
+      }
+    }
+  ],
+  "aggregate": {
+    "count": 5,
+    "h1": 0.575,
+    "h5": 0.875,
+    "h10": 0.95,
+    "mrr": 0.6802083333333333,
+    "agent_h1": 0.75,
+    "agent_mrr": 0.85,
+    "dev_h1": 0.4,
+    "dev_mrr": 0.5104166666666666
+  }
+}
