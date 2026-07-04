@@ -28,7 +28,10 @@ impl GraphStore {
         let conn = Connection::open(path)
             .with_context(|| format!("opening database at {}", path.display()))?;
 
-        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+        // busy_timeout so concurrent writers (two `roux add`/`init`, or the MCP
+        // server + a CLI call) wait for the lock instead of failing immediately
+        // with SQLITE_BUSY.
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")?;
 
         let store = Self { conn };
         store.migrate()?;
@@ -201,10 +204,8 @@ impl GraphStore {
             params![source_name, source_version, language, now()],
         )?;
 
-        // Remove old data for this source. FTS5 deletes filtered on an
-        // UNINDEXED column (`id`) don't reliably remove rows when the table
-        // already contains entries for those ids, so route FTS deletion
-        // through rowid — which is always indexed.
+        // Remove old data for this source. See delete_fts_by_ids for why FTS
+        // deletion is batched.
         {
             let ids: Vec<String> = {
                 let mut stmt = tx.prepare("SELECT id FROM nodes WHERE source_name = ?1")?;
@@ -825,14 +826,25 @@ fn now() -> i64 {
         .as_secs() as i64
 }
 
-/// Delete every fts_nodes row whose id is in `ids`. (Diagnostic B: tx.execute,
-/// matching the pre-fix code.)
+/// Delete every fts_nodes row whose id is in `ids`.
+///
+/// `id` is an UNINDEXED FTS5 column, so `WHERE id = ?` is a full scan of the FTS
+/// content table. Deleting one id at a time is therefore O(nodes × ids) — on a
+/// re-index of a 100k-node source that's 100k full scans. Batch into `IN`
+/// clauses so each chunk is a single scan (≈O(nodes) total).
 fn delete_fts_by_ids(tx: &rusqlite::Transaction<'_>, ids: &[String]) -> Result<()> {
     if ids.is_empty() {
         return Ok(());
     }
-    for id in ids {
-        tx.execute("DELETE FROM fts_nodes WHERE id = ?1", params![id])?;
+    // Stay under SQLite's 32766 parameter limit.
+    for chunk in ids.chunks(20000) {
+        let placeholders: Vec<String> = (1..=chunk.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!("DELETE FROM fts_nodes WHERE id IN ({})", placeholders.join(", "));
+        let params: Vec<&dyn rusqlite::types::ToSql> = chunk
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
+        tx.execute(&sql, params.as_slice())?;
     }
     Ok(())
 }

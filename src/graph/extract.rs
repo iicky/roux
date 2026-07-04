@@ -1653,14 +1653,43 @@ fn extract_calls_recursive(
 }
 
 /// Resolve unresolved reference edges to actual node IDs.
+///
+/// The old predicate was `s.name == ref_name || s.qualified_name.ends_with("::"+
+/// ref_name)`, scanning every node per edge (O(edges × nodes)). We precompute
+/// two first-wins indexes so the common single-token ref resolves in O(1):
+/// `by_name` (name → first node index) and `by_last_seg` (last `::` segment of
+/// the qualified name → first node index). For a single-token ref, matching the
+/// last segment is equivalent to the `ends_with("::"+ref)` suffix test. Picking
+/// the smaller of the two indexes preserves the "first node in order" tie-break
+/// of the original `find()`. Rare multi-segment refs fall back to a scan.
 fn resolve_references(edges: &mut Vec<Edge>, nodes: &[Node]) {
+    use std::collections::HashMap;
+    let mut by_name: HashMap<&str, usize> = HashMap::new();
+    let mut by_last_seg: HashMap<&str, usize> = HashMap::new();
+    for (i, n) in nodes.iter().enumerate() {
+        by_name.entry(n.name.as_str()).or_insert(i);
+        let seg = n.qualified_name.rsplit("::").next().unwrap_or(&n.qualified_name);
+        by_last_seg.entry(seg).or_insert(i);
+    }
+
     for edge in edges.iter_mut() {
         if let Some(ref_name) = edge.to_id.strip_prefix("__unresolved::") {
-            // Try to find a matching node by name
-            if let Some(target) = nodes.iter().find(|s| {
-                s.name == ref_name || s.qualified_name.ends_with(&format!("::{ref_name}"))
-            }) {
-                edge.to_id = target.id.clone();
+            let idx = if ref_name.contains("::") {
+                // Multi-segment ref: preserve exact suffix semantics via a scan.
+                let needle = format!("::{ref_name}");
+                by_name
+                    .get(ref_name)
+                    .copied()
+                    .or_else(|| nodes.iter().position(|s| s.qualified_name.ends_with(&needle)))
+            } else {
+                match (by_name.get(ref_name), by_last_seg.get(ref_name)) {
+                    (Some(&a), Some(&b)) => Some(a.min(b)),
+                    (Some(&a), None) | (None, Some(&a)) => Some(a),
+                    (None, None) => None,
+                }
+            };
+            if let Some(i) = idx {
+                edge.to_id = nodes[i].id.clone();
             }
         }
     }
