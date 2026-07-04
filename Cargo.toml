@@ -59,6 +59,8 @@ petgraph = "0.8"
 # MCP server (used by `roux serve`). Defaults pull macros + server; transport-io adds stdio.
 rmcp = { version = "1", features = ["transport-io"] }
 tokio = { version = "1", features = ["rt", "macros", "io-std", "sync"] }
+# Decode the query segment of `roux://skeleton/{query}` resource URIs.
+percent-encoding = "2"
 
 [dev-dependencies]
 tempfile = "3"

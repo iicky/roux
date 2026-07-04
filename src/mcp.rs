@@ -5,16 +5,26 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
+use percent_encoding::percent_decode_str;
 use rmcp::{
-    ErrorData as McpError, ServerHandler, ServiceExt,
+    ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{CallToolResult, Content, Implementation, ServerCapabilities, ServerInfo},
-    schemars, tool, tool_handler, tool_router,
+    model::{
+        Annotated, CallToolResult, Content, Implementation, ListResourceTemplatesResult,
+        PaginatedRequestParams, RawResourceTemplate, ReadResourceRequestParams, ReadResourceResult,
+        ResourceContents, ServerCapabilities, ServerInfo,
+    },
+    schemars,
+    service::RequestContext,
+    tool, tool_handler, tool_router,
     transport::stdio,
 };
 use serde::Deserialize;
 
-use crate::cli::{check_source_status, list_rows_to_json, search_result_to_json};
+use crate::cli::{
+    check_source_status, list_rows_to_json, render_compact, render_skeleton,
+    search_result_to_json,
+};
 use crate::graph::store::GraphStore;
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -38,6 +48,11 @@ pub struct QueryArgs {
     /// Restrict search to a single indexed source (use roux_list to see names).
     #[serde(default)]
     pub source: Option<String>,
+    /// Return a compact text block (ranked matches with signature, one-line doc,
+    /// and neighbor names under a token budget) instead of the full JSON graph.
+    /// Much smaller — prefer it unless you need ids/scores/edges. Defaults false.
+    #[serde(default)]
+    pub compact: Option<bool>,
 }
 
 #[derive(Clone)]
@@ -61,7 +76,7 @@ impl RouxServer {
     }
 
     #[tool(
-        description = "Search the roux code index. Returns matched symbols plus their graph neighborhood (callers, callees, parent types) — typically more useful than a flat list. Prefer this over grep for code-exploration questions; results carry file path, line, signature, and rendered doc.\n\nRanking is BM25 over symbol names, signatures, and qualified paths, so queries that share tokens with the symbol name work best. For conceptual or behavioral questions (\"how does X work\", \"where is Y handled\") the code rarely uses the user's words — so reformulate into the jargon and identifiers the code likely uses and pass them together in the `queries` array (RRF-fused in one call). E.g. for \"limit sudden jolts when speed changes\" pass queries=[\"jerk limit\", \"junction deviation\", \"M205\"]. Measured to recover behavioral hits a single literal query misses. Each call is cheap; reformulating beats one broad query."
+        description = "Search the roux code index. Returns matched symbols plus their graph neighborhood (callers, callees, parent types) — typically more useful than a flat list. Prefer this over grep for code-exploration questions; results carry file path, line, signature, and rendered doc.\n\nRanking is BM25 over symbol names, signatures, and qualified paths, so queries that share tokens with the symbol name work best. For conceptual or behavioral questions (\"how does X work\", \"where is Y handled\") the code rarely uses the user's words — so reformulate into the jargon and identifiers the code likely uses and pass them together in the `queries` array (RRF-fused in one call). E.g. for \"limit sudden jolts when speed changes\" pass queries=[\"jerk limit\", \"junction deviation\", \"M205\"]. Measured to recover behavioral hits a single literal query misses. Each call is cheap; reformulating beats one broad query.\n\nPass compact=true to get a small text block (ranked matches with signature, one-line doc, and neighbor names under a token budget) instead of the full JSON graph — prefer it to keep context small unless you specifically need ids, scores, or edges."
     )]
     fn roux_query(
         &self,
@@ -95,6 +110,11 @@ impl RouxServer {
         let result = store
             .search_multi(&queries, top, args.source.as_deref())
             .map_err(|e| McpError::internal_error(format!("search: {e}"), None))?;
+        if args.compact.unwrap_or(false) {
+            return Ok(CallToolResult::success(vec![Content::text(
+                render_compact(&result),
+            )]));
+        }
         let json = search_result_to_json(&result);
         let body = serde_json::to_string_pretty(&json)
             .map_err(|e| McpError::internal_error(format!("serialize: {e}"), None))?;
@@ -142,20 +162,112 @@ impl RouxServer {
     }
 }
 
+/// URI prefix for the query-scoped skeleton resource template. A read of
+/// `roux://skeleton/<url-encoded query>` returns the compact ranked skeleton
+/// block — the same bytes as `roux query --format skeleton`.
+const SKELETON_URI_PREFIX: &str = "roux://skeleton/";
+
+/// Hits rendered into a skeleton read. Larger than the interactive tool default
+/// (this is a one-shot prefix injected once and prompt-cached, so a fuller map
+/// costs almost nothing on subsequent turns) but fixed, so the block is stable
+/// per query and caches cleanly.
+const SKELETON_TOP: usize = 10;
+
 #[tool_handler]
 impl ServerHandler for RouxServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::from_build_env())
-            .with_instructions(
-                "Graph-native code retrieval for AI agents. Use roux_query for symbol search; \
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
+        )
+        .with_server_info(Implementation::from_build_env())
+        .with_instructions(
+            "Graph-native code retrieval for AI agents. Use roux_query for symbol search; \
              results include 2-hop graph neighborhood (callers, callees, parent types). \
              roux_list shows what's indexed; roux_status reports index health.\n\n\
              Ranking is name-biased BM25 — for behavioral questions (\"how does X work\"), \
              follow up with 2–3 likely symbol-name variants in separate calls rather than \
-             one verbose query."
+             one verbose query.\n\n\
+             To spend fewer tokens, read the `roux://skeleton/{query}` resource ONCE at the \
+             start of a task instead of calling roux_query every turn: it returns a compact \
+             ranked skeleton you can keep in context and prompt-cache, avoiding the per-turn \
+             tool-schema and extra-turn cost of live calls."
+                .to_string(),
+        )
+    }
+
+    /// Advertise the one-shot skeleton as a resource template. Clients read it
+    /// once and inject the block into the prompt prefix (prompt-cacheable),
+    /// rather than paying the per-turn cost of a live `roux_query` tool call.
+    async fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, McpError> {
+        let tmpl = RawResourceTemplate {
+            uri_template: format!("{SKELETON_URI_PREFIX}{{query}}"),
+            name: "roux skeleton".to_string(),
+            title: Some("roux ranked code skeleton".to_string()),
+            description: Some(
+                "One-shot code-context preprocessor: reads a compact ranked skeleton \
+                 (qualified name, file:line, signature, one-line doc) of the symbols most \
+                 relevant to {query}. Read once up front and keep in context instead of \
+                 calling roux_query per turn — the block is prompt-cacheable and holds \
+                 agent input tokens below a no-tool baseline. {query} is a natural-language \
+                 or keyword search string, URL-encoded."
                     .to_string(),
+            ),
+            mime_type: Some("text/plain".to_string()),
+            icons: None,
+        };
+        Ok(ListResourceTemplatesResult::with_all_items(vec![
+            Annotated::new(tmpl, None),
+        ]))
+    }
+
+    /// Render the skeleton for `roux://skeleton/<url-encoded query>`. Reuses the
+    /// exact search + `render_skeleton` path behind `roux query --format
+    /// skeleton`, so the resource bytes match the measured context-prep arm.
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, McpError> {
+        let block = self.render_skeleton_uri(&request.uri)?;
+        Ok(ReadResourceResult::new(vec![ResourceContents::text(
+            block,
+            request.uri,
+        )]))
+    }
+}
+
+impl RouxServer {
+    /// Core of `read_resource`, split out so it is testable without fabricating
+    /// a `RequestContext`: parse `roux://skeleton/<url-encoded query>` and render
+    /// the skeleton block for that query.
+    fn render_skeleton_uri(&self, uri: &str) -> Result<String, McpError> {
+        let raw = uri.strip_prefix(SKELETON_URI_PREFIX).ok_or_else(|| {
+            McpError::resource_not_found(
+                format!("unknown resource {uri:?}; expected {SKELETON_URI_PREFIX}{{query}}"),
+                None,
             )
+        })?;
+        let query = percent_decode_str(raw).decode_utf8_lossy();
+        let query = query.trim();
+        if query.is_empty() {
+            return Err(McpError::invalid_params(
+                format!("empty query in resource URI {uri:?}"),
+                None,
+            ));
+        }
+
+        let store = self.open_store()?;
+        let result = store
+            .search_scoped(query, SKELETON_TOP, None)
+            .map_err(|e| McpError::internal_error(format!("search: {e}"), None))?;
+        Ok(render_skeleton(&result))
     }
 }
 
@@ -214,6 +326,7 @@ mod tests {
             queries: None,
             top: None,
             source: source.map(str::to_string),
+            compact: None,
         }
     }
 
@@ -237,5 +350,35 @@ mod tests {
     fn no_source_filter_is_accepted() {
         let (server, _dir) = server_with_source("known");
         assert!(server.roux_query(Parameters(query(None))).is_ok());
+    }
+
+    #[test]
+    fn skeleton_resource_renders_matching_symbol() {
+        let (server, _dir) = server_with_source("known");
+        // Percent-encoded space to exercise URL decoding.
+        let block = server
+            .render_skeleton_uri("roux://skeleton/foo%20bar")
+            .expect("skeleton read should succeed");
+        // render_skeleton emits `- <qualified_name> (file:line)`.
+        assert!(block.contains("known::foo"), "got: {block}");
+        assert!(block.contains("lib.rs:1"), "got: {block}");
+    }
+
+    #[test]
+    fn skeleton_resource_rejects_unknown_uri() {
+        let (server, _dir) = server_with_source("known");
+        let err = server
+            .render_skeleton_uri("roux://bogus/foo")
+            .expect_err("non-skeleton URI should be rejected");
+        assert!(err.message.contains("unknown resource"), "got: {}", err.message);
+    }
+
+    #[test]
+    fn skeleton_resource_rejects_empty_query() {
+        let (server, _dir) = server_with_source("known");
+        let err = server
+            .render_skeleton_uri("roux://skeleton/%20")
+            .expect_err("empty query should be rejected");
+        assert!(err.message.contains("empty query"), "got: {}", err.message);
     }
 }

@@ -1361,6 +1361,7 @@ dependencies = [
  "clap",
  "dirs",
  "flate2",
+ "percent-encoding",
  "petgraph",
  "reqwest",
  "rmcp",

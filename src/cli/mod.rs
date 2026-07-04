@@ -70,7 +70,8 @@ enum Command {
         /// Restrict search to a named source
         #[arg(long)]
         source: Option<String>,
-        /// Output format: text, json, or skeleton (compact prompt-prefix block)
+        /// Output format: text, json, skeleton (one-shot prompt-prefix block),
+        /// or compact (budgeted ranked matches + neighbor names for live use)
         #[arg(long, default_value = "text")]
         format: String,
         /// Search local index only (mutually exclusive with --global)
@@ -675,6 +676,12 @@ fn cmd_query(
             // run-to-run so it caches in the prompt prefix.
             print!("{}", render_skeleton(&result));
         }
+        "compact" => {
+            // Progressive-disclosure block for the live query tool: ranked
+            // matched symbols + their neighbor names, under a token budget,
+            // with an 'N more' marker. A fraction of the JSON payload.
+            print!("{}", render_compact(&result));
+        }
         _ => {
             // Print matched symbols first, then neighborhood
             for sym in &result.nodes {
@@ -755,6 +762,129 @@ pub fn render_skeleton(result: &crate::graph::store::SearchResult) -> String {
         }
     }
     out
+}
+
+/// Char budget for a `--format compact` block. Entries are appended until the
+/// next one would exceed this; the rest collapse into an `(… N more)` marker.
+/// ~2000 chars ≈ 500 tokens — a live-tool payload small enough to not dominate
+/// context, while still carrying the top matches and their graph neighborhood.
+const COMPACT_BUDGET_CHARS: usize = 2000;
+const COMPACT_DOC_MAX: usize = 120;
+const COMPACT_NEAR_MAX: usize = 6;
+
+/// Render a search result as a `--format compact` block for the live query
+/// tool. Progressive disclosure: only the ranked *matched* symbols are primary
+/// entries (signature + one-line doc); each symbol's graph neighborhood is
+/// summarized as a `near:` line of NAMES — no bodies, ids, scores, or edge
+/// arrays. A hard character budget caps the block; matches that don't fit
+/// collapse into a trailing `(… N more)` marker so the agent knows to refine or
+/// fetch bodies. This is a fraction of the `--format json` payload.
+pub fn render_compact(result: &crate::graph::store::SearchResult) -> String {
+    render_compact_budgeted(result, COMPACT_BUDGET_CHARS)
+}
+
+fn render_compact_budgeted(
+    result: &crate::graph::store::SearchResult,
+    budget: usize,
+) -> String {
+    use std::collections::HashSet;
+
+    // Resolve neighbor ids to short names; only neighbors present in the result
+    // set are nameable from here (others are trimmed by the search limit).
+    let name_of: std::collections::HashMap<&str, &str> = result
+        .nodes
+        .iter()
+        .map(|n| (n.id.as_str(), n.name.as_str()))
+        .collect();
+    let matched: HashSet<&str> = result.matched_ids.iter().map(String::as_str).collect();
+
+    let mut out = String::new();
+    let mut rendered = 0usize;
+
+    for node in result
+        .nodes
+        .iter()
+        .filter(|n| matched.contains(n.id.as_str()))
+    {
+        let mut entry = format!(
+            "● {} ({}:{})\n",
+            node.qualified_name, node.file_path, node.start_line
+        );
+        if let Some(sig) = node
+            .signature
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            entry.push_str(&format!("    {sig}\n"));
+        }
+        if let Some(doc) = node.doc.as_deref() {
+            let flat = doc.split_whitespace().collect::<Vec<_>>().join(" ");
+            if !flat.is_empty() {
+                let d = if flat.chars().count() > COMPACT_DOC_MAX {
+                    let cut: String = flat.chars().take(COMPACT_DOC_MAX).collect();
+                    format!("{cut}…")
+                } else {
+                    flat
+                };
+                entry.push_str(&format!("    // {d}\n"));
+            }
+        }
+        let near = compact_neighbor_names(node, result, &name_of);
+        if !near.is_empty() {
+            entry.push_str(&format!("    near: {}\n", near.join(", ")));
+        }
+
+        // Always emit at least one entry, then stop once the budget is hit so
+        // the block stays bounded regardless of result size.
+        if rendered > 0 && out.len() + entry.len() > budget {
+            break;
+        }
+        out.push_str(&entry);
+        rendered += 1;
+    }
+
+    let remaining = result.matched_ids.len().saturating_sub(rendered);
+    if remaining > 0 {
+        out.push_str(&format!(
+            "(… {remaining} more match{} — refine the query or request full bodies)\n",
+            if remaining == 1 { "" } else { "es" }
+        ));
+    }
+    out
+}
+
+/// Names of a node's graph neighbors (edge peers in either direction) that are
+/// present in the result set, deduped and capped. Names only — the compact
+/// format deliberately omits neighbor bodies and edge kinds.
+fn compact_neighbor_names<'a>(
+    node: &crate::graph::Node,
+    result: &'a crate::graph::store::SearchResult,
+    name_of: &std::collections::HashMap<&'a str, &'a str>,
+) -> Vec<&'a str> {
+    use std::collections::HashSet;
+    let mut names = Vec::new();
+    let mut seen: HashSet<&str> = HashSet::new();
+    seen.insert(node.id.as_str());
+    for edge in &result.edges {
+        let peer = if edge.from_id == node.id {
+            Some(edge.to_id.as_str())
+        } else if edge.to_id == node.id {
+            Some(edge.from_id.as_str())
+        } else {
+            None
+        };
+        if let Some(pid) = peer
+            && seen.insert(pid)
+            && let Some(name) = name_of.get(pid)
+        {
+            names.push(*name);
+            if names.len() >= COMPACT_NEAR_MAX {
+                break;
+            }
+        }
+    }
+    names
 }
 
 /// Staleness verdict for an indexed source.
@@ -1386,6 +1516,101 @@ mod tests {
         assert!(matches_glob("foo*bar", "foo-xyz-bar"));
         assert!(!matches_glob("foo*bar", "foo-xyz"));
         assert!(!matches_glob("foo*bar", "bar-foo"));
+    }
+
+    // ─── compact format ────────────────────────────────────────────────
+    use crate::graph::store::SearchResult;
+    use crate::graph::{Edge, Node};
+
+    fn node(name: &str, sig: Option<&str>, doc: Option<&str>) -> Node {
+        Node {
+            id: name.to_string(), // use the name as id for readable test edges
+            kind: "function".into(),
+            name: name.into(),
+            qualified_name: format!("demo::{name}"),
+            source_name: "demo".into(),
+            language: "rust".into(),
+            file_path: "lib.rs".into(),
+            start_line: 10,
+            start_col: 0,
+            end_line: 20,
+            visibility: "pub".into(),
+            signature: sig.map(str::to_string),
+            doc: doc.map(str::to_string),
+            body: String::new(),
+            parent_id: None,
+            content_hash: None,
+            line_count: 10,
+            source_url: None,
+            description: None,
+        }
+    }
+
+    #[test]
+    fn compact_renders_matched_with_neighbor_names() {
+        let result = SearchResult {
+            matched_ids: vec!["build".into()],
+            nodes: vec![
+                node("build", Some("pub fn build() -> Searcher"), Some("Build a searcher.")),
+                node("Searcher", None, None), // neighbor, not matched
+            ],
+            edges: vec![Edge {
+                from_id: "build".into(),
+                to_id: "Searcher".into(),
+                kind: "type_ref".into(),
+            }],
+            scores: Default::default(),
+        };
+        let out = render_compact(&result);
+        assert!(out.contains("● demo::build (lib.rs:10)"), "got:\n{out}");
+        assert!(out.contains("pub fn build() -> Searcher"), "got:\n{out}");
+        assert!(out.contains("// Build a searcher."), "got:\n{out}");
+        // neighbor appears as a NAME, not its own primary entry
+        assert!(out.contains("near: Searcher"), "got:\n{out}");
+        assert!(!out.contains("● demo::Searcher"), "neighbor should not be a primary entry:\n{out}");
+    }
+
+    #[test]
+    fn compact_is_a_fraction_of_json() {
+        let result = SearchResult {
+            matched_ids: vec!["build".into()],
+            nodes: vec![
+                node("build", Some("pub fn build() -> Searcher"), Some("Build a searcher.")),
+                node("Searcher", Some("pub struct Searcher"), Some("The searcher.")),
+            ],
+            edges: vec![Edge {
+                from_id: "build".into(),
+                to_id: "Searcher".into(),
+                kind: "type_ref".into(),
+            }],
+            scores: Default::default(),
+        };
+        let compact = render_compact(&result);
+        let json = serde_json::to_string_pretty(&search_result_to_json(&result)).unwrap();
+        assert!(
+            compact.len() * 2 < json.len(),
+            "compact ({}) should be far smaller than json ({})",
+            compact.len(),
+            json.len()
+        );
+    }
+
+    #[test]
+    fn compact_budget_truncates_with_more_marker() {
+        // Two matches, budget too small for both → one entry + "1 more" marker.
+        let result = SearchResult {
+            matched_ids: vec!["alpha".into(), "beta".into()],
+            nodes: vec![
+                node("alpha", Some("pub fn alpha()"), Some("First.")),
+                node("beta", Some("pub fn beta()"), Some("Second.")),
+            ],
+            edges: vec![],
+            scores: Default::default(),
+        };
+        let out = render_compact_budgeted(&result, 40);
+        assert!(out.contains("● demo::alpha"), "got:\n{out}");
+        assert!(!out.contains("● demo::beta"), "beta should be budgeted out:\n{out}");
+        assert!(out.contains("1 more match "), "got:\n{out}");
     }
 
     fn make_record(
