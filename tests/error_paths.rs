@@ -69,6 +69,23 @@ fn store_search_only_punctuation_does_not_panic() {
 }
 
 #[test]
+fn store_search_unicode_query_does_not_panic() {
+    // Query-side stemming strips a doubled trailing consonant before "ed".
+    // The doubled-char check is by `char` but must not slice by byte, or a
+    // multibyte trailing char panics ("not a char boundary"). Regression for
+    // the `roux query "ééed"` crash.
+    let store = GraphStore::open_in_memory().unwrap();
+    for q in ["ééed", "naïveed", "über", "ﬀed", "日本ed", "café"] {
+        let result = store.search(q, 10);
+        assert!(
+            result.is_ok(),
+            "search({q:?}) should not panic and should be Ok — got {:?}",
+            result.err()
+        );
+    }
+}
+
+#[test]
 fn store_search_fts_special_chars_does_not_panic() {
     // FTS5 has its own query syntax (MATCH, AND, OR, NEAR, "...", phrase
     // queries). Raw user input must be escaped or the parser will reject it.

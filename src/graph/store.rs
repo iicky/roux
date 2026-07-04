@@ -942,7 +942,10 @@ pub(crate) fn stem_variants(t: &str) -> Vec<String> {
         // "mapped" → "mapp" → strip the doubled consonant → "map"
         let chars: Vec<char> = b.chars().collect();
         if chars.len() >= 2 && chars[chars.len() - 1] == chars[chars.len() - 2] {
-            push(&mut out, b[..b.len() - 1].to_string());
+            // Rebuild from chars, not a byte slice: b.len() is bytes, so
+            // b[..b.len()-1] panics when the trailing char is multibyte.
+            let stripped: String = chars[..chars.len() - 1].iter().collect();
+            push(&mut out, stripped);
         } else {
             push(&mut out, b.to_string());
         }
