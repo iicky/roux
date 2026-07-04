@@ -252,15 +252,39 @@ def roux_context(pq: PQ, bodies: bool = False, neighbors: bool = False,
     return "\n".join(lines) if lines else "(roux found no symbols)"
 
 
+def roux_format_cli(pq: PQ, fmt: str, top: int = 5) -> str:
+    """Render context via a SHIPPED `roux query --format <fmt>` primitive
+    verbatim (fmt = skeleton | compact), so the measured block is byte-for-byte
+    what production emits — the skeleton bytes match the `roux://skeleton/{query}`
+    MCP resource; the compact bytes match `roux_query(compact=true)` — instead of
+    a Python re-implementation that can silently drift from it."""
+    try:
+        proc = subprocess.run(
+            [str(ROUX_BIN), "query", pq.query, "--local",
+             "--format", fmt, "--top", str(top)],
+            cwd=str(pq.path), capture_output=True, text=True, timeout=60, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "(roux returned no usable context)"
+    out = proc.stdout.strip()
+    return out if out else "(roux found no symbols)"
+
+
 def build_prompt(arm: str, pq: PQ) -> str:
-    prep = {
-        "context-prep": dict(),
+    # Arms that inject a shipped roux output block as the prompt prefix.
+    cli_fmt = {"context-prep": "skeleton", "context-prep-compact": "compact"}
+    if arm in cli_fmt:
+        ctx = roux_format_cli(pq, cli_fmt[arm])
+        return PROMPT_TEMPLATE_CONTEXT_PREP.format(context=ctx, query=pq.query)
+    # Layered variants need fields the skeleton format omits (bodies/neighbors/
+    # scores), so they stay on the JSON renderer.
+    layered = {
         "context-prep-bodies": dict(bodies=True),
         "context-prep-neighbors": dict(neighbors=True),
         "context-prep-scores": dict(scores=True),
     }
-    if arm in prep:
-        ctx = roux_context(pq, **prep[arm])
+    if arm in layered:
+        ctx = roux_context(pq, **layered[arm])
         return PROMPT_TEMPLATE_CONTEXT_PREP.format(context=ctx, query=pq.query)
     tmpl = PROMPT_TEMPLATE_ROUX_FIRST if arm == "roux-first" else PROMPT_TEMPLATE
     return tmpl.format(query=pq.query)
