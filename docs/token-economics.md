@@ -30,6 +30,11 @@ Arms:
 - **context-prep** — roux runs *once* up front; `roux query --format skeleton`
   output is injected statically into the prompt prefix. No live MCP. (This is the
   roux-iyi reframe.)
+- **context-prep-compact** — same injection, but `roux query --format compact`:
+  ranked matched symbols with signature, one-line doc, and neighbor NAMES under a
+  token budget with an `(… N more)` marker. Measured ~22% of the JSON payload's
+  bytes on ripgrep. (This is the roux-ufyq mode, also served by the live tool as
+  `roux_query(compact=true)`.)
 - **context-prep-bodies / -neighbors / -scores / -compressed** — variants of the
   injected block (full source bodies, graph neighbors, PPR scores, compressed).
 
@@ -71,7 +76,10 @@ don't read it as a point estimate. Success moved by at most one query (6/8↔7/8
 which is within noise; the honest read is "no success penalty," not "improved."
 This clears the roux-iyi acceptance bar (context-prep input cost below baseline,
 success not hurt). The skeleton primitive shipped as
-`roux query --format skeleton` (commit 9a226f0).
+`roux query --format skeleton` (commit 9a226f0), and is also exposed over MCP as
+the `roux://skeleton/{query}` **resource** (not a tool) — clients read it once at
+task start and inject it into the prompt prefix, so it prompt-caches and avoids
+the per-turn tool-schema tax that made live MCP roux a net cost (Observation 1).
 
 ## Observation 3 — richer injection didn't beat plain skeleton
 
@@ -106,6 +114,17 @@ scores are tested and not pursued.
 # strong-agent context-prep vs baseline (the headline)
 ARMS=no-roux,context-prep ONLY_PERSONAS=ripgrep python3 bench/token_economics.py
 python3 bench/aggregate_token_economics.py bench/results/<latest>.jsonl
+
+# second-repo run to break the single-repo caveat (roux-l5rf / roux-uqus)
+ARMS=no-roux,with-roux,context-prep,context-prep-compact,context-prep-bodies,context-prep-scores \
+  ONLY_PERSONAS=ripgrep,pandas ONLY_AGENTS=codex,vibe \
+  python3 bench/token_economics.py
 ```
+
+The `context-prep` arm injects `roux query --format skeleton` verbatim (the same
+bytes the `roux://skeleton/{query}` MCP resource serves) and `context-prep-compact`
+injects `roux query --format compact` (the bytes `roux_query(compact=true)`
+returns), so both measured blocks match production rather than a Python
+re-implementation.
 
 Raw runs cited: `bench/results/token_economics_2026062{1T2004,2T1446,2T1803,2T1958}.jsonl`.
