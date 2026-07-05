@@ -123,7 +123,15 @@ pub fn rank_subgraph_with(
             let mut s: Vec<(String, f64)> = nodes
                 .iter()
                 .map(|n| {
-                    let bm25 = bm25_scores.get(&n.id).copied().unwrap_or(0.0);
+                    // Floor BM25 at ε: graph neighbors (no lexical hit) and the
+                    // worst BM25 candidate both normalize to 0, and 0^α zeroes
+                    // the product regardless of PPR. With the floor, PPR ranks
+                    // the lexically weak/absent nodes (roux-u4wz).
+                    let bm25 = bm25_scores
+                        .get(&n.id)
+                        .copied()
+                        .unwrap_or(0.0)
+                        .max(cfg.fusion_bm25_floor);
                     let ppr = ppr_normalized.get(&n.id).copied().unwrap_or(0.0);
                     let combined = bm25.powf(alpha) * ppr.powf(beta);
                     (n.id.clone(), combined)
@@ -179,7 +187,7 @@ pub fn rank_subgraph_with(
         .iter()
         .map(|n| (n.id.as_str(), n.kind.as_str()))
         .collect();
-    let scored: Vec<(String, f64)> = scored
+    let mut scored: Vec<(String, f64)> = scored
         .into_iter()
         .map(|(id, score)| {
             let multiplier = match kind_map.get(id.as_str()).copied().unwrap_or("") {
@@ -190,6 +198,10 @@ pub fn rank_subgraph_with(
             (id, score * multiplier)
         })
         .collect();
+    // Re-sort after demotion: multipliers must affect top-k *selection*, not
+    // just the displayed score. Without this, a file node that out-scores a
+    // code symbol on fusion keeps its top-k slot despite the demotion below.
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     // Take top-k
     let seed_set: HashSet<&str> = seed_ids.iter().map(|s| s.as_str()).collect();

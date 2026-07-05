@@ -36,6 +36,12 @@ pub struct Settings {
     pub fusion_bm25_exp: f64,
     /// ScoreFusion PPR exponent.
     pub fusion_ppr_exp: f64,
+    /// Floor applied to BM25 before ScoreFusion. Graph-expansion neighbors have
+    /// no BM25 score (0), and the worst BM25 candidate min-max-normalizes to 0,
+    /// so `bm25^α × ppr^β` would zero them out regardless of PPR — neighbors
+    /// could never be promoted. Flooring BM25 at ε lets PPR rank the lexically
+    /// weak/absent nodes (see roux-u4wz).
+    pub fusion_bm25_floor: f64,
     /// Reciprocal-rank-fusion constant `k` in `1/(k + rank)`.
     pub rrf_k: f64,
     /// Score multiplier demoting `file` nodes below code symbols.
@@ -65,6 +71,7 @@ impl Default for Settings {
             ppr_iterations: 20,
             fusion_bm25_exp: 0.7,
             fusion_ppr_exp: 0.3,
+            fusion_bm25_floor: 0.05,
             rrf_k: 60.0,
             kind_weight_file: 0.5,
             kind_weight_doc: 0.7,
@@ -92,6 +99,7 @@ impl Settings {
             ppr_iterations: parse_or(&get, "ROUX_PPR_ITERATIONS", d.ppr_iterations),
             fusion_bm25_exp: parse_or(&get, "ROUX_FUSION_BM25_EXP", d.fusion_bm25_exp),
             fusion_ppr_exp: parse_or(&get, "ROUX_FUSION_PPR_EXP", d.fusion_ppr_exp),
+            fusion_bm25_floor: parse_or(&get, "ROUX_FUSION_BM25_FLOOR", d.fusion_bm25_floor),
             rrf_k: parse_or(&get, "ROUX_RRF_K", d.rrf_k),
             kind_weight_file: parse_or(&get, "ROUX_KIND_WEIGHT_FILE", d.kind_weight_file),
             kind_weight_doc: parse_or(&get, "ROUX_KIND_WEIGHT_DOC", d.kind_weight_doc),
@@ -139,6 +147,7 @@ mod tests {
         assert_eq!(d.ppr_iterations, 20);
         assert_eq!(d.fusion_bm25_exp, 0.7);
         assert_eq!(d.fusion_ppr_exp, 0.3);
+        assert_eq!(d.fusion_bm25_floor, 0.05);
         assert_eq!(d.rrf_k, 60.0);
         assert_eq!(d.max_node_degree, 128);
         assert_eq!(d.max_subgraph_nodes, 4000);
