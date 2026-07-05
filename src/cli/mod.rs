@@ -353,6 +353,7 @@ fn index_project(
             &file_graph.nodes,
             &file_graph.edges,
         )?;
+        store.replace_files(project_name, &file_graph.files)?;
         let fp = crate::fingerprint::fingerprint_dir(dir).ok();
         store.set_source_meta(project_name, "path", dir.to_str(), fp.as_deref())?;
         eprintln!(
@@ -603,6 +604,7 @@ fn cmd_add(
         &file_graph.nodes,
         &file_graph.edges,
     )?;
+    store.replace_files(&source.name, &file_graph.files)?;
     store.set_source_meta(
         &source.name,
         source_kind,

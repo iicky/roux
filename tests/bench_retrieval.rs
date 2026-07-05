@@ -95,7 +95,9 @@ const ROUX_QUERIES: &[QueryCase] = &[
     QueryCase {
         query: "walk directory tree for source files",
         depends_on: QueryDep::SymbolName,
-        expected: &["walk_dir"],
+        // list_source_files (roux-vmdf) is the no-parse manifest walk — a
+        // correct, more specific answer than walk_dir now that both exist.
+        expected: &["walk_dir", "list_source_files"],
     },
     // ─── Additional queries for robustness ──────────────────
     QueryCase {

@@ -183,6 +183,27 @@ impl GraphStore {
             )?;
         }
 
+        if version < 8 {
+            // Per-file manifest (roux-vmdf): lets an incremental refresh compute
+            // the changed-file set (added/modified/deleted) without re-parsing
+            // unchanged files, and lets a query detect staleness vs the working
+            // tree. content_hash is the authoritative change key; mtime is a
+            // cheap pre-filter. Existing indexes gain an empty manifest until
+            // their next `roux add`/`init`.
+            self.conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS files (
+                    source_name  TEXT NOT NULL,
+                    path         TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    mtime        INTEGER,
+                    indexed_at   INTEGER NOT NULL,
+                    PRIMARY KEY (source_name, path)
+                );
+                CREATE INDEX IF NOT EXISTS idx_files_source ON files(source_name);
+                INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '8');",
+            )?;
+        }
+
         Ok(())
     }
 
@@ -729,6 +750,77 @@ impl GraphStore {
         Ok((added, modified, removed))
     }
 
+    /// Replace the per-file manifest for a source (roux-vmdf). Called alongside
+    /// `upsert_source` at index time so a later refresh can compute the
+    /// changed-file set without re-parsing.
+    pub fn replace_files(
+        &self,
+        source_name: &str,
+        files: &[super::extract::FileMeta],
+    ) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM files WHERE source_name = ?1", params![source_name])?;
+        {
+            let now = now();
+            let mut stmt = tx.prepare_cached(
+                "INSERT OR REPLACE INTO files
+                    (source_name, path, content_hash, mtime, indexed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
+            for f in files {
+                stmt.execute(params![source_name, f.path, f.content_hash, f.mtime, now])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The stored manifest for a source as `path -> content_hash`.
+    pub fn stored_files(&self, source_name: &str) -> Result<HashMap<String, String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT path, content_hash FROM files WHERE source_name = ?1")?;
+        let map = stmt
+            .query_map(params![source_name], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<HashMap<_, _>>>()?;
+        Ok(map)
+    }
+
+    /// Compare a freshly-walked file list against the stored manifest, by
+    /// content hash. `current` is typically produced by re-walking the source
+    /// tree (cheap: read + hash, no parse).
+    pub fn diff_files(
+        &self,
+        source_name: &str,
+        current: &[super::extract::FileMeta],
+    ) -> Result<FileDiff> {
+        let stored = self.stored_files(source_name)?;
+        let current_paths: std::collections::HashSet<&str> =
+            current.iter().map(|f| f.path.as_str()).collect();
+
+        let mut added = Vec::new();
+        let mut modified = Vec::new();
+        for f in current {
+            match stored.get(&f.path) {
+                None => added.push(f.path.clone()),
+                Some(h) if *h != f.content_hash => modified.push(f.path.clone()),
+                Some(_) => {}
+            }
+        }
+        let deleted: Vec<String> = stored
+            .keys()
+            .filter(|p| !current_paths.contains(p.as_str()))
+            .cloned()
+            .collect();
+        Ok(FileDiff {
+            added,
+            modified,
+            deleted,
+        })
+    }
+
     pub fn remove_source(&self, name: &str) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
 
@@ -746,6 +838,7 @@ impl GraphStore {
         drop(edge_del);
         delete_fts_by_ids(&tx, &ids)?;
         tx.execute("DELETE FROM nodes WHERE source_name = ?1", params![name])?;
+        tx.execute("DELETE FROM files WHERE source_name = ?1", params![name])?;
         tx.execute("DELETE FROM sources WHERE name = ?1", params![name])?;
 
         tx.commit()?;
@@ -859,6 +952,22 @@ pub struct SearchResult {
 }
 
 use std::collections::HashMap;
+
+/// Result of comparing a freshly-walked file list against the stored manifest
+/// (roux-vmdf). Paths are relative to the source root.
+#[derive(Debug, Default, PartialEq)]
+pub struct FileDiff {
+    pub added: Vec<String>,
+    pub modified: Vec<String>,
+    pub deleted: Vec<String>,
+}
+
+impl FileDiff {
+    /// True when the working tree matches the manifest.
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.modified.is_empty() && self.deleted.is_empty()
+    }
+}
 
 #[derive(Clone)]
 pub struct SourceRecord {
@@ -1085,6 +1194,42 @@ pub fn tokenize_for_fts(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::graph::extract::FileMeta;
+
+    fn fmeta(path: &str, hash: &str) -> FileMeta {
+        FileMeta {
+            path: path.to_string(),
+            content_hash: hash.to_string(),
+            mtime: Some(1),
+        }
+    }
+
+    #[test]
+    fn file_manifest_round_trips_and_diffs() {
+        let store = GraphStore::open_in_memory().unwrap();
+        let v1 = [fmeta("src/a.rs", "hA"), fmeta("src/b.rs", "hB")];
+        store.replace_files("s", &v1).unwrap();
+
+        // Round-trip.
+        let stored = store.stored_files("s").unwrap();
+        assert_eq!(stored.get("src/a.rs").map(String::as_str), Some("hA"));
+        assert_eq!(stored.len(), 2);
+
+        // No change → empty diff.
+        assert!(store.diff_files("s", &v1).unwrap().is_empty());
+
+        // a.rs modified, b.rs deleted, c.rs added.
+        let v2 = [fmeta("src/a.rs", "hA2"), fmeta("src/c.rs", "hC")];
+        let diff = store.diff_files("s", &v2).unwrap();
+        assert_eq!(diff.added, vec!["src/c.rs"]);
+        assert_eq!(diff.modified, vec!["src/a.rs"]);
+        assert_eq!(diff.deleted, vec!["src/b.rs"]);
+
+        // replace_files fully replaces (no leftover rows from v1).
+        store.replace_files("s", &v2).unwrap();
+        assert_eq!(store.stored_files("s").unwrap().len(), 2);
+        assert!(store.diff_files("s", &v2).unwrap().is_empty());
+    }
 
     fn make_node(name: &str, kind: &str, qualified: &str) -> Node {
         let id = Node::id_for("test", qualified);
@@ -1478,7 +1623,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "7");
+        assert_eq!(version, "8");
     }
 
     #[test]

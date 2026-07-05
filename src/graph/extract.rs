@@ -5,10 +5,24 @@ use tree_sitter::{Language, Node as TsNode, Parser};
 
 use super::{Edge, Node};
 
-/// Extraction result from a single file.
+/// Per-file manifest entry: what was indexed and a cheap change-detection key.
+/// `content_hash` is the authoritative change signal (the file node already
+/// computes it); `mtime` is a cheap pre-filter to skip hashing unchanged files.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FileMeta {
+    /// Path relative to the source root.
+    pub path: String,
+    pub content_hash: String,
+    /// Unix seconds; `None` when the filesystem didn't report it.
+    pub mtime: Option<i64>,
+}
+
+/// Extraction result from a directory or single file.
 pub struct FileGraph {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    /// One entry per file that was read and indexed (roux-vmdf).
+    pub files: Vec<FileMeta>,
 }
 
 /// Extract nodes and edges from a source directory.
@@ -65,6 +79,7 @@ pub fn extract_dir(
     Ok(FileGraph {
         nodes: all_nodes,
         edges: all_edges,
+        files: std::mem::take(&mut stats.files),
     })
 }
 
@@ -122,7 +137,85 @@ pub fn extract_file(
 
     merge_duplicate_nodes(&mut nodes);
 
-    Ok(FileGraph { nodes, edges })
+    let files = vec![FileMeta {
+        path: rel_path,
+        content_hash: file_hash,
+        mtime: entry_mtime(path),
+    }];
+    Ok(FileGraph {
+        nodes,
+        edges,
+        files,
+    })
+}
+
+/// Walk a source tree and return the file manifest WITHOUT parsing — read +
+/// hash only (roux-vmdf). Applies the same skip/inclusion rules as `extract_dir`
+/// (guarded by `manifest_walk_matches_extraction`) so its output can be diffed
+/// against a stored manifest to find changed files cheaply.
+pub fn list_source_files(dir: &Path, language_hint: Option<&str>) -> Result<Vec<FileMeta>> {
+    let mut out = Vec::new();
+    list_source_files_inner(dir, dir, language_hint, 0, &mut out);
+    Ok(out)
+}
+
+fn list_source_files_inner(
+    dir: &Path,
+    base: &Path,
+    language_hint: Option<&str>,
+    depth: usize,
+    out: &mut Vec<FileMeta>,
+) {
+    if depth > 100 {
+        return;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path
+            .symlink_metadata()
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str())
+            && is_skipped_entry_name(name)
+        {
+            continue;
+        }
+        if path.is_dir() {
+            list_source_files_inner(&path, base, language_hint, depth + 1, out);
+            continue;
+        }
+        if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0)
+            > crate::settings::get().max_file_bytes as u64
+        {
+            continue;
+        }
+        if !indexable_file(&path, language_hint) {
+            continue;
+        }
+        // Read to hash. An unreadable file is skipped — extraction would skip it
+        // too (it wouldn't be in the manifest), keeping the two walks aligned.
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let rel_path = path
+            .strip_prefix(base)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        out.push(FileMeta {
+            path: rel_path,
+            content_hash: blake3::hash(content.as_bytes()).to_hex().to_string(),
+            mtime: entry_mtime(&path),
+        });
+    }
 }
 
 /// Collapse nodes that share an `id` (same `source_name::qualified_name`)
@@ -185,6 +278,43 @@ fn merge_duplicate_nodes(nodes: &mut Vec<Node>) {
 struct WalkStats {
     read_errors: usize,
     parse_errors: usize,
+    /// Per-file manifest accumulated across the walk (roux-vmdf).
+    files: Vec<FileMeta>,
+}
+
+/// Directory/entry names skipped by every source walk (VCS, build output,
+/// vendored deps, dotfiles). Shared by `walk_dir` (extraction) and
+/// `list_source_files` (cheap manifest walk) so the two can't drift.
+fn is_skipped_entry_name(name: &str) -> bool {
+    name.starts_with('.')
+        || name == "node_modules"
+        || name == "target"
+        || name == "__pycache__"
+        || name == "vendor"
+        || name == ".git"
+}
+
+/// Whether a file would be indexed, and thus belongs in the manifest: markdown
+/// docs, or a file whose language has a tree-sitter grammar. Mirrors the
+/// inclusion rule inside `walk_dir`.
+fn indexable_file(path: &Path, language_hint: Option<&str>) -> bool {
+    let ext = path.extension().and_then(|e| e.to_str());
+    if matches!(ext, Some("md" | "markdown")) {
+        return true;
+    }
+    language_hint
+        .filter(|l| get_ts_language(l).is_some())
+        .or_else(|| detect_language(path))
+        .is_some()
+}
+
+/// Filesystem mtime of an entry as Unix seconds, if available.
+fn entry_mtime(path: &Path) -> Option<i64> {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
 }
 
 fn walk_dir(
@@ -221,12 +351,7 @@ fn walk_dir(
         }
 
         if let Some(name) = path.file_name().and_then(|n| n.to_str())
-            && (name.starts_with('.')
-                || name == "node_modules"
-                || name == "target"
-                || name == "__pycache__"
-                || name == "vendor"
-                || name == ".git")
+            && is_skipped_entry_name(name)
         {
             continue;
         }
@@ -269,6 +394,11 @@ fn walk_dir(
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .to_string();
+            stats.files.push(FileMeta {
+                path: rel_path.clone(),
+                content_hash: blake3::hash(content.as_bytes()).to_hex().to_string(),
+                mtime: entry_mtime(&path),
+            });
             extract_markdown_doc(&content, &rel_path, source_name, nodes, edges);
             continue;
         }
@@ -306,6 +436,11 @@ fn walk_dir(
         let file_id = Node::id_for(source_name, &file_qualified);
         let file_hash = blake3::hash(code.as_bytes()).to_hex().to_string();
         let file_lines = code.lines().count();
+        stats.files.push(FileMeta {
+            path: rel_path.clone(),
+            content_hash: file_hash.clone(),
+            mtime: entry_mtime(&path),
+        });
         let file_name = path
             .file_name()
             .map(|f| f.to_string_lossy().to_string())
@@ -2451,7 +2586,11 @@ mod tests {
         )
         .unwrap();
         resolve_references(&mut edges, &nodes);
-        FileGraph { nodes, edges }
+        FileGraph {
+            nodes,
+            edges,
+            files: Vec::new(),
+        }
     }
 
     fn extract_python(code: &str) -> FileGraph {
@@ -2470,7 +2609,11 @@ mod tests {
         )
         .unwrap();
         resolve_references(&mut edges, &nodes);
-        FileGraph { nodes, edges }
+        FileGraph {
+            nodes,
+            edges,
+            files: Vec::new(),
+        }
     }
 
     fn extract_js(code: &str) -> FileGraph {
@@ -2489,7 +2632,11 @@ mod tests {
         )
         .unwrap();
         resolve_references(&mut edges, &nodes);
-        FileGraph { nodes, edges }
+        FileGraph {
+            nodes,
+            edges,
+            files: Vec::new(),
+        }
     }
 
     fn extract_cpp(code: &str) -> FileGraph {
@@ -2508,7 +2655,11 @@ mod tests {
         )
         .unwrap();
         resolve_references(&mut edges, &nodes);
-        FileGraph { nodes, edges }
+        FileGraph {
+            nodes,
+            edges,
+            files: Vec::new(),
+        }
     }
 
     #[test]
@@ -2910,6 +3061,38 @@ def _private():
             !refs.is_empty(),
             "should have references edges from backtick mentions"
         );
+    }
+
+    #[test]
+    fn manifest_walk_matches_extraction() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "pub fn a() {}\n").unwrap();
+        std::fs::write(dir.path().join("README.md"), "# Hi\nhello\n").unwrap();
+        // Not indexable — no grammar for .txt, not markdown.
+        std::fs::write(dir.path().join("notes.txt"), "ignore me\n").unwrap();
+        // Skipped directory — must not appear in either walk.
+        std::fs::create_dir_all(dir.path().join("target")).unwrap();
+        std::fs::write(dir.path().join("target/junk.rs"), "pub fn z() {}\n").unwrap();
+
+        let manifest = extract_dir(dir.path(), "demo", "dev", None).unwrap().files;
+        let listed = list_source_files(dir.path(), None).unwrap();
+
+        let as_set = |v: &[FileMeta]| {
+            v.iter()
+                .map(|f| (f.path.clone(), f.content_hash.clone()))
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        // The cheap no-parse walk must agree with extraction on path + hash.
+        assert_eq!(
+            as_set(&manifest),
+            as_set(&listed),
+            "list_source_files must match extract_dir's manifest"
+        );
+        let paths: std::collections::BTreeSet<&str> =
+            listed.iter().map(|f| f.path.as_str()).collect();
+        assert!(paths.contains("src/lib.rs") && paths.contains("README.md"));
+        assert!(!paths.iter().any(|p| p.contains("notes.txt") || p.contains("target")));
     }
 
     #[test]
