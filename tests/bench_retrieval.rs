@@ -1,5 +1,7 @@
 #![allow(clippy::type_complexity)]
 
+mod common;
+
 /// A test case: a natural language query and the expected symbol names in the result.
 struct QueryCase {
     query: &'static str,
@@ -156,7 +158,7 @@ fn hit_at_k(results: &[(Vec<String>, &[&str])], k: usize) -> f64 {
             names
                 .iter()
                 .take(k)
-                .any(|name| expected.iter().any(|exp| name.contains(exp)))
+                .any(|name| common::any_match(name, expected))
         })
         .count();
     hits as f64 / results.len() as f64
@@ -168,7 +170,7 @@ fn mrr(results: &[(Vec<String>, &[&str])]) -> f64 {
         .iter()
         .map(|(names, expected)| {
             for (i, name) in names.iter().enumerate() {
-                if expected.iter().any(|exp| name.contains(exp)) {
+                if common::any_match(name, expected) {
                     return 1.0 / (i + 1) as f64;
                 }
             }
@@ -185,7 +187,7 @@ fn ndcg_at_k(results: &[(Vec<String>, &[&str])], k: usize) -> f64 {
         .map(|(names, expected)| {
             let mut dcg = 0.0f64;
             for (i, name) in names.iter().take(k).enumerate() {
-                let rel = if expected.iter().any(|exp| name.contains(exp)) {
+                let rel = if common::any_match(name, expected) {
                     1.0
                 } else {
                     0.0
@@ -295,13 +297,13 @@ fn bench_self_retrieval() {
     eprintln!("\n── per-query breakdown ──");
     for (i, case) in ROUX_QUERIES.iter().enumerate() {
         let (ref names, _) = results[i];
-        let hit = case
-            .expected
+        let hit = names
             .iter()
-            .any(|exp| names.iter().take(10).any(|n| n.contains(exp)));
+            .take(10)
+            .any(|n| common::any_match(n, case.expected));
         let rank = names
             .iter()
-            .position(|n| case.expected.iter().any(|exp| n.contains(exp)))
+            .position(|n| common::any_match(n, case.expected))
             .map(|r| r + 1);
 
         let status = if hit { "✓" } else { "✗" };
@@ -503,7 +505,7 @@ fn bench_rrf_ab_test() {
             let (ref names, _) = results[i];
             let rank = names
                 .iter()
-                .position(|n| case.expected.iter().any(|exp| n.contains(exp)))
+                .position(|n| common::any_match(n, case.expected))
                 .map(|r| r + 1);
             let status = if rank.is_some() { "✓" } else { "✗" };
             let rank_str = rank
@@ -565,7 +567,7 @@ fn diag_express_misses() {
         eprintln!("\n── query: \"{query}\" (expect: {expected:?}) ──");
         for (i, node) in result.nodes.iter().enumerate() {
             let score = result.scores.get(&node.id).copied().unwrap_or(0.0);
-            let is_hit = expected.iter().any(|e| node.name.contains(e));
+            let is_hit = common::any_match(&node.name, expected);
             let marker = if is_hit { " ◀" } else { "" };
             let desc = node.description.as_deref().unwrap_or("");
             eprintln!(
@@ -833,7 +835,7 @@ fn run_adversarial(
 
         let rank = names
             .iter()
-            .position(|n| case.expected.iter().any(|exp| n.contains(exp)))
+            .position(|n| common::any_match(n, case.expected))
             .map(|r| r + 1);
         let status = if rank.is_some() { "✓" } else { "✗" };
         let rank_str = rank
@@ -1128,7 +1130,7 @@ fn bench_multi_repo() {
                 let (ref names, _) = repo_results[i];
                 let rank = names
                     .iter()
-                    .position(|n| case.expected.iter().any(|exp| n.contains(exp)))
+                    .position(|n| common::any_match(n, case.expected))
                     .map(|r| r + 1);
                 let status = if rank.is_some() { "✓" } else { "✗" };
                 let rank_str = rank

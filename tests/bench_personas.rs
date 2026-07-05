@@ -1,9 +1,11 @@
-/// Persona-based benchmark suite for roux.
-///
-/// Tests retrieval quality across real-world repos representing different developer personas.
-/// Queries are split into agent (programmatic, precise) and developer (natural language, fuzzy).
-/// Requires repos cloned at /tmp/roux-sources/. Run with:
-///   cargo test --test bench_personas -- --ignored --nocapture
+//! Persona-based benchmark suite for roux.
+//!
+//! Tests retrieval quality across real-world repos representing different developer personas.
+//! Queries are split into agent (programmatic, precise) and developer (natural language, fuzzy).
+//! Requires repos cloned at /tmp/roux-sources/. Run with:
+//!   cargo test --test bench_personas -- --ignored --nocapture
+
+mod common;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum QueryMode {
@@ -280,9 +282,9 @@ const PERSONA_MARLIN: Persona = Persona {
         },
         PersonaQuery {
             // G-code symbols appear in both upper- and lowercase forms
-            // (e.g. `G29` the handler, `g29_what_command` the helper); the
-            // `name.contains(expected)` predicate is case-sensitive, so list
-            // both shapes.
+            // (e.g. `G29` the handler, `g29_what_command` the helper). Token
+            // matching is case-insensitive so either shape hits, but list both
+            // for clarity.
             query: "bed leveling probe command",
             expected: &["G29", "g29_", "run_z_probe", "probe_index"],
             mode: QueryMode::Developer,
@@ -315,7 +317,7 @@ fn hit_at_k(results: &[(Vec<String>, &[&str])], k: usize) -> f64 {
             names
                 .iter()
                 .take(k)
-                .any(|name| expected.iter().any(|exp| name.contains(exp)))
+                .any(|name| common::any_match(name, expected))
         })
         .count();
     hits as f64 / results.len() as f64
@@ -329,7 +331,7 @@ fn mrr(results: &[(Vec<String>, &[&str])]) -> f64 {
         .iter()
         .map(|(names, expected)| {
             for (i, name) in names.iter().enumerate() {
-                if expected.iter().any(|exp| name.contains(exp)) {
+                if common::any_match(name, expected) {
                     return 1.0 / (i + 1) as f64;
                 }
             }
@@ -395,7 +397,7 @@ fn run_persona(persona: &Persona) -> Option<PersonaResult> {
 
         let rank = names
             .iter()
-            .position(|n| q.expected.iter().any(|exp| n.contains(exp)))
+            .position(|n| common::any_match(n, q.expected))
             .map(|r| r + 1);
         let status = if rank.is_some() { "✓" } else { "✗" };
         let rank_str = rank

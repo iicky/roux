@@ -19,6 +19,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from bench_match import strict_match  # noqa: E402  # type: ignore[import-not-found]
+
 ROOT = Path(__file__).resolve().parent.parent
 ROUX = ROOT / "target" / "release" / "roux"
 BENCH = ROOT / "tests" / "bench_personas.rs"
@@ -63,7 +66,7 @@ def run_query(path: str, query: str, top: int = TOPK) -> list[str]:
 
 def first_hit_rank(names: list[str], expected: list[str]) -> int | None:
     for i, n in enumerate(names):
-        if any(e.lower() in n.lower() for e in expected):
+        if any(strict_match(n, e) for e in expected):
             return i + 1
     return None
 
