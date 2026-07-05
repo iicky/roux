@@ -115,7 +115,15 @@ impl RouxServer {
                 render_compact(&result),
             )]));
         }
-        let json = search_result_to_json(&result);
+        // Staleness guard (roux-00bf): surface changed-since-indexing files so a
+        // live agent doesn't trust stale locations. Same `stale` block as the CLI.
+        let mut json = search_result_to_json(&result);
+        let stale = crate::cli::stale_sources_for_result(&store, &result);
+        if !stale.is_empty()
+            && let Some(obj) = json.as_object_mut()
+        {
+            obj.insert("stale".into(), crate::cli::stale_to_json(&stale));
+        }
         let body = serde_json::to_string_pretty(&json)
             .map_err(|e| McpError::internal_error(format!("serialize: {e}"), None))?;
         Ok(CallToolResult::success(vec![Content::text(body)]))

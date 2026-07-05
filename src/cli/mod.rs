@@ -661,12 +661,22 @@ fn cmd_query(
         return Ok(());
     }
 
+    // Staleness guard (roux-00bf): warn when a returned source's files have
+    // changed since indexing, so an agent doesn't trust stale locations.
+    let stale = stale_sources_for_result(&store, &result);
+    if format != "json" && !stale.is_empty() {
+        eprintln!("{}", format_stale_warning(&stale));
+    }
+
     match format {
         "json" => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&search_result_to_json(&result))?
-            );
+            let mut value = search_result_to_json(&result);
+            if !stale.is_empty()
+                && let Some(obj) = value.as_object_mut()
+            {
+                obj.insert("stale".into(), stale_to_json(&stale));
+            }
+            println!("{}", serde_json::to_string_pretty(&value)?);
         }
         "skeleton" => {
             // Compact, deterministic, prompt-prefix-ready block for use as a
@@ -956,6 +966,90 @@ pub fn check_source_status(record: &crate::graph::store::SourceRecord) -> Status
         }
         _ => Status::Unknown,
     }
+}
+
+/// File-level staleness for the `path` sources present in a query result
+/// (roux-00bf). Cheap by construction: the fingerprint gate (`check_source_status`,
+/// stat-only) skips the per-file walk for unchanged sources, so a fresh local
+/// repo costs one stat-walk. Crate/URL sources are immutable at a pinned version
+/// and never checked. When the gate trips only because mtimes moved (a
+/// checkout/touch with identical content), the authoritative content-hash diff
+/// comes back empty and the source is reported fresh.
+pub(crate) fn stale_sources_for_result(
+    store: &GraphStore,
+    result: &crate::graph::store::SearchResult,
+) -> Vec<(String, crate::graph::store::FileDiff)> {
+    let present: std::collections::BTreeSet<&str> =
+        result.nodes.iter().map(|n| n.source_name.as_str()).collect();
+    let Ok(records) = store.list_sources() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for rec in &records {
+        if !present.contains(rec.name.as_str())
+            || !matches!(check_source_status(rec), Status::Stale(_))
+        {
+            continue;
+        }
+        let Some(origin) = rec.origin.as_deref() else {
+            continue;
+        };
+        let root = std::path::Path::new(origin);
+        let Ok(current) = crate::graph::extract::list_source_files(root, None) else {
+            continue;
+        };
+        let Ok(diff) = store.diff_files(&rec.name, &current) else {
+            continue;
+        };
+        if !diff.is_empty() {
+            out.push((rec.name.clone(), diff));
+        }
+    }
+    out
+}
+
+/// One-line human warning for stale sources, for stderr in non-JSON formats.
+fn format_stale_warning(stale: &[(String, crate::graph::store::FileDiff)]) -> String {
+    let parts: Vec<String> = stale
+        .iter()
+        .map(|(name, d)| {
+            let mut bits = Vec::new();
+            if !d.modified.is_empty() {
+                bits.push(format!("{} modified", d.modified.len()));
+            }
+            if !d.added.is_empty() {
+                bits.push(format!("{} added", d.added.len()));
+            }
+            if !d.deleted.is_empty() {
+                bits.push(format!("{} deleted", d.deleted.len()));
+            }
+            format!("'{name}' ({})", bits.join(", "))
+        })
+        .collect();
+    format!(
+        "⚠ index stale since indexing: {} — run `roux add <path>` to refresh",
+        parts.join("; ")
+    )
+}
+
+/// JSON block describing stale sources, embedded under the query result's
+/// `stale` key so agents parsing stdout see it in-band.
+pub(crate) fn stale_to_json(
+    stale: &[(String, crate::graph::store::FileDiff)],
+) -> serde_json::Value {
+    serde_json::Value::Array(
+        stale
+            .iter()
+            .map(|(name, d)| {
+                serde_json::json!({
+                    "source": name,
+                    "modified": d.modified,
+                    "added": d.added,
+                    "deleted": d.deleted,
+                })
+            })
+            .collect(),
+    )
 }
 
 fn cmd_list(
@@ -1394,6 +1488,54 @@ fn cmd_remove(config: &Config, source_name: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn staleness_guard_detects_file_changes() {
+        use crate::graph::extract;
+        let src = tempfile::tempdir().unwrap();
+        let dbdir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(src.path().join("src")).unwrap();
+        std::fs::write(
+            src.path().join("src/lib.rs"),
+            "pub fn alpha() {}\npub fn beta() {}\n",
+        )
+        .unwrap();
+        std::fs::write(src.path().join("src/util.rs"), "pub fn helper() {}\n").unwrap();
+
+        let store = GraphStore::open(&dbdir.path().join("index.sqlite")).unwrap();
+        let g = extract::extract_dir(src.path(), "demo", "dev", Some("rust")).unwrap();
+        store
+            .upsert_source("demo", "dev", "rust", &g.nodes, &g.edges)
+            .unwrap();
+        store.replace_files("demo", &g.files).unwrap();
+        let fp = crate::fingerprint::fingerprint_dir(src.path()).ok();
+        store
+            .set_source_meta("demo", "path", src.path().to_str(), fp.as_deref())
+            .unwrap();
+
+        let result = store.search("alpha", 5).unwrap();
+        assert!(!result.nodes.is_empty());
+
+        // Fresh index → guard stays silent.
+        assert!(stale_sources_for_result(&store, &result).is_empty());
+
+        // Modify one file, delete one, add one.
+        std::fs::write(
+            src.path().join("src/lib.rs"),
+            "pub fn alpha() {}\npub fn beta() {}\npub fn gamma() {}\n",
+        )
+        .unwrap();
+        std::fs::remove_file(src.path().join("src/util.rs")).unwrap();
+        std::fs::write(src.path().join("src/new.rs"), "pub fn brandnew() {}\n").unwrap();
+
+        let stale = stale_sources_for_result(&store, &result);
+        assert_eq!(stale.len(), 1);
+        let (name, diff) = &stale[0];
+        assert_eq!(name, "demo");
+        assert_eq!(diff.modified, vec!["src/lib.rs"]);
+        assert_eq!(diff.deleted, vec!["src/util.rs"]);
+        assert_eq!(diff.added, vec!["src/new.rs"]);
+    }
 
     #[test]
     fn test_parse_add() {
