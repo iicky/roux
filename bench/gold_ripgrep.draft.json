@@ -1,0 +1,767 @@
+{
+  "_comment": "DRAFT harvested query set for roux-x6fs \u2014 NOT frozen, needs human review. Queries are real user issue TITLES from the persona repo; gold = qualified_name substrings pinned to the fix commit's touched symbols, validated against the snapshot index. bucket: L=roux top-1 (lexical), G=roux ranks 2-10 (graph/tail), S=roux misses@10 (vocab/semantic gap \u2014 the anti-Goodhart core). query_leaks_gold flags titles that already contain a gold identifier (should be pruned/relabeled). Review: drop off-topic/feature-request titles, tighten gold, then freeze.",
+  "source_name": "ripgrep",
+  "index_path": "/Users/mickey/Repos/iicky/roux/bench/snapshots/ripgrep.sqlite",
+  "pinned_ref": "14.1.1",
+  "distribution": {
+    "L": 2,
+    "G": 6,
+    "S": 19
+  },
+  "queries": [
+    {
+      "id": "rg-1087",
+      "bucket": "G",
+      "query": "ripgrep is slow when detecting whitespace literals, e.g., `'[ \\t]$'",
+      "gold": [
+        "ripgrep::InnerLiterals::one_regex"
+      ],
+      "roux_rank": 4,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 1087,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1087",
+        "labels": [
+          "enhancement",
+          "rollup"
+        ],
+        "fix_commit": "e772a95b58b7",
+        "changed_files": [
+          "crates/regex/src/lib.rs",
+          "crates/regex/src/literal.rs"
+        ],
+        "gold_candidates": [
+          "one_regex"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    ripgrep 0.10.0  -SIMD -AVX (compiled)  +SIMD -AVX (runtime)    #### How did you install ripgrep?    cargo install ripgrep    #### What operating system are you using ripgrep on?    My system is Mageia Linux v7 x86-64 on a Core i3 San"
+    },
+    {
+      "id": "rg-1311",
+      "bucket": "G",
+      "query": "Unexpected (or incorrect?) multiline replace behavior",
+      "gold": [
+        "ripgrep::StandardBuilder::replacement",
+        "ripgrep::sink"
+      ],
+      "roux_rank": 2,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 1311,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1311",
+        "labels": [
+          "bug",
+          "rollup"
+        ],
+        "fix_commit": "656aa126492b",
+        "changed_files": [
+          "crates/printer/src/standard.rs",
+          "crates/searcher/src/searcher/glue.rs"
+        ],
+        "gold_candidates": [
+          "replacement",
+          "sink"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    ripgrep 11.0.1 (rev 34677d2622)  +SIMD -AVX (compiled)  +SIMD +AVX (runtime)    #### How did you install ripgrep?    cargo from git    #### What operating system are you using ripgrep on?    Distributor ID:\tDebian  Description:\tDebia"
+    },
+    {
+      "id": "rg-1339",
+      "bucket": "S",
+      "query": "ripgrep doesn't match arbitrary bytes within a file",
+      "gold": [
+        "ripgrep::InvalidPatternError::fmt",
+        "ripgrep::pattern_from_os"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 1339,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1339",
+        "labels": [
+          "doc"
+        ],
+        "fix_commit": "64a4dee4956e",
+        "changed_files": [
+          "crates/cli/src/pattern.rs"
+        ],
+        "gold_candidates": [
+          "fmt",
+          "pattern_from_os"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    ripgrep 11.0.1 (rev 1f1cd9b467)  -SIMD -AVX (compiled)  +SIMD +AVX (runtime)    #### How did you install ripgrep?    GitHub deb, I think    #### What operating system are you using ripgrep on?    Ubuntu 18.04    #### Describe your qu"
+    },
+    {
+      "id": "rg-1401",
+      "bucket": "S",
+      "query": "Ending newline character of a line seems to be exposed to the regex engine with -P option",
+      "gold": [
+        "ripgrep::find_iter_at_in_context",
+        "ripgrep::trim_line_terminator"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 1401,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1401",
+        "labels": [
+          "bug",
+          "rollup"
+        ],
+        "fix_commit": "ee23ab51736d",
+        "changed_files": [
+          "crates/printer/src/standard.rs",
+          "crates/printer/src/util.rs"
+        ],
+        "gold_candidates": [
+          "find_iter_at_in_context",
+          "trim_line_terminator"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    ```  $ rg --version  ripgrep 11.0.2 (rev 3de31f7527)  -SIMD -AVX (compiled)  +SIMD -AVX (runtime)  ```    #### How did you install ripgrep?    Using `ripgrep_11.0.2_amd64.deb`     #### What operating system are you using ripgrep on? "
+    },
+    {
+      "id": "rg-1520",
+      "bucket": "L",
+      "query": "warning about commondir on ripgrep over git repo with submodules",
+      "gold": [
+        "ripgrep::Ignore::add_child_path",
+        "ripgrep::resolve_git_commondir"
+      ],
+      "roux_rank": 1,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 1520,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1520",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "34edb8123a0b",
+        "changed_files": [
+          "crates/ignore/src/dir.rs"
+        ],
+        "gold_candidates": [
+          "add_child_path",
+          "resolve_git_commondir"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    ```  $ rg --version  ripgrep 12.0.0  -SIMD -AVX (compiled)  +SIMD +AVX (runtime)  ```    Also,    ```  $ git --version  git version 2.25.1  ```    #### How did you install ripgrep?    Homebrew    #### What operating system are you us"
+    },
+    {
+      "id": "rg-1550",
+      "bucket": "G",
+      "query": "high peak memory usage with parallel breadth first directory traversal",
+      "gold": [
+        "ripgrep::DirEntryRaw::from_entry_os",
+        "ripgrep::DirEntryRaw::from_path",
+        "ripgrep::WalkParallel::visit",
+        "ripgrep::Worker",
+        "ripgrep::get_work"
+      ],
+      "roux_rank": 2,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 1550,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1550",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "139f186e5721",
+        "changed_files": [
+          "crates/ignore/src/lib.rs",
+          "crates/ignore/src/walk.rs"
+        ],
+        "gold_candidates": [
+          "Worker",
+          "from_entry_os",
+          "from_path",
+          "get_work",
+          "recv",
+          "send",
+          "send_quit",
+          "visit"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    ripgrep 12.0.0  -SIMD -AVX (compiled)  +SIMD +AVX (runtime)    #### How did you install ripgrep?    `cargo install ripgrep` on `rustc 1.42.0 (b8cedc004 2020-03-09)`    #### What operating system are you using ripgrep on?    Linux, de"
+    },
+    {
+      "id": "rg-1739",
+      "bucket": "S",
+      "query": "rg outputs wrong matches when everything is matched and replaced with custom string",
+      "gold": [
+        "ripgrep::replace_all"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 1739,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1739",
+        "labels": [],
+        "fix_commit": "fbb2cfed28d6",
+        "changed_files": [
+          "crates/printer/src/util.rs"
+        ],
+        "gold_candidates": [
+          "replace_all"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    ripgrep 12.1.1  -SIMD -AVX (compiled)  +SIMD +AVX (runtime)      #### How did you install ripgrep?  brew install ripgrep    #### What operating system are you using ripgrep on?  Darwin 19.6.0 x86_64  zsh 5.8 (x86_64-apple-darwin19.6."
+    },
+    {
+      "id": "rg-1866",
+      "bucket": "S",
+      "query": "--vimgrep doesn't satisfy vim's spec for multi-line searches",
+      "gold": [
+        "ripgrep::StandardBuilder::max_matches",
+        "ripgrep::StandardBuilder::only_matching",
+        "ripgrep::StandardBuilder::per_match",
+        "ripgrep::StandardBuilder::per_match_one_line",
+        "ripgrep::sink_slow_multi_per_match"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 1866,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1866",
+        "labels": [
+          "bug",
+          "rollup"
+        ],
+        "fix_commit": "fc31aedcf3ca",
+        "changed_files": [
+          "crates/core/args.rs",
+          "crates/printer/src/standard.rs"
+        ],
+        "gold_candidates": [
+          "max_matches",
+          "only_matching",
+          "per_match",
+          "per_match_one_line",
+          "sink_slow_multi_per_match"
+        ]
+      },
+      "context": "NOTE from BurntSushi: This issue has been re-classified as a bug that was discovered in the course of discussion. There's too much context here to split it apart, which GitHub doesn't really make easy to do anyway. So I've re-purposed this issue for the bug described in the title"
+    },
+    {
+      "id": "rg-1879",
+      "bucket": "S",
+      "query": "Second line is matching with multiline option when trying to match start of entire input",
+      "gold": [
+        "ripgrep::remove_matching_bytes"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 1879,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1879",
+        "labels": [
+          "duplicate"
+        ],
+        "fix_commit": "581a35e568c3",
+        "changed_files": [
+          "crates/regex/src/non_matching.rs"
+        ],
+        "gold_candidates": [
+          "remove_matching_bytes"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    `ripgrep 12.1.1 (rev 7cb211378a)`    #### How did you install ripgrep?    Using `ripgrep_12.1.1_amd64.deb`    #### What operating system are you using ripgrep on?    Ubuntu 20.04 LTS    #### Describe your bug.    Was trying to create"
+    },
+    {
+      "id": "rg-1891",
+      "bucket": "S",
+      "query": "panic with -w and empty string",
+      "gold": [
+        "ripgrep::Match::with_end",
+        "ripgrep::Match::with_start"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 1891,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1891",
+        "labels": [],
+        "fix_commit": "bc76a30c2331",
+        "changed_files": [
+          "crates/matcher/src/lib.rs",
+          "crates/regex/src/word.rs"
+        ],
+        "gold_candidates": [
+          "with_end",
+          "with_start"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    ```  ripgrep 13.0.0  -SIMD -AVX (compiled)  +SIMD +AVX (runtime)  ```    #### How did you install ripgrep?    Homebrew    #### What operating system are you using ripgrep on?    macOS Big Sur, Intel.    #### Describe your bug.    Rip"
+    },
+    {
+      "id": "rg-1911",
+      "bucket": "S",
+      "query": "MS Windows 32bit binary does not work properly for files bigger than 4 gigabyte",
+      "gold": [
+        "ripgrep::MmapChoice::open"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 1911,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1911",
+        "labels": [],
+        "fix_commit": "fdfc418be55f",
+        "changed_files": [
+          "crates/searcher/src/searcher/mmap.rs"
+        ],
+        "gold_candidates": [
+          "open"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    ripgrep 13.0.0 (rev af6b6c543b)  -SIMD -AVX (compiled)    #### How did you install ripgrep?    I use the MS Windows binary rg.exe from ripgrep-13.0.0-i686-pc-windows-msvc.zip    #### What operating system are you using ripgrep on?   "
+    },
+    {
+      "id": "rg-2122",
+      "bucket": "S",
+      "query": "Reading fifo: Output is buffered until fifo writer closes",
+      "gold": [
+        "ripgrep::BinaryDetection::from_low_args",
+        "ripgrep::HiArgs::from_low_args",
+        "ripgrep::Paths::from_low_args",
+        "ripgrep::Patterns::from_low_args"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2122,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2122",
+        "labels": [
+          "invalid"
+        ],
+        "fix_commit": "b138d5740a0e",
+        "changed_files": [
+          "crates/core/flags/hiargs.rs"
+        ],
+        "gold_candidates": [
+          "from_low_args"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    ripgrep 13.0.0  -SIMD -AVX (compiled)    #### How did you install ripgrep?    brew install ripgrep    #### What operating system are you using ripgrep on?    macOS 11.3  Darwin Kernel Version 20.4.0: Fri Mar  5 01:14:02 PST 2021; roo"
+    },
+    {
+      "id": "rg-2195",
+      "bucket": "G",
+      "query": "shell completion '-t' for extensions prompt",
+      "gold": [
+        "ripgrep::DecompressionMatcherBuilder",
+        "ripgrep::file_name"
+      ],
+      "roux_rank": 5,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2195,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2195",
+        "labels": [
+          "enhancement",
+          "help wanted",
+          "rollup"
+        ],
+        "fix_commit": "97b5b7769c71",
+        "changed_files": [
+          "crates/cli/src/decompress.rs",
+          "crates/globset/src/pathutil.rs"
+        ],
+        "gold_candidates": [
+          "DecompressionMatcherBuilder",
+          "file_name"
+        ]
+      },
+      "context": "Now, the shell completion `-t`(e.g. zsh) is as following:    ```  \u276f rg -t<Tab>  file type  agda          cabal         csv           fidl          hbs           license       minified      po            robot         sv            typoscript    z  ...  ```    In the code, it trun"
+    },
+    {
+      "id": "rg-2208",
+      "bucket": "S",
+      "query": "Adding --replace to a --multiline search can expand what content is matched",
+      "gold": [
+        "ripgrep::replace_all",
+        "ripgrep::replace_with_captures_in_context"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 2208,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2208",
+        "labels": [
+          "duplicate"
+        ],
+        "fix_commit": "91afd4214a9a",
+        "changed_files": [
+          "crates/printer/src/util.rs"
+        ],
+        "gold_candidates": [
+          "replace_all",
+          "replace_with_captures_in_context"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    ```  ripgrep 13.0.0  -SIMD -AVX (compiled)  +SIMD +AVX (runtime)  ```    #### How did you install ripgrep?    `apt`:    ```  ripgrep:    Installed: 13.0.0-2    Candidate: 13.0.0-2    Version table:   *** 13.0.0-2 500          500 htt"
+    },
+    {
+      "id": "rg-2236",
+      "bucket": "S",
+      "query": "rg/globset raises error for \"dangling '\\'\" in .gitignore",
+      "gold": [
+        "ripgrep::GitignoreBuilder::add_line"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2236,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2236",
+        "labels": [],
+        "fix_commit": "9f0e88bcb14e",
+        "changed_files": [
+          "crates/ignore/src/gitignore.rs"
+        ],
+        "gold_candidates": [
+          "add_line"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    ripgrep 13.0.0  -SIMD -AVX (compiled)  +SIMD +AVX (runtime)    #### How did you install ripgrep?    cargo install    #### What operating system are you using ripgrep on?    AMI Linux 1    #### Describe your bug.    Several of our rep"
+    },
+    {
+      "id": "rg-2246",
+      "bucket": "S",
+      "query": "emit log message when file is skipped becaue it was detected as \"binary\" data",
+      "gold": [
+        "ripgrep::as_hyperlink",
+        "ripgrep::as_path"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2246,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2246",
+        "labels": [
+          "enhancement",
+          "rollup"
+        ],
+        "fix_commit": "0e6e9417f1b1",
+        "changed_files": [
+          "crates/printer/src/json.rs",
+          "crates/printer/src/standard.rs",
+          "crates/printer/src/summary.rs",
+          "crates/printer/src/util.rs"
+        ],
+        "gold_candidates": [
+          "as_hyperlink",
+          "as_path"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?  ```  ripgrep 13.0.0  +SIMD -AVX (compiled)  +SIMD +AVX (runtime)  ```    #### How did you install ripgrep?  Through the FreeBSD ports collection    #### What operating system are you using ripgrep on?    FreeBSD 14.0-CURRENT amd64.  Th"
+    },
+    {
+      "id": "rg-2260",
+      "bucket": "G",
+      "query": "Unexpected character group issue with grep crate",
+      "gold": [
+        "ripgrep::ConfiguredHIR::line_terminator",
+        "ripgrep::RegexMatcherBuilder::build",
+        "ripgrep::match_by_line"
+      ],
+      "roux_rank": 5,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2260,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2260",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "8e57989cd203",
+        "changed_files": [
+          "crates/regex/src/config.rs",
+          "crates/regex/src/matcher.rs",
+          "crates/searcher/src/searcher/core.rs",
+          "crates/searcher/src/searcher/glue.rs"
+        ],
+        "gold_candidates": [
+          "build",
+          "line_terminator",
+          "match_by_line"
+        ]
+      },
+      "context": "#### What version of ripgrep are you using?    11.0.2  (but irrelevant, this is using grep = \"0.2\" as dependencies/as a library)    #### How did you install ripgrep?    Unrelated (apt). Cargo for grep    #### What operating system are you using ripgrep on?    Ubuntu Linux    ####"
+    },
+    {
+      "id": "rg-2458",
+      "bucket": "S",
+      "query": "--trim runs after -M/--max-columns",
+      "gold": [
+        "ripgrep::end_color_match",
+        "ripgrep::sink_slow_multi_line",
+        "ripgrep::sink_slow_multi_per_match",
+        "ripgrep::write_colored_line",
+        "ripgrep::write_colored_matches"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2458,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2458",
+        "labels": [
+          "bug",
+          "rollup"
+        ],
+        "fix_commit": "038524a58007",
+        "changed_files": [
+          "crates/printer/src/standard.rs"
+        ],
+        "gold_candidates": [
+          "end_color_match",
+          "sink_slow_multi_line",
+          "sink_slow_multi_per_match",
+          "write_colored_line",
+          "write_colored_matches",
+          "write_line"
+        ]
+      },
+      "context": "See the discussion below. It seems to me like `--trim` should run _before_ applying the max column length.    I say this without re-contextualizing myself with the code. There may be a reason for the current behavior that I'm forgetting.    ### Discussed in https://github.com/Bur"
+    },
+    {
+      "id": "rg-2524",
+      "bucket": "S",
+      "query": "Update --debug to state if it's using stdin or the file system",
+      "gold": [
+        "ripgrep::BinaryDetection::from_low_args",
+        "ripgrep::HiArgs::from_low_args",
+        "ripgrep::Paths::from_low_args",
+        "ripgrep::Patterns::from_low_args"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2524,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2524",
+        "labels": [
+          "enhancement",
+          "rollup"
+        ],
+        "fix_commit": "ebb986e76765",
+        "changed_files": [
+          "crates/core/flags/hiargs.rs"
+        ],
+        "gold_candidates": [
+          "from_low_args"
+        ]
+      },
+      "context": "Please update --debug switch to indicate if ripgrep is searching stdin or a file system directory (and print which one).    Rationale:    I used ripgrep from within a Makefile and in a terminal, it worked fine. However, when I used it from within Emacs via `M-x compile RET make R"
+    },
+    {
+      "id": "rg-2645",
+      "bucket": "G",
+      "query": "Append `--pcre2-version` info to `--version",
+      "gold": [
+        "ripgrep::special"
+      ],
+      "roux_rank": 20,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2645,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2645",
+        "labels": [
+          "rollup"
+        ],
+        "fix_commit": "286de9564e51",
+        "changed_files": [
+          "crates/core/flags/mod.rs",
+          "crates/core/main.rs"
+        ],
+        "gold_candidates": [
+          "special"
+        ]
+      },
+      "context": "This is a really minor \"feature\" request, but I figured it's the right time to ask it since you're already moving stuff around in #2626 \ud83d\ude42    It would be nice to have *all* the info about ripgrep's build be output when `--version` is called, including the PCRE2 info without having"
+    },
+    {
+      "id": "rg-2658",
+      "bucket": "S",
+      "query": "--line-regexp` no longer works with `--null-data` after upgrading to 14.0.1",
+      "gold": [
+        "ripgrep::is_line_by_line_fast"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 2658,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2658",
+        "labels": [
+          "rollup"
+        ],
+        "fix_commit": "805fa32d184f",
+        "changed_files": [
+          "crates/searcher/src/searcher/core.rs"
+        ],
+        "gold_candidates": [
+          "is_line_by_line_fast"
+        ]
+      },
+      "context": "### Please tick this box to confirm you have reviewed the above.    - [X] I have a different issue.    ### What version of ripgrep are you using?    ripgrep 14.0.1    features:-simd-accel,+pcre2  simd(compile):+SSE2,-SSSE3,-AVX2  simd(runtime):+SSE2,+SSSE3,+AVX2    PCRE2 10.42 is"
+    },
+    {
+      "id": "rg-2664",
+      "bucket": "S",
+      "query": "Using `--sortr path` gives error \"thread 'main' panicked\"/\"not yet implemented\"",
+      "gold": [
+        "ripgrep::HiArgs::attach_timestamps"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2664,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2664",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "daa157b5f99c",
+        "changed_files": [
+          "crates/core/flags/hiargs.rs"
+        ],
+        "gold_candidates": [
+          "attach_timestamps"
+        ]
+      },
+      "context": "### Please tick this box to confirm you have reviewed the above.  - [X] I have a different issue.  ### What version of ripgrep are you using?  ripgrep 14.0.2 (rev 6c7947b819)    features:-simd-accel,+pcre2  simd(compile):+SSE2,+SSSE3,-AVX2  simd(runtime):+SSE2,+SSSE3,-AVX2    PCR"
+    },
+    {
+      "id": "rg-2690",
+      "bucket": "S",
+      "query": "Memory not freed in ignore crate when ignore flags are enabled",
+      "gold": [
+        "ripgrep::Ignore::add_parents",
+        "ripgrep::IgnoreInner"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 2690,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2690",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "b9c774937fc2",
+        "changed_files": [
+          "crates/ignore/src/dir.rs"
+        ],
+        "gold_candidates": [
+          "IgnoreInner",
+          "add_parents"
+        ]
+      },
+      "context": "### Please tick this box to confirm you have reviewed the above.    - [X] I have a different issue.    ### What version of ripgrep are you using?    ignore crate 0.4.21    ### How did you install ripgrep?    cargo add ignore    ### What operating system are you using ripgrep on? "
+    },
+    {
+      "id": "rg-2694",
+      "bucket": "S",
+      "query": "consider adding an `rg:` prefix all error messages",
+      "gold": [
+        "ripgrep::eprintln_locked"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2694,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2694",
+        "labels": [
+          "enhancement",
+          "help wanted"
+        ],
+        "fix_commit": "c8e4a84519ed",
+        "changed_files": [
+          "crates/core/messages.rs"
+        ],
+        "gold_candidates": [
+          "eprintln_locked"
+        ]
+      },
+      "context": "### Please tick this box to confirm you have reviewed the above.  - [X] I have a different issue.  ### What version of ripgrep are you using?  ```  ripgrep 13.0.0  -SIMD -AVX (compiled)  +SIMD +AVX (runtime)  ```  ### How did you install ripgrep?  dnf install ripgrep  ### What op"
+    },
+    {
+      "id": "rg-2736",
+      "bucket": "S",
+      "query": "Process substitution search path behavior change in 14.0.0",
+      "gold": [
+        "ripgrep::BinaryDetection::from_low_args",
+        "ripgrep::HiArgs::from_low_args",
+        "ripgrep::Paths::from_low_args",
+        "ripgrep::Patterns::from_low_args"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2736,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2736",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "4a3081930281",
+        "changed_files": [
+          "crates/cli/src/lib.rs",
+          "crates/core/flags/hiargs.rs"
+        ],
+        "gold_candidates": [
+          "from_low_args"
+        ]
+      },
+      "context": "### Please tick this box to confirm you have reviewed the above.  - [X] I have a different issue.  ### What version of ripgrep are you using?  ripgrep 14.1.0  ### How did you install ripgrep?  binary download  ### What operating system are you using ripgrep on?  Ubuntu 23.10  ###"
+    },
+    {
+      "id": "rg-2767",
+      "bucket": "L",
+      "query": "ignore: WalkBuilder::build_parallel() example does not compile",
+      "gold": [
+        "ripgrep::WalkBuilder::build"
+      ],
+      "roux_rank": 1,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 2767,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2767",
+        "labels": [],
+        "fix_commit": "3ad0e8347158",
+        "changed_files": [
+          "crates/ignore/src/walk.rs"
+        ],
+        "gold_candidates": [
+          "build"
+        ]
+      },
+      "context": "The example given in the documentation for `ignore::WalkBuildeer::build_parallel()`  https://github.com/BurntSushi/ripgrep/blob/eca13f08a2a0ece89a423565891e48a90a8aedef/crates/ignore/src/walk.rs#L594  does not compile, since the returned closure is expected to return a `WalkState"
+    },
+    {
+      "id": "rg-2884",
+      "bucket": "S",
+      "query": "Alternation match regression",
+      "gold": [
+        "ripgrep::Extractor::union",
+        "ripgrep::TSeq::choose",
+        "ripgrep::TSeq::has_poisonous_literal",
+        "ripgrep::TSeq::union"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2884,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2884",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "9d738ad0c009",
+        "changed_files": [
+          "crates/regex/src/literal.rs"
+        ],
+        "gold_candidates": [
+          "choose",
+          "has_poisonous_literal",
+          "union"
+        ]
+      },
+      "context": "### Please tick this box to confirm you have reviewed the above.  - [X] I have a different issue.  ### What version of ripgrep are you using?  14.1.0  ### How did you install ripgrep?  Cargo  ### What operating system are you using ripgrep on?  Fedora 40  ### Describe your bug.  "
+    }
+  ]
+}

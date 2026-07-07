@@ -1,0 +1,463 @@
+{
+  "_comment": "DRAFT harvested query set for roux-x6fs (gin) \u2014 NOT frozen, needs human review. Queries are real user issue TITLES from the persona repo; gold = qualified_name substrings pinned to the fix commit's touched symbols, validated against the snapshot index. bucket: L=roux top-1 (lexical), G=roux ranks 2-10 (graph/tail), S=roux misses@10 (vocab/semantic gap \u2014 the anti-Goodhart core). query_leaks_gold flags titles that already contain a gold identifier (should be pruned/relabeled). Review: drop off-topic/feature-request titles, tighten gold, then freeze (roux-x6fs.3).",
+  "source_name": "gin",
+  "index_path": "/Users/mickey/Repos/iicky/roux/bench/snapshots/gin.sqlite",
+  "pinned_ref": "v1.10.0",
+  "distribution": {
+    "L": 2,
+    "G": 2,
+    "S": 14
+  },
+  "queries": [
+    {
+      "id": "gin-20",
+      "bucket": "S",
+      "query": "Support for 405 Method Not Allowed",
+      "gold": [
+        "gin::Value"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 20,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/20",
+        "labels": [
+          "enhancement"
+        ],
+        "fix_commit": "7834a03e8467",
+        "changed_files": [
+          "context.go"
+        ],
+        "gold_candidates": [
+          "Value"
+        ]
+      },
+      "context": "Would be great to easy add support for status 405, specially when creating a REST API.  And do you have any example adding a more verbose access logger? Logging response-code, user-agent, client-ip, etc?  Keep up the good work! :+1:  "
+    },
+    {
+      "id": "gin-391",
+      "bucket": "S",
+      "query": "Support HTTP content negotiation wildcards",
+      "gold": [
+        "gin::NegotiateFormat"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 391,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/391",
+        "labels": [],
+        "fix_commit": "2dd31930060c",
+        "changed_files": [
+          "context.go"
+        ],
+        "gold_candidates": [
+          "NegotiateFormat"
+        ]
+      },
+      "context": "Content negotiation as implemented does not support request media type wildcards.  For example, when a client sends `Accept: */*`, the negotiotion logic should respond with any type offered. Currently it fails. "
+    },
+    {
+      "id": "gin-610",
+      "bucket": "S",
+      "query": "Binding tag: add 'skipped' on top of 'required'",
+      "gold": [
+        "gin::mapForm",
+        "gin::mapFormByTag",
+        "gin::mapping",
+        "gin::setSlice",
+        "gin::setTimeField"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 610,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/610",
+        "labels": [],
+        "fix_commit": "0d50ce859745",
+        "changed_files": [
+          "binding/form_mapping.go"
+        ],
+        "gold_candidates": [
+          "mapForm",
+          "mapFormByTag",
+          "mapping",
+          "setSlice",
+          "setTimeField",
+          "setWithProperType",
+          "tryToSetValue"
+        ]
+      },
+      "context": "Currently, when using `c.Bind()`, it is possible to set the `binding` tag to `required` to ensure that the field must be set. It would be useful to also be able to set this field to something like `skipped` so that when using `c.Bind()`, the field is skipped and isn't actually de"
+    },
+    {
+      "id": "gin-630",
+      "bucket": "G",
+      "query": "gin.Error does not implement the error interface",
+      "gold": [
+        "gin::Error",
+        "gin::MarshalJSON"
+      ],
+      "roux_rank": 6,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 630,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/630",
+        "labels": [],
+        "fix_commit": "c8b35d34452e",
+        "changed_files": [
+          "errors.go"
+        ],
+        "gold_candidates": [
+          "Error",
+          "MarshalJSON"
+        ]
+      },
+      "context": "I was attempting to use the exported `gin.Error`type  in `func (c *Context) Error(err error) *Error` but it fails on compilation.   ``` go func someFunc(c *gin.Context) {   if u, err := SomeOp(); err != nil {     c.Error(gin.Error{err, gin.ErrorTypePublic, c.Request.URL.String()}"
+    },
+    {
+      "id": "gin-752",
+      "bucket": "S",
+      "query": "IsTerminal not available on Google App Engine",
+      "gold": [
+        "gin::LoggerWithWriter"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 752,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/752",
+        "labels": [],
+        "fix_commit": "b26d956e0785",
+        "changed_files": [
+          "logger.go"
+        ],
+        "gold_candidates": [
+          "LoggerWithWriter"
+        ]
+      },
+      "context": "A recent commit [1] brought in the use of the `terminal.IsTerminal` function. That function is not available at compile time on Google App Engine, as can be seen in the `!appengine` build tag for the file implementing it [2].    [1] https://github.com/gin-gonic/gin/commit/32cab50"
+    },
+    {
+      "id": "gin-928",
+      "bucket": "L",
+      "query": "Method to get main handler is desired",
+      "gold": [
+        "gin::Handler",
+        "gin::HandlerName"
+      ],
+      "roux_rank": 1,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 928,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/928",
+        "labels": [],
+        "fix_commit": "3f95933c3d8a",
+        "changed_files": [
+          "context.go"
+        ],
+        "gold_candidates": [
+          "Handler",
+          "HandlerName"
+        ]
+      },
+      "context": "It's convenient to get request handler name by gin.Context.HandlerName, but it not always work well. In case that handler is installed with decorator wrapped, HanderName will return func1, which is meaningless.  `  r.GET(\"/foo\", Decorator(Foo))  `  Since there's no way to get fun"
+    },
+    {
+      "id": "gin-1331",
+      "bucket": "G",
+      "query": "Recovery middleware leaks sensitive cookies, tokens, and headers into logs",
+      "gold": [
+        "gin::RecoveryWithWriter"
+      ],
+      "roux_rank": 8,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 1331,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1331",
+        "labels": [],
+        "fix_commit": "ad53619b15fd",
+        "changed_files": [
+          "recovery.go"
+        ],
+        "gold_candidates": [
+          "RecoveryWithWriter"
+        ]
+      },
+      "context": "Session cookies, API tokens, and authorization headers are all being leaked. The request is dumped if a handler hits a panic when using the recovery middleware: https://github.com/gin-gonic/gin/blob/65a65c2edd4e86f96634a553f07a25c38f2b1c75/recovery.go#L41    This is very insecure"
+    },
+    {
+      "id": "gin-1462",
+      "bucket": "L",
+      "query": "change to test_helpers.go causes flag parsing to fail for cmd line app",
+      "gold": [
+        "gin::CreateTestContext"
+      ],
+      "roux_rank": 1,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 1462,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1462",
+        "labels": [],
+        "fix_commit": "7e64d32269d8",
+        "changed_files": [
+          "test_helpers.go"
+        ],
+        "gold_candidates": [
+          "CreateTestContext"
+        ]
+      },
+      "context": "I have a command line app that imports some libraries that also import gin.    There has been a change to a non-test file - test_helpers.go that includes net/http/httptest under this PR. httptest should only be used in a file called _test.go to ensure it is excluded from compilat"
+    },
+    {
+      "id": "gin-1644",
+      "bucket": "S",
+      "query": "Multiple slashes in path is not working",
+      "gold": [
+        "gin::handleHTTPRequest"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 1644,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1644",
+        "labels": [],
+        "fix_commit": "b6425689dc65",
+        "changed_files": [
+          "gin.go"
+        ],
+        "gold_candidates": [
+          "handleHTTPRequest"
+        ]
+      },
+      "context": "## Description    Multiple slashes in path can't be routed!    In stdlib http, the [ServeMux](https://golang.org/src/net/http/server.go?s=40985:41006#L2313) use `cleanPath` on `path`.     ![image](https://user-images.githubusercontent.com/1881126/48471233-65de3080-e82e-11e8-9b52-"
+    },
+    {
+      "id": "gin-1672",
+      "bucket": "S",
+      "query": "BindQuery not support time pointer, when non specified form fieldName",
+      "gold": [
+        "gin::mapForm",
+        "gin::mapFormByTag",
+        "gin::mapping",
+        "gin::setSlice",
+        "gin::setTimeField"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 1672,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1672",
+        "labels": [],
+        "fix_commit": "0d50ce859745",
+        "changed_files": [
+          "binding/form_mapping.go"
+        ],
+        "gold_candidates": [
+          "mapForm",
+          "mapFormByTag",
+          "mapping",
+          "setSlice",
+          "setTimeField",
+          "setWithProperType",
+          "tryToSetValue"
+        ]
+      },
+      "context": "```  type User struct {  \tQueryTime *time.Time `binding:\"omitempty\"`  }    func main() {  \tr := gin.Default()  \tr.GET(\"/user\", getUser)  \tr.Run(\":8085\")  }    func getUser(c *gin.Context) {  \tvar user User  \tif err := c.ShouldBindQuery(&user); err == nil {  \t\tlog.Infof(\"%+v\", use"
+    },
+    {
+      "id": "gin-1760",
+      "bucket": "S",
+      "query": "Out of range if redirect more than 45 times",
+      "gold": [
+        "gin::HandleContext"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 1760,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1760",
+        "labels": [],
+        "fix_commit": "a768f064d53c",
+        "changed_files": [
+          "gin.go"
+        ],
+        "gold_candidates": [
+          "HandleContext"
+        ]
+      },
+      "context": "Here is my server code   ```  package main    import (    \"fmt\"    \"github.com/gin-gonic/gin\"    \"strconv\"  )    func main() {    r := gin.Default()      r.GET(\"/calc/:value\", func(c *gin.Context) {      var response string        if v, exists := c.Params.Get(\"value\"); exists {  "
+    },
+    {
+      "id": "gin-1804",
+      "bucket": "S",
+      "query": "Default engine producing two log lines with StaticFS for 404",
+      "gold": [
+        "gin::createStaticHandler"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 1804,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1804",
+        "labels": [
+          "type/bug"
+        ],
+        "fix_commit": "4a23c4f7b9ce",
+        "changed_files": [
+          "routergroup.go"
+        ],
+        "gold_candidates": [
+          "createStaticHandler"
+        ]
+      },
+      "context": "- go version: 1.11.4  - gin version (or commit ref): master  - operating system: OSX, 10.13.6    ## Description  I am receiving two log lines from a 404, even when using the default engine.    If I remove the router.StaticFS I no longer see the issue.    Code example:  ```  func "
+    },
+    {
+      "id": "gin-1823",
+      "bucket": "S",
+      "query": "Styling breaks when request takes long",
+      "gold": [
+        "gin::IsOutputColor"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 1823,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1823",
+        "labels": [],
+        "fix_commit": "ce20f107f5dc",
+        "changed_files": [
+          "logger.go"
+        ],
+        "gold_candidates": [
+          "IsOutputColor"
+        ]
+      },
+      "context": "- go version: `go version go1.10.4 linux/amd64`  - gin version (or commit ref): `5acf6601170bb49a1958c055d66d54ba152dc34b`  - operating system: `elementary OS 5.0 Juno`    ## Description  If a request takes long like web sockets the logging gets a bit messed up    see the screens"
+    },
+    {
+      "id": "gin-2209",
+      "bucket": "S",
+      "query": "context.JSON adds a new line to end of JSON response",
+      "gold": [
+        "gin::WriteJSON"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 2209,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/2209",
+        "labels": [
+          "type/bug"
+        ],
+        "fix_commit": "5f56109bcffd",
+        "changed_files": [
+          "render/json.go"
+        ],
+        "gold_candidates": [
+          "WriteJSON"
+        ]
+      },
+      "context": "  ## Description    context.JSON() adds a new line character \\n to end of JSON response    ## How to reproduce    Clone [this repo](https://github.com/kishaningithub/gin-newline) and run     ```bash  $ GIN_MODE=release go run gin-newline.go  ```    ## Expectations    Newline char"
+    },
+    {
+      "id": "gin-2674",
+      "bucket": "S",
+      "query": "Data race with gin-gonic v1.7.0",
+      "gold": [
+        "gin::RemoteIP"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2674,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/2674",
+        "labels": [
+          "type/bug"
+        ],
+        "fix_commit": "03e5e05ae089",
+        "changed_files": [
+          "context.go"
+        ],
+        "gold_candidates": [
+          "RemoteIP"
+        ]
+      },
+      "context": "With v1.7.0, a data race has been raised by our unit tests whith `-race` (not with previous version)    go version go1.16 linux/amd64    ```  === RUN   TestXXXX  ==================  WARNING: DATA RACE  Write at 0x00c0003ce998 by goroutine 169:    github.com/gin-gonic/gin.(*Contex"
+    },
+    {
+      "id": "gin-2786",
+      "bucket": "S",
+      "query": "[Bug]mixed param and non-param paths",
+      "gold": [
+        "gin::getValue"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 2786,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/2786",
+        "labels": [
+          "type/bug"
+        ],
+        "fix_commit": "0a55865c3fc4",
+        "changed_files": [
+          "tree.go"
+        ],
+        "gold_candidates": [
+          "getValue"
+        ]
+      },
+      "context": "gin version 1.7.2    \"/get/abc\" = value1  \"/get/:param\" = value2    GET /get/abc => value1  GET /get/a => value2  GET /get/xyz => value2  GET /get/abcd => 404 (should be value2)  "
+    },
+    {
+      "id": "gin-3659",
+      "bucket": "S",
+      "query": "Can't bind list of struct pointer in query",
+      "gold": [
+        "gin::setWithProperType"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 3659,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/3659",
+        "labels": [],
+        "fix_commit": "44d0dd70924d",
+        "changed_files": [
+          "binding/form_mapping.go"
+        ],
+        "gold_candidates": [
+          "setWithProperType"
+        ]
+      },
+      "context": "## Description    > Sorry I'm not familiar with golang, so the description below maybe is not accurate.    Can't bind list of struct pointer in query    It seem like the pointer support was lost in this commit    https://github.com/gin-gonic/gin/commit/0d50ce859745354fa83dcf2bf4c"
+    },
+    {
+      "id": "gin-3819",
+      "bucket": "S",
+      "query": "Binding a non mandatory file parameter will directly result in an error message",
+      "gold": [
+        "gin::setWithProperType"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 3819,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/3819",
+        "labels": [
+          "type/bug"
+        ],
+        "fix_commit": "3dc1cd6572b4",
+        "changed_files": [
+          "binding/form_mapping.go"
+        ],
+        "gold_candidates": [
+          "setWithProperType"
+        ]
+      },
+      "context": "- With issues:    - Use the search tool before opening a new issue.    - Please provide source code and commit sha if you found a bug.    - Review existing issues and provide feedback or react to them.    ## Description    Bind a a non mandatory file parameter will report an erro"
+    }
+  ]
+}

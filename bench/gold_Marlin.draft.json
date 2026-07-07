@@ -1,0 +1,1041 @@
+{
+  "_comment": "DRAFT harvested query set for roux-x6fs (Marlin) \u2014 NOT frozen, needs human review. Queries are real user issue TITLES from the persona repo; gold = qualified_name substrings pinned to the fix commit's touched symbols, validated against the snapshot index. bucket: L=roux top-1 (lexical), G=roux ranks 2-10 (graph/tail), S=roux misses@10 (vocab/semantic gap \u2014 the anti-Goodhart core). query_leaks_gold flags titles that already contain a gold identifier (should be pruned/relabeled). Review: drop off-topic/feature-request titles, tighten gold, then freeze (roux-x6fs.3).",
+  "source_name": "Marlin",
+  "index_path": "/Users/mickey/Repos/iicky/roux/bench/snapshots/Marlin.sqlite",
+  "pinned_ref": "2.1.2.5",
+  "distribution": {
+    "L": 6,
+    "G": 10,
+    "S": 24
+  },
+  "queries": [
+    {
+      "id": "Marlin-8577",
+      "bucket": "S",
+      "query": "Compile error with last Bugfix 2.0.x",
+      "gold": [
+        "Marlin::M290"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 8577,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/8577",
+        "labels": [
+          "Bug: Confirmed !",
+          "S: Solved"
+        ],
+        "fix_commit": "4793c34c5365",
+        "changed_files": [
+          "Marlin/src/gcode/motion/M290.cpp"
+        ],
+        "gold_candidates": [
+          "M290"
+        ]
+      },
+      "context": "The last version of bugfix does not compile on my side. I get:  ```  Compiling .pioenvs\\LPC1768\\src\\src\\gcode\\parser.o  Marlin\\src\\gcode\\motion\\M290.cpp: In static member function 'static void GcodeSuite::M290()':  Marlin\\src\\gcode\\motion\\M290.cpp:63:37: error: no matching functi"
+    },
+    {
+      "id": "Marlin-8579",
+      "bucket": "G",
+      "query": "2.x Fan speed (M106) doesn't work until after G1 command",
+      "gold": [
+        "Marlin::check_axes_activity"
+      ],
+      "roux_rank": 7,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 8579,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/8579",
+        "labels": [
+          "Bug: Potential ?",
+          "Needs: Work"
+        ],
+        "fix_commit": "16baa48699ce",
+        "changed_files": [
+          "Marlin/src/module/planner.cpp"
+        ],
+        "gold_candidates": [
+          "check_axes_activity"
+        ]
+      },
+      "context": "------------------------------------------------------------  ### Bug Report  - Description: When I set the fan speed (either through the Octoprint terminal or using the Octoprint UI) it responds \"OK\" but doesn't actually perform the command until after I move the X-axis (for exa"
+    },
+    {
+      "id": "Marlin-8669",
+      "bucket": "G",
+      "query": "Z_HOMING_HEIGHT ignored when Z_HOME_DIR > 0",
+      "gold": [
+        "Marlin::G28"
+      ],
+      "roux_rank": 7,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 8669,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/8669",
+        "labels": [],
+        "fix_commit": "9e3fbcf35cd3",
+        "changed_files": [
+          "Marlin/src/gcode/calibrate/G28.cpp"
+        ],
+        "gold_candidates": [
+          "G28"
+        ]
+      },
+      "context": "- Description: Z_HOMING_HEIGHT ignored when Z_HOME_DIR > 0  - Expected behaviour: Z_HOMING_HEIGHT should be respected  - Actual behaviour: Homing just Y or X (G28 X0 or G29 Y0) ignores Z_HOMING_HEIGHT and may cause the toolhead to crash.  - Steps to reproduce:    - Configure prin"
+    },
+    {
+      "id": "Marlin-8710",
+      "bucket": "L",
+      "query": "[2.0.X]- LPC1768 -  TCNT0 not defined when using LIN_ADVANCE or BABYSTEPPING",
+      "gold": [
+        "Marlin::Stepper",
+        "Marlin::isr",
+        "Marlin::report_positions"
+      ],
+      "roux_rank": 1,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 8710,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/8710",
+        "labels": [
+          "Bug: Confirmed !",
+          "T: HAL & APIs"
+        ],
+        "fix_commit": "4fa65a5c25d8",
+        "changed_files": [
+          "Marlin/src/module/stepper.cpp",
+          "Marlin/src/module/stepper.h",
+          "Marlin/src/module/temperature.cpp"
+        ],
+        "gold_candidates": [
+          "Stepper",
+          "isr",
+          "report_positions"
+        ]
+      },
+      "context": "### Compile Error  I've got a build error on LPC1768 platform when i enable either `LIN_ADVANCE` or `BABYSTEPPING` inside configuration_adv.h.  The Build error message is **\"Marlin\\src\\module\\stepper.cpp:1304:54: error: 'TCNT0' was not declared in this scope\"**  When i check insi"
+    },
+    {
+      "id": "Marlin-8779",
+      "bucket": "S",
+      "query": "Sainsmart 2-in-1 board pulling up gen7-custom board pins definition?",
+      "gold": [
+        "Marlin::updateTemperaturesFromRawValues"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 8779,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/8779",
+        "labels": [],
+        "fix_commit": "0d531d96551a",
+        "changed_files": [
+          "Marlin/src/module/temperature.cpp"
+        ],
+        "gold_candidates": [
+          "updateTemperaturesFromRawValues"
+        ]
+      },
+      "context": "### Compile Error  When I compile with   `  #ifndef MOTHERBOARD    #define BOARD_SAINSMART_2IN1  #endif    ` I get an error:  ```  #error \"Oops!  Make sure you have 'Sanguino' selected from the 'Tools -> Boards' menu.\"    from tab pins_GEN7_CUSTOM.h ```    If I comment out:    #i"
+    },
+    {
+      "id": "Marlin-8805",
+      "bucket": "S",
+      "query": "[2.0.x] LEVEL_BED_CORNERS times out after one lap around bed",
+      "gold": [
+        "Marlin::M18_M84"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 8805,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/8805",
+        "labels": [
+          "C: LCD & Controllers"
+        ],
+        "fix_commit": "65519263f4d2",
+        "changed_files": [
+          "Marlin/src/Marlin.cpp",
+          "Marlin/src/gcode/control/M17_M18_M84.cpp"
+        ],
+        "gold_candidates": [
+          "M18_M84"
+        ]
+      },
+      "context": "Using the LEVEL_BED_CORNERS has a small issue.  After boot you can make one lap around the bed with the Next prompt remaining for an indefinite period.  After moving to the 4th point the menu will go back to the main menu after about 15 seconds. Each time after the next point wil"
+    },
+    {
+      "id": "Marlin-9155",
+      "bucket": "S",
+      "query": "Marlin 2.0 Build for MKS SBase 1.3 not compiling",
+      "gold": [
+        "Marlin::M502"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 9155,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/9155",
+        "labels": [],
+        "fix_commit": "d178d6e92112",
+        "changed_files": [
+          "Marlin/src/gcode/eeprom/M500-M504.cpp"
+        ],
+        "gold_candidates": [
+          "M502"
+        ]
+      },
+      "context": "I'm trying to build the firmware.bin file to flash my MSK SBase 1.3 board, following the steps found here: https://github.com/MarlinFirmware/Marlin/issues/8131 (I haven't found any other documentation on the matter).    I just downloaded and changed the Configuration.h and Config"
+    },
+    {
+      "id": "Marlin-9948",
+      "bucket": "S",
+      "query": "Bugfix-2.0.x Compile failure when using dual serial ports on MKS-SBase (LPC1768)",
+      "gold": [
+        "Marlin::M500",
+        "Marlin::M501",
+        "Marlin::M502"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 9948,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/9948",
+        "labels": [
+          "Bug: Confirmed !",
+          "S: Solved"
+        ],
+        "fix_commit": "49ca67202f87",
+        "changed_files": [
+          "Marlin/src/gcode/eeprom/M500-M504.cpp",
+          "Marlin/src/module/configuration_store.cpp",
+          "Marlin/src/module/configuration_store.h"
+        ],
+        "gold_candidates": [
+          "M500",
+          "M501",
+          "M502"
+        ]
+      },
+      "context": "### Description    Failure to compile for MKS-SBase LPC1768    ### Steps to Reproduce    1. Clone single Branch using 'git clone -b bugfix-2.0.x --single-branch https://github.com/MarlinFirmware/Marlin.git'  2. Copy example MKS-Sbase config files into place  3. Compile using 'pla"
+    },
+    {
+      "id": "Marlin-10137",
+      "bucket": "G",
+      "query": "Error MAXTEMP triggered if manual leveling bed is GT 0.05",
+      "gold": [
+        "Marlin::G29"
+      ],
+      "roux_rank": 10,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 10137,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10137",
+        "labels": [
+          "Bug: Confirmed !",
+          "F: Calibration"
+        ],
+        "fix_commit": "aa20b3ef7ce6",
+        "changed_files": [
+          "Marlin/src/gcode/bedlevel/abl/G29.cpp"
+        ],
+        "gold_candidates": [
+          "G29"
+        ]
+      },
+      "context": "<!--    Have you read Marlin's Code of Conduct? By filing an Issue, you are expected to comply with it, including treating everyone with respect. Click the \"Code of conduct\" link in the sidebar under \"Helpful resources.\"    Do you want to ask a question? Are you looking for suppo"
+    },
+    {
+      "id": "Marlin-10388",
+      "bucket": "L",
+      "query": "M118 Not working as expected",
+      "gold": [
+        "Marlin::M118"
+      ],
+      "roux_rank": 1,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 10388,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10388",
+        "labels": [
+          "Bug: Confirmed !",
+          "Needs: Patch"
+        ],
+        "fix_commit": "4c8751727acf",
+        "changed_files": [
+          "Marlin/src/gcode/host/M118.cpp",
+          "Marlin/src/gcode/parser.cpp"
+        ],
+        "gold_candidates": [
+          "M118"
+        ]
+      },
+      "context": "### Description    The `M118` command is not working as expected when trying to send output to the console - when the text includes an `A` or an `E` anywhere in the string the output misbehaves.    I've tested in bugfix-1.1.x and bugfix-2.0.x and found the same behaviour in both."
+    },
+    {
+      "id": "Marlin-10410",
+      "bucket": "G",
+      "query": "bugfix-1.1.x: stuttering motion after switching on AUTO_POWER_CONTROL",
+      "gold": [
+        "Marlin::power_off",
+        "Marlin::power_on"
+      ],
+      "roux_rank": 3,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 10410,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10410",
+        "labels": [],
+        "fix_commit": "3c826e5d05bd",
+        "changed_files": [
+          "Marlin/src/feature/power.cpp"
+        ],
+        "gold_candidates": [
+          "power_off",
+          "power_on"
+        ]
+      },
+      "context": "Hi everyone,    since, I think, yesterday I've been experiencing stuttering motion on my RAMPS 1.4/Marlin based printer (see https://www.youtube.com/watch?v=CbQdjndpYNM). I'm not sure what I've changed in the configuration that caused this to happen. But I also recognized some we"
+    },
+    {
+      "id": "Marlin-10476",
+      "bucket": "L",
+      "query": "[bugfix 2.0] G28.cpp, tweaks cause Z homing with G28 X/Y",
+      "gold": [
+        "Marlin::G28"
+      ],
+      "roux_rank": 1,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 10476,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10476",
+        "labels": [
+          "Bug: Confirmed !",
+          "F: Calibration",
+          "S: Solved"
+        ],
+        "fix_commit": "1c3d49afe022",
+        "changed_files": [
+          "Marlin/src/gcode/calibrate/G28.cpp"
+        ],
+        "gold_candidates": [
+          "G28"
+        ]
+      },
+      "context": "<!--    Have you read Marlin's Code of Conduct? By filing an Issue, you are expected to comply with it, including treating everyone with respect: https://github.com/MarlinFirmware/Marlin/blob/master/.github/code_of_conduct.md    Do you want to ask a question? Are you looking for "
+    },
+    {
+      "id": "Marlin-10505",
+      "bucket": "S",
+      "query": "bugfix-1.1.x compile error: 'current_temperature_chamber' was not declared in this scope",
+      "gold": [
+        "Marlin::Temperature",
+        "Marlin::getHeaterPower"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 10505,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10505",
+        "labels": [],
+        "fix_commit": "9789c1c719ac",
+        "changed_files": [
+          "Marlin/src/module/temperature.cpp",
+          "Marlin/src/module/temperature.h"
+        ],
+        "gold_candidates": [
+          "Temperature",
+          "getHeaterPower"
+        ]
+      },
+      "context": "### Description    Compile error with April 24th 1.1.x bugfix build:  ```  temperature.cpp: In static member function 'static void Temperature::checkExtruderAutoFans()':    temperature.cpp:562: error: 'current_temperature_chamber' was not declared in this scope         if (curren"
+    },
+    {
+      "id": "Marlin-10660",
+      "bucket": "S",
+      "query": "[Bugfix-1.1.x] Enable UBL compile error 'ARG_X' has not been declared",
+      "gold": [
+        "Marlin::Planner",
+        "Marlin::Planner::Planner"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 10660,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10660",
+        "labels": [],
+        "fix_commit": "a225d2e99e03",
+        "changed_files": [
+          "Marlin/src/module/planner.h"
+        ],
+        "gold_candidates": [
+          "Planner"
+        ]
+      },
+      "context": "### Description  [Bugfix-1.1.x]   After enable UBL on stock config compile error.  tested Arduino 1.8.2 & 1.8.5 & 1.9-beta  ```cpp  #define AUTO_BED_LEVELING_UBL  #define RESTORE_LEVELING_AFTER_G28  //UBL condition  #define EEPROM_SETTINGS  //UBL condition  ```    <details><summa"
+    },
+    {
+      "id": "Marlin-10708",
+      "bucket": "S",
+      "query": "[bugfix-2.0.x] : Mesh bed leveling without segment leveled moves option compilation fail",
+      "gold": [
+        "Marlin::mesh_bed_leveling",
+        "Marlin::mesh_bed_leveling::mesh_bed_leveling"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 10708,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10708",
+        "labels": [
+          "T: Question",
+          "F: Calibration"
+        ],
+        "fix_commit": "836b0bbeee9f",
+        "changed_files": [
+          "Marlin/src/feature/bedlevel/mbl/mesh_bed_leveling.h",
+          "Marlin/src/module/motion.cpp"
+        ],
+        "gold_candidates": [
+          "mesh_bed_leveling"
+        ]
+      },
+      "context": "Hello,    I can't compile marlin with MESH_BED_LEVELING enabled and SEGMENT_LEVELED_MOVES disabled,   it seems that there is a problem of function declaration.  There is a mark \"// Support functions, which may be embedded in the class later\" at the end of the file mesh_bed_leveli"
+    },
+    {
+      "id": "Marlin-11697",
+      "bucket": "S",
+      "query": "[2.0.x] Too long extrusion during filament change",
+      "gold": [
+        "Marlin::set_position_mm"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 11697,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/11697",
+        "labels": [],
+        "fix_commit": "59e76e5fdf81",
+        "changed_files": [
+          "Marlin/src/module/planner.cpp"
+        ],
+        "gold_candidates": [
+          "set_position_mm"
+        ]
+      },
+      "context": "I executed command by LCD and I got title message on host. I think this is not good, long extrusion check should not be considered during filament purge after change...    Am I wrong?"
+    },
+    {
+      "id": "Marlin-12326",
+      "bucket": "S",
+      "query": "[bugfix 2.0.x] velocity setting in lcd menu shows x axis 3 times, y and z are missing",
+      "gold": [
+        "Marlin::menu_advanced_temperature"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 12326,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/12326",
+        "labels": [],
+        "fix_commit": "60dbd8161c77",
+        "changed_files": [
+          "Marlin/src/lcd/menu/menu_advanced.cpp"
+        ],
+        "gold_candidates": [
+          "menu_advanced_temperature"
+        ]
+      },
+      "context": "With REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER, I am unable to adjust the max velocity for y and z. This is what the display output looks like:  Vmax X:   250  Vmax X:   250  Vmax X:   250  Vmax E:   30  Changing one of the X-values changes all of them."
+    },
+    {
+      "id": "Marlin-13410",
+      "bucket": "S",
+      "query": "Marlin\\src\\module\\temperature.cpp:826:46: error: operator ',' has no right operand[BUG] (short description)",
+      "gold": [
+        "Marlin::PIDRunner::get_pid_output"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 13410,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/13410",
+        "labels": [],
+        "fix_commit": "59353546e81b",
+        "changed_files": [
+          "Marlin/src/lcd/ultralcd.h",
+          "Marlin/src/module/temperature.cpp"
+        ],
+        "gold_candidates": [
+          "get_pid_output"
+        ]
+      },
+      "context": "When I try to compile the current Marlin 2.0_bugfix with #define PID_DEBUG  enabled i get the following compile error:   Marlin\\src\\module\\temperature.cpp:826:46: error: operator ',' has no right operand    from   https://github.com/MarlinFirmware/Marlin/blob/09eb30dc05a727e3816a"
+    },
+    {
+      "id": "Marlin-14045",
+      "bucket": "G",
+      "query": "[BUG] Undefined reference to `Backlash::distance_mm'",
+      "gold": [
+        "Marlin::Backlash"
+      ],
+      "roux_rank": 2,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 14045,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/14045",
+        "labels": [
+          "S: Solved",
+          "C: Build / Toolchain"
+        ],
+        "fix_commit": "cfca07852a8c",
+        "changed_files": [
+          "Marlin/src/feature/backlash.cpp",
+          "Marlin/src/feature/backlash.h"
+        ],
+        "gold_candidates": [
+          "Backlash"
+        ]
+      },
+      "context": "Marlin 2.0 bugfix    Latest, Clean install of Arduino IDE    When compiling, after enabling backlash compensation, i am met with the following error:    ```  C:\\Users\\Chris\\AppData\\Local\\Temp\\ccQyj2hA.ltrans6.ltrans.o: In function `add_correction_steps':    sketch\\src\\feature/bac"
+    },
+    {
+      "id": "Marlin-14328",
+      "bucket": "S",
+      "query": "[BUG] [bugfix-2.0.x] Using M401 makes a subsequent G28 fail",
+      "gold": [
+        "Marlin::probe_specific_action"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 14328,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/14328",
+        "labels": [],
+        "fix_commit": "f090a927f409",
+        "changed_files": [
+          "Marlin/src/module/probe.cpp"
+        ],
+        "gold_candidates": [
+          "probe_specific_action"
+        ]
+      },
+      "context": "### Description    Machine: Ender-3 Pro  Motherboard: SKR v1.3  Firmware: Marlin 2.0.x  Probe: Triangle labs 3D-touch connected to Zmax    The issue is, M401 and M402 commands do nothing.   Also G28 with safe homing enabled homes to Zmin endstop without deploying the probe. Not s"
+    },
+    {
+      "id": "Marlin-14465",
+      "bucket": "L",
+      "query": "[BUG] LASER_FEATURE Error when compiling",
+      "gold": [
+        "Marlin::SpindleLaser"
+      ],
+      "roux_rank": 1,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 14465,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/14465",
+        "labels": [
+          "Bug: Confirmed !",
+          "S: Solved"
+        ],
+        "fix_commit": "021c4ccf5fa0",
+        "changed_files": [
+          "Marlin/src/feature/spindle_laser.h"
+        ],
+        "gold_candidates": [
+          "SpindleLaser"
+        ]
+      },
+      "context": "I own a T-Rex 3 with laser. I have a problem compiling.   I have unlocked the Laser Future. I always get the following error:  ```  \"sketch\\src\\feature\\spindle_laser.cpp:64:6: error: redefinition of 'static void SpindleLaser::update_output()'  void SpindleLaser::update_output() {"
+    },
+    {
+      "id": "Marlin-14774",
+      "bucket": "S",
+      "query": "[BUG] M0 injection on end of SD card causing nozzle to linger heated on model",
+      "gold": [
+        "Marlin::get_serial_commands"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 14774,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/14774",
+        "labels": [],
+        "fix_commit": "dd6a7ca197cf",
+        "changed_files": [
+          "Marlin/src/gcode/queue.cpp"
+        ],
+        "gold_candidates": [
+          "get_serial_commands"
+        ]
+      },
+      "context": "### Description    This is due to lines 769 - 780 in queue.cpp. This is causing the printer to leave the nozzle hot and sitting on my print before executing the code from \"End G-Code\" in Cura. Disabling event lights stops this from happening. This is obviously not ideal.    I ass"
+    },
+    {
+      "id": "Marlin-16767",
+      "bucket": "S",
+      "query": "[BUG] latest bugfix compile error for due",
+      "gold": [
+        "Marlin::Probe"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 16767,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/16767",
+        "labels": [
+          "A: SAM3X8C/E"
+        ],
+        "fix_commit": "081ef46e7692",
+        "changed_files": [
+          "Marlin/src/module/probe.h"
+        ],
+        "gold_candidates": [
+          "Probe"
+        ]
+      },
+      "context": "  ### Bug Description    When compiling for due we get an error:  ```  > In file included from sketch/src/MarlinCore.cpp:39:0:  > sketch/src/module/probe.h:69:40: error: could not convert '0' from 'int' to 'XYZval<float>::<anonymous union>'  >      static constexpr xyz_pos_t offs"
+    },
+    {
+      "id": "Marlin-16881",
+      "bucket": "L",
+      "query": "[BUG] Compile fails with BABYSTEP_TICKS not declared in scope",
+      "gold": [
+        "Marlin::Stepper",
+        "Marlin::isr",
+        "Marlin::report_positions",
+        "Marlin::step_axis"
+      ],
+      "roux_rank": 1,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 16881,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/16881",
+        "labels": [],
+        "fix_commit": "99a50743727e",
+        "changed_files": [
+          "Marlin/src/feature/babystep.cpp",
+          "Marlin/src/module/stepper.cpp",
+          "Marlin/src/module/stepper.h"
+        ],
+        "gold_candidates": [
+          "Stepper",
+          "isr",
+          "report_positions",
+          "step_axis"
+        ]
+      },
+      "context": "### Bug Description  ```  Compile error of 2/16/2020 bugfix-2.0.x after enabling experimental INTEGRATED_BABYSTEPPING option:    Compiling .pio\\build\\BIGTREE_SKR_PRO\\src\\src\\sd\\usb_flashdrive\\lib-uhs2\\masstorage.cpp.o  Marlin\\src\\module\\stepper.cpp: In static member function 'sta"
+    },
+    {
+      "id": "Marlin-17125",
+      "bucket": "S",
+      "query": "GCODE_MACROS (i.e. M810 - M819) only execute once",
+      "gold": [
+        "Marlin::process_subcommands_now"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 17125,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17125",
+        "labels": [
+          "Bug: Confirmed !",
+          "S: Solved",
+          "C: G-code Parser"
+        ],
+        "fix_commit": "318a16637bd9",
+        "changed_files": [
+          "Marlin/src/gcode/gcode.cpp"
+        ],
+        "gold_candidates": [
+          "process_subcommands_now"
+        ]
+      },
+      "context": "When defining a macro with M810, e.g. (a very simple example):    M810 G0 X30 | M400 | Y30 | M400 | Z30 | M400    it will only execute completely on its first invocation (i.e. M810).  On any subsequent invocation, only the first command (i.e. G0 X30)   will be executed.    Steps "
+    },
+    {
+      "id": "Marlin-17255",
+      "bucket": "S",
+      "query": "[BUG][bugfix-2.0.x] M114 Reports steps count twice",
+      "gold": [
+        "Marlin::report_logical_position",
+        "Marlin::report_real_position"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 17255,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17255",
+        "labels": [],
+        "fix_commit": "c87d73045b7b",
+        "changed_files": [
+          "Marlin/src/module/motion.cpp"
+        ],
+        "gold_candidates": [
+          "report_logical_position",
+          "report_real_position"
+        ]
+      },
+      "context": "### Bug Description    M114 Command reports as usual but then after newline reports *Count* (steps) second time.    ### My Configurations    Default Configuration.h and Configuration_adv.h    ### Steps to Reproduce    Branch bugfix-2.0.x commit e7a9f1737    Send M114 command    *"
+    },
+    {
+      "id": "Marlin-17264",
+      "bucket": "S",
+      "query": "[BUG] Y Layer Shift when Skew Value is Set",
+      "gold": [
+        "Marlin::check_axes_activity"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 17264,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17264",
+        "labels": [],
+        "fix_commit": "fc11e7217460",
+        "changed_files": [
+          "Marlin/src/module/planner.cpp"
+        ],
+        "gold_candidates": [
+          "check_axes_activity"
+        ]
+      },
+      "context": "    ### Bug Description    When printing objects with dual nozzles, the Y-layer shift minimal with every Tool Change  The shift ist only when the skewfactor.xy != 0    ### My Configurations  [Configuration.zip](https://github.com/MarlinFirmware/Marlin/files/4370544/Configuration."
+    },
+    {
+      "id": "Marlin-17422",
+      "bucket": "S",
+      "query": "[BUG] min_temp_error for thermistor_998 and 999",
+      "gold": [
+        "Marlin::readings_ready"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 17422,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17422",
+        "labels": [],
+        "fix_commit": "5507b6073c02",
+        "changed_files": [
+          "Marlin/src/module/temperature.cpp"
+        ],
+        "gold_candidates": [
+          "readings_ready"
+        ]
+      },
+      "context": "### Bug Description    When trying to use a dummy thermistor (998 or 999) I get a min_temp_error \"Err: MINTEMP: Bed\"    ### My Configurations  SKR 1.4 Turbo  https://www.dropbox.com/s/5ejxpgmmk8bllm9/ConfigFiles.zip?dl=0    ### Steps to Reproduce  1. set all thermistors to 998 or"
+    },
+    {
+      "id": "Marlin-17430",
+      "bucket": "S",
+      "query": "[BUG] compiling error in M425.cpp (2.0.5.3)",
+      "gold": [
+        "Marlin::M425"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 17430,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17430",
+        "labels": [],
+        "fix_commit": "3a42b6c5c60b",
+        "changed_files": [
+          "Marlin/src/gcode/calibrate/G425.cpp",
+          "Marlin/src/gcode/calibrate/M425.cpp",
+          "Marlin/src/inc/Conditionals_post.h"
+        ],
+        "gold_candidates": [
+          "M425"
+        ]
+      },
+      "context": "Due to the current situation I'm digging deeper into Marlin and it's more exotic features. Yesterday I wanted to test out [Backlash Compensation](https://marlinfw.org/docs/gcode/M425.html), but I've got the following compiling error:     `Marlin\\src\\gcode\\calibrate\\M425.cpp:50:24"
+    },
+    {
+      "id": "Marlin-17635",
+      "bucket": "G",
+      "query": "[BUG] Virtual Tool 1 is Incorrectly initialized with 0 : 0 mix on 2 in 1 mixing printer",
+      "gold": [
+        "Marlin::reset_vtools"
+      ],
+      "roux_rank": 7,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 17635,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17635",
+        "labels": [
+          "Bug: Confirmed !",
+          "S: Solved"
+        ],
+        "fix_commit": "a5b2e3e63c1b",
+        "changed_files": [
+          "Marlin/src/feature/mixing.cpp"
+        ],
+        "gold_candidates": [
+          "reset_vtools"
+        ]
+      },
+      "context": "### Bug Description    Beginning with Marlin 2.0.5, Virtual Tool 1 is incorrectly initialized with 0 : 0 mix. Attempting to extrude using tool 1 with this default mix results in printer crash.     ### My Configurations    [Configs.zip](https://github.com/MarlinFirmware/Marlin/fil"
+    },
+    {
+      "id": "Marlin-17770",
+      "bucket": "G",
+      "query": "[BUG] Incorrect total count when probing for leveling",
+      "gold": [
+        "Marlin::G29"
+      ],
+      "roux_rank": 2,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 17770,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17770",
+        "labels": [
+          "Fix Included"
+        ],
+        "fix_commit": "ea520e670a1c",
+        "changed_files": [
+          "Marlin/src/gcode/bedlevel/abl/G29.cpp"
+        ],
+        "gold_candidates": [
+          "G29"
+        ]
+      },
+      "context": "### Bug Description  When probing less than the maximum number of points for bed leveling, (e.g. `G29 P3`, while I have defined `#define GRID_MAX_POINTS_X 5`), the display says still `Probing Point 1/25`, while it should say `Probing Point 1/9`.     ### My Configurations  ```  #d"
+    },
+    {
+      "id": "Marlin-21712",
+      "bucket": "L",
+      "query": "[BUG] compile error with TEMP_SENSOR_1_AS_REDUNDANT",
+      "gold": [
+        "Marlin::Temperature",
+        "Marlin::readings_ready",
+        "Marlin::updateTemperaturesFromRawValues",
+        "Marlin::update_raw_temperatures"
+      ],
+      "roux_rank": 1,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 21712,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/21712",
+        "labels": [
+          "Bug: Confirmed !",
+          "C: Safety",
+          "C: Temperatures"
+        ],
+        "fix_commit": "81d7a6b81d21",
+        "changed_files": [
+          "Marlin/src/module/temperature.cpp",
+          "Marlin/src/module/temperature.h"
+        ],
+        "gold_candidates": [
+          "Temperature",
+          "readings_ready",
+          "updateTemperaturesFromRawValues",
+          "update_raw_temperatures"
+        ]
+      },
+      "context": "### Did you test the latest `bugfix-2.0.x` code?  Yes, and the problem still exists.  ### Bug Description  ```  Marlin\\src\\module\\temperature.cpp:424:24: error: conflicting declaration 'int16_t Temperature::redundant_temperature_raw'     int16_t Temperature::redundant_temperature"
+    },
+    {
+      "id": "Marlin-21750",
+      "bucket": "G",
+      "query": "[BUG] M701 filament load: nozzle no longer raised during load and unload",
+      "gold": [
+        "Marlin::M701"
+      ],
+      "roux_rank": 4,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 21750,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/21750",
+        "labels": [],
+        "fix_commit": "2d9557cf40f2",
+        "changed_files": [
+          "Marlin/src/gcode/feature/pause/M701_M702.cpp"
+        ],
+        "gold_candidates": [
+          "M701"
+        ]
+      },
+      "context": "### Did you test the latest `bugfix-2.0.x` code?  Yes, and the problem still exists.  ### Bug Description  With `ADVANCED_PAUSE_FEATURE`, and `FILAMENT_LOAD_UNLOAD_GCODES` and `NOZZLE_PARK_FEATURE` with a Z > 0, the Z is not raised when a filament load or unload happens.      ###"
+    },
+    {
+      "id": "Marlin-21929",
+      "bucket": "S",
+      "query": "[BUG] EEPROM_CHITCHAT No Feedback?",
+      "gold": [
+        "Marlin::postprocess"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 21929,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/21929",
+        "labels": [
+          "Bug: Confirmed !"
+        ],
+        "fix_commit": "dbb8f3db090e",
+        "changed_files": [
+          "Marlin/src/module/settings.cpp"
+        ],
+        "gold_candidates": [
+          "postprocess"
+        ]
+      },
+      "context": "### Did you test the latest `bugfix-2.0.x` code?  Yes, and the problem still exists.  ### Bug Description  No real big problem, maybe a small bug?    I've found out that my printers with current marlins don't give Feedback, as example, on a simple M500. It just writes an \"ok\".   "
+    },
+    {
+      "id": "Marlin-22167",
+      "bucket": "S",
+      "query": "[BUG] X_HEAD undeclared compiler errors",
+      "gold": [
+        "Marlin::AxisEnum"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 22167,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/22167",
+        "labels": [],
+        "fix_commit": "cce585f6ca22",
+        "changed_files": [
+          "Marlin/src/core/types.h"
+        ],
+        "gold_candidates": [
+          "AxisEnum"
+        ]
+      },
+      "context": "### Did you test the latest `bugfix-2.0.x` code?  Yes, and the problem still exists.  ### Bug Description  Multiple Compiler errors similar to:   Marlin/src/module/endstops.cpp: In static member function 'static void Endstops::update()':  Marlin/src/module/endstops.cpp:623:25: er"
+    },
+    {
+      "id": "Marlin-22250",
+      "bucket": "S",
+      "query": "[BUG] PAUSE_MESSAGE_PAUSING undefined",
+      "gold": [
+        "Marlin::lv_draw_dialog",
+        "Marlin::lv_draw_pause_message"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 22250,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/22250",
+        "labels": [
+          "C: LCD & Controllers"
+        ],
+        "fix_commit": "c7c56ac45f91",
+        "changed_files": [
+          "Marlin/src/lcd/extui/mks_ui/draw_dialog.cpp",
+          "Marlin/src/lcd/extui/mks_ui/draw_dialog.h",
+          "Marlin/src/lcd/extui/mks_ui/draw_pause_message.cpp"
+        ],
+        "gold_candidates": [
+          "lv_draw_dialog",
+          "lv_draw_pause_message"
+        ]
+      },
+      "context": "### Did you test the latest `bugfix-2.0.x` code?    No, but I will test it now!    ### Bug Description    Whilst running up the recent Elegoo Neptune printer on Marlin v2.0.9.1 I had an error due to undefined `PAUSE_MESSAGE_PAUSING`  https://github.com/MarlinFirmware/Marlin/blob/"
+    },
+    {
+      "id": "Marlin-22295",
+      "bucket": "G",
+      "query": "[BUG] Broken PAUSE_PROBE_DEPLOY_WHEN_TRIGGERED",
+      "gold": [
+        "Marlin::probe_specific_action"
+      ],
+      "roux_rank": 2,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 22295,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/22295",
+        "labels": [
+          "F: Z-Probes"
+        ],
+        "fix_commit": "bcc31f68c660",
+        "changed_files": [
+          "Marlin/src/module/probe.cpp"
+        ],
+        "gold_candidates": [
+          "probe_specific_action"
+        ]
+      },
+      "context": "### Did you test the latest `bugfix-2.0.x` code?  Yes, and the problem still exists.  ### Bug Description  pause before probe not working in right direction inverted...    replace this -> if (deploy == PROBE_TRIGGERED()) break;  by -> if (deploy != PROBE_TRIGGERED()) break;    ##"
+    },
+    {
+      "id": "Marlin-22598",
+      "bucket": "G",
+      "query": "[BUG] M115 - badly reported print area dimensions",
+      "gold": [
+        "Marlin::M115"
+      ],
+      "roux_rank": 2,
+      "query_leaks_gold": true,
+      "provenance": {
+        "issue": 22598,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/22598",
+        "labels": [],
+        "fix_commit": "caa6ec051917",
+        "changed_files": [
+          "Marlin/src/gcode/host/M115.cpp"
+        ],
+        "gold_candidates": [
+          "M115"
+        ]
+      },
+      "context": "### Did you test the latest `bugfix-2.0.x` code?  Yes, and the problem still exists.  ### Bug Description  I have a printing area of 230x230  The end stops are in positions X -12 and Y -33  The Marlin defines:    // The size of the printable area  #define X_BED_SIZE 230  #define "
+    },
+    {
+      "id": "Marlin-22729",
+      "bucket": "S",
+      "query": "[BUG] Delta sensorless probing compile error",
+      "gold": [
+        "Marlin::EndstopEnum"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 22729,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/22729",
+        "labels": [
+          "C: Configuration"
+        ],
+        "fix_commit": "d6a87aa75ba4",
+        "changed_files": [
+          "Marlin/src/inc/Conditionals_LCD.h",
+          "Marlin/src/module/endstops.h"
+        ],
+        "gold_candidates": [
+          "EndstopEnum"
+        ]
+      },
+      "context": "### Did you test the latest `bugfix-2.0.x` code?  No, but I will test it now!  ### Bug Description  I am trying to compile marlin for my QQ-S Pro with an SKR 2 board and TMC2209 steppers.    For sensorless probing, I am enabling SENSORLESS_PROBING and defining my drivers as TMC22"
+    },
+    {
+      "id": "Marlin-24963",
+      "bucket": "S",
+      "query": "[BUG] EEPROM error with M502 then M500",
+      "gold": [
+        "Marlin::postprocess"
+      ],
+      "roux_rank": null,
+      "query_leaks_gold": false,
+      "provenance": {
+        "issue": 24963,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/24963",
+        "labels": [
+          "Bug: Confirmed !",
+          "F: EEPROM",
+          "Fix Included"
+        ],
+        "fix_commit": "7002e72f1c48",
+        "changed_files": [
+          "Marlin/src/module/settings.cpp"
+        ],
+        "gold_candidates": [
+          "postprocess"
+        ]
+      },
+      "context": "### Did you test the latest `bugfix-2.1.x` code?    Yes, and the problem still exists.    ### Bug Description    With 2 extruders     With debugging added to see what is going on    Send M502  > echo:Hardcoded Default Settings Loaded  > ok    No problems so far    Send: M500  > e"
+    }
+  ]
+}

@@ -1,0 +1,126 @@
+{
+  "_comment": "HUMAN-REVIEWED frozen held-out set for roux-x6fs (remix) \u2014 anti-Goodhart. Harvested by bench/harvest_persona_queries.py, frozen/reviewed by bench/freeze_heldout.py. S/L by distinctive query<->gold(qualified_name) token overlap (source-prefix stripped, stoplist-filtered): S = no distinctive overlap (vocab/semantic gap \u2014 the real test); L = distinctive overlap (control). gold = qualified_name substrings; any in top-K = hit. Reviewed: generic-constructor gold removed (harvester + freeze), maintainer-process queries and weak-gold mis-pins pruned (see freeze_provenance.review). FROZEN: never tune against it; report SEPARATELY from the CI gate.",
+  "source_name": "remix",
+  "index_path": "/Users/mickey/Repos/iicky/roux/bench/snapshots/remix.sqlite",
+  "pinned_ref": "remix@2.13.1",
+  "freeze_provenance": {
+    "frozen": "2026-07-07",
+    "roux_commit": "f63eda5",
+    "auto_frozen": false,
+    "human_reviewed": true,
+    "from_draft": "bench/gold_remix.draft.json",
+    "harvester": "bench/harvest_persona_queries.py",
+    "triage": "S/L by distinctive query<->gold token overlap (source-prefix stripped, stoplist-filtered)",
+    "review": {
+      "reviewer": "roux-x6fs.3 gold-tightening pass",
+      "generic_gold": "dunders/from_low_args/per-persona skip_syms dropped at pin time + freeze safety-net",
+      "off_topic_rule": "CI/TST/STYLE/test/CLN prefixes, doctest/pylint/flake8/mypy, typo, sweeping-doc edits, bare-path titles",
+      "weak_gold_manual": [],
+      "retain_recent_cap": null,
+      "backlog_in_draft": 0,
+      "dropped_counts": {},
+      "dropped": []
+    }
+  },
+  "distribution": {
+    "S": 0,
+    "L": 3
+  },
+  "queries": [
+    {
+      "id": "remix-184",
+      "bucket": "L",
+      "query": "type `LinkDescriptor` shouldn't require href for preloading responsive images",
+      "gold": [
+        "remix::HtmlLinkDescriptor",
+        "remix::HtmlLinkPreloadImage",
+        "remix::HtmlLinkProps"
+      ],
+      "lexical_overlap": [
+        "descriptor",
+        "link"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 184,
+        "issue_url": "https://github.com/remix-run/remix/issues/184",
+        "labels": [],
+        "fix_commit": "d19d888a6dd1",
+        "changed_files": [
+          "packages/remix-react/components.tsx",
+          "packages/remix-react/links.ts",
+          "packages/remix-server-runtime/links.ts"
+        ],
+        "gold_candidates": [
+          "HtmlLinkDescriptor",
+          "HtmlLinkPreloadImage",
+          "HtmlLinkProps"
+        ]
+      }
+    },
+    {
+      "id": "remix-4199",
+      "bucket": "L",
+      "query": "TypedResponse allows incompatible types",
+      "gold": [
+        "remix::TypedResponse"
+      ],
+      "lexical_overlap": [
+        "response",
+        "typed"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 4199,
+        "issue_url": "https://github.com/remix-run/remix/issues/4199",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "560c968f533c",
+        "changed_files": [
+          "packages/remix-server-runtime/responses.ts"
+        ],
+        "gold_candidates": [
+          "TypedResponse"
+        ]
+      }
+    },
+    {
+      "id": "remix-4483",
+      "bucket": "L",
+      "query": "\ud83d\uddfa Flat Routes",
+      "gold": [
+        "remix::State",
+        "remix::createRoutePath",
+        "remix::flatRoutes",
+        "remix::flatRoutesUniversal",
+        "remix::getRouteSegments"
+      ],
+      "lexical_overlap": [
+        "flat",
+        "routes"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 4483,
+        "issue_url": "https://github.com/remix-run/remix/issues/4483",
+        "labels": [],
+        "fix_commit": "561796aa02be",
+        "changed_files": [
+          "packages/remix-dev/config.ts",
+          "packages/remix-dev/config/flat-routes.ts",
+          "packages/remix-dev/config/routes.ts",
+          "packages/remix-dev/config/routesConvention.ts"
+        ],
+        "gold_candidates": [
+          "State",
+          "createRoutePath",
+          "flatRoutes",
+          "flatRoutesUniversal",
+          "getRouteSegments",
+          "pushRouteSegment"
+        ]
+      }
+    }
+  ]
+}

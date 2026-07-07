@@ -1,0 +1,465 @@
+{
+  "_comment": "HUMAN-REVIEWED frozen held-out set for roux-x6fs (gin) \u2014 anti-Goodhart. Harvested by bench/harvest_persona_queries.py, frozen/reviewed by bench/freeze_heldout.py. S/L by distinctive query<->gold(qualified_name) token overlap (source-prefix stripped, stoplist-filtered): S = no distinctive overlap (vocab/semantic gap \u2014 the real test); L = distinctive overlap (control). gold = qualified_name substrings; any in top-K = hit. Reviewed: generic-constructor gold removed (harvester + freeze), maintainer-process queries and weak-gold mis-pins pruned (see freeze_provenance.review). FROZEN: never tune against it; report SEPARATELY from the CI gate.",
+  "source_name": "gin",
+  "index_path": "/Users/mickey/Repos/iicky/roux/bench/snapshots/gin.sqlite",
+  "pinned_ref": "v1.10.0",
+  "freeze_provenance": {
+    "frozen": "2026-07-07",
+    "roux_commit": "f63eda5",
+    "auto_frozen": false,
+    "human_reviewed": true,
+    "from_draft": "bench/gold_gin.draft.json",
+    "harvester": "bench/harvest_persona_queries.py",
+    "triage": "S/L by distinctive query<->gold token overlap (source-prefix stripped, stoplist-filtered)",
+    "review": {
+      "reviewer": "roux-x6fs.3 gold-tightening pass",
+      "generic_gold": "dunders/from_low_args/per-persona skip_syms dropped at pin time + freeze safety-net",
+      "off_topic_rule": "CI/TST/STYLE/test/CLN prefixes, doctest/pylint/flake8/mypy, typo, sweeping-doc edits, bare-path titles",
+      "weak_gold_manual": [
+        "gin-20"
+      ],
+      "retain_recent_cap": null,
+      "backlog_in_draft": 0,
+      "dropped_counts": {
+        "weak_gold": 1
+      },
+      "dropped": [
+        {
+          "id": "gin-20",
+          "reason": "weak_gold",
+          "query": "Support for 405 Method Not Allowed"
+        }
+      ]
+    }
+  },
+  "distribution": {
+    "S": 10,
+    "L": 7
+  },
+  "queries": [
+    {
+      "id": "gin-391",
+      "bucket": "S",
+      "query": "Support HTTP content negotiation wildcards",
+      "gold": [
+        "gin::NegotiateFormat"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 391,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/391",
+        "labels": [],
+        "fix_commit": "2dd31930060c",
+        "changed_files": [
+          "context.go"
+        ],
+        "gold_candidates": [
+          "NegotiateFormat"
+        ]
+      }
+    },
+    {
+      "id": "gin-610",
+      "bucket": "L",
+      "query": "Binding tag: add 'skipped' on top of 'required'",
+      "gold": [
+        "gin::mapForm",
+        "gin::mapFormByTag",
+        "gin::mapping",
+        "gin::setSlice",
+        "gin::setTimeField"
+      ],
+      "lexical_overlap": [
+        "tag"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 610,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/610",
+        "labels": [],
+        "fix_commit": "0d50ce859745",
+        "changed_files": [
+          "binding/form_mapping.go"
+        ],
+        "gold_candidates": [
+          "mapForm",
+          "mapFormByTag",
+          "mapping",
+          "setSlice",
+          "setTimeField",
+          "setWithProperType",
+          "tryToSetValue"
+        ]
+      }
+    },
+    {
+      "id": "gin-630",
+      "bucket": "S",
+      "query": "gin.Error does not implement the error interface",
+      "gold": [
+        "gin::Error",
+        "gin::MarshalJSON"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 6,
+      "provenance": {
+        "issue": 630,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/630",
+        "labels": [],
+        "fix_commit": "c8b35d34452e",
+        "changed_files": [
+          "errors.go"
+        ],
+        "gold_candidates": [
+          "Error",
+          "MarshalJSON"
+        ]
+      }
+    },
+    {
+      "id": "gin-752",
+      "bucket": "S",
+      "query": "IsTerminal not available on Google App Engine",
+      "gold": [
+        "gin::LoggerWithWriter"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 752,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/752",
+        "labels": [],
+        "fix_commit": "b26d956e0785",
+        "changed_files": [
+          "logger.go"
+        ],
+        "gold_candidates": [
+          "LoggerWithWriter"
+        ]
+      }
+    },
+    {
+      "id": "gin-928",
+      "bucket": "L",
+      "query": "Method to get main handler is desired",
+      "gold": [
+        "gin::Handler",
+        "gin::HandlerName"
+      ],
+      "lexical_overlap": [
+        "handler"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 928,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/928",
+        "labels": [],
+        "fix_commit": "3f95933c3d8a",
+        "changed_files": [
+          "context.go"
+        ],
+        "gold_candidates": [
+          "Handler",
+          "HandlerName"
+        ]
+      }
+    },
+    {
+      "id": "gin-1331",
+      "bucket": "L",
+      "query": "Recovery middleware leaks sensitive cookies, tokens, and headers into logs",
+      "gold": [
+        "gin::RecoveryWithWriter"
+      ],
+      "lexical_overlap": [
+        "recovery"
+      ],
+      "roux_rank_at_freeze": 8,
+      "provenance": {
+        "issue": 1331,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1331",
+        "labels": [],
+        "fix_commit": "ad53619b15fd",
+        "changed_files": [
+          "recovery.go"
+        ],
+        "gold_candidates": [
+          "RecoveryWithWriter"
+        ]
+      }
+    },
+    {
+      "id": "gin-1462",
+      "bucket": "L",
+      "query": "change to test_helpers.go causes flag parsing to fail for cmd line app",
+      "gold": [
+        "gin::CreateTestContext"
+      ],
+      "lexical_overlap": [
+        "test"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 1462,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1462",
+        "labels": [],
+        "fix_commit": "7e64d32269d8",
+        "changed_files": [
+          "test_helpers.go"
+        ],
+        "gold_candidates": [
+          "CreateTestContext"
+        ]
+      }
+    },
+    {
+      "id": "gin-1644",
+      "bucket": "S",
+      "query": "Multiple slashes in path is not working",
+      "gold": [
+        "gin::handleHTTPRequest"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 1644,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1644",
+        "labels": [],
+        "fix_commit": "b6425689dc65",
+        "changed_files": [
+          "gin.go"
+        ],
+        "gold_candidates": [
+          "handleHTTPRequest"
+        ]
+      }
+    },
+    {
+      "id": "gin-1672",
+      "bucket": "L",
+      "query": "BindQuery not support time pointer, when non specified form fieldName",
+      "gold": [
+        "gin::mapForm",
+        "gin::mapFormByTag",
+        "gin::mapping",
+        "gin::setSlice",
+        "gin::setTimeField"
+      ],
+      "lexical_overlap": [
+        "field",
+        "form",
+        "time"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 1672,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1672",
+        "labels": [],
+        "fix_commit": "0d50ce859745",
+        "changed_files": [
+          "binding/form_mapping.go"
+        ],
+        "gold_candidates": [
+          "mapForm",
+          "mapFormByTag",
+          "mapping",
+          "setSlice",
+          "setTimeField",
+          "setWithProperType",
+          "tryToSetValue"
+        ]
+      }
+    },
+    {
+      "id": "gin-1760",
+      "bucket": "S",
+      "query": "Out of range if redirect more than 45 times",
+      "gold": [
+        "gin::HandleContext"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 1760,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1760",
+        "labels": [],
+        "fix_commit": "a768f064d53c",
+        "changed_files": [
+          "gin.go"
+        ],
+        "gold_candidates": [
+          "HandleContext"
+        ]
+      }
+    },
+    {
+      "id": "gin-1804",
+      "bucket": "L",
+      "query": "Default engine producing two log lines with StaticFS for 404",
+      "gold": [
+        "gin::createStaticHandler"
+      ],
+      "lexical_overlap": [
+        "static"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 1804,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1804",
+        "labels": [
+          "type/bug"
+        ],
+        "fix_commit": "4a23c4f7b9ce",
+        "changed_files": [
+          "routergroup.go"
+        ],
+        "gold_candidates": [
+          "createStaticHandler"
+        ]
+      }
+    },
+    {
+      "id": "gin-1823",
+      "bucket": "S",
+      "query": "Styling breaks when request takes long",
+      "gold": [
+        "gin::IsOutputColor"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 1823,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/1823",
+        "labels": [],
+        "fix_commit": "ce20f107f5dc",
+        "changed_files": [
+          "logger.go"
+        ],
+        "gold_candidates": [
+          "IsOutputColor"
+        ]
+      }
+    },
+    {
+      "id": "gin-2209",
+      "bucket": "L",
+      "query": "context.JSON adds a new line to end of JSON response",
+      "gold": [
+        "gin::WriteJSON"
+      ],
+      "lexical_overlap": [
+        "json"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 2209,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/2209",
+        "labels": [
+          "type/bug"
+        ],
+        "fix_commit": "5f56109bcffd",
+        "changed_files": [
+          "render/json.go"
+        ],
+        "gold_candidates": [
+          "WriteJSON"
+        ]
+      }
+    },
+    {
+      "id": "gin-2674",
+      "bucket": "S",
+      "query": "Data race with gin-gonic v1.7.0",
+      "gold": [
+        "gin::RemoteIP"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 2674,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/2674",
+        "labels": [
+          "type/bug"
+        ],
+        "fix_commit": "03e5e05ae089",
+        "changed_files": [
+          "context.go"
+        ],
+        "gold_candidates": [
+          "RemoteIP"
+        ]
+      }
+    },
+    {
+      "id": "gin-2786",
+      "bucket": "S",
+      "query": "[Bug]mixed param and non-param paths",
+      "gold": [
+        "gin::getValue"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 2786,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/2786",
+        "labels": [
+          "type/bug"
+        ],
+        "fix_commit": "0a55865c3fc4",
+        "changed_files": [
+          "tree.go"
+        ],
+        "gold_candidates": [
+          "getValue"
+        ]
+      }
+    },
+    {
+      "id": "gin-3659",
+      "bucket": "S",
+      "query": "Can't bind list of struct pointer in query",
+      "gold": [
+        "gin::setWithProperType"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 3659,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/3659",
+        "labels": [],
+        "fix_commit": "44d0dd70924d",
+        "changed_files": [
+          "binding/form_mapping.go"
+        ],
+        "gold_candidates": [
+          "setWithProperType"
+        ]
+      }
+    },
+    {
+      "id": "gin-3819",
+      "bucket": "S",
+      "query": "Binding a non mandatory file parameter will directly result in an error message",
+      "gold": [
+        "gin::setWithProperType"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 3819,
+        "issue_url": "https://github.com/gin-gonic/gin/issues/3819",
+        "labels": [
+          "type/bug"
+        ],
+        "fix_commit": "3dc1cd6572b4",
+        "changed_files": [
+          "binding/form_mapping.go"
+        ],
+        "gold_candidates": [
+          "setWithProperType"
+        ]
+      }
+    }
+  ]
+}
