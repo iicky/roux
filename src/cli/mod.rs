@@ -656,7 +656,10 @@ fn cmd_query(
         store.search_multi(&queries, top, source)?
     };
 
-    if result.nodes.is_empty() {
+    // Non-JSON formats print a human message and stop; JSON must still emit a
+    // well-formed envelope (empty arrays) so programmatic consumers don't choke
+    // on zero results.
+    if result.nodes.is_empty() && format != "json" {
         eprintln!("No results found.");
         return Ok(());
     }
