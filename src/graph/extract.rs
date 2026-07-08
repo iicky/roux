@@ -245,10 +245,15 @@ fn merge_duplicate_nodes(nodes: &mut Vec<Node>) {
                 by_id.insert(id, i);
             }
             Some(j) => {
-                let (winner, loser) = if priority(&nodes[i].kind) < priority(&nodes[j].kind) {
-                    (i, j)
+                let (pi, pj) = (priority(&nodes[i].kind), priority(&nodes[j].kind));
+                let (winner, loser) = if pi != pj {
+                    if pi < pj { (i, j) } else { (j, i) }
                 } else {
-                    (j, i)
+                    // Same kind tier (e.g. a prototype and its definition): keep
+                    // the one with the larger line span so the survivor points at
+                    // the body, not the bare declaration.
+                    let span = |n: &Node| n.end_line.saturating_sub(n.start_line);
+                    if span(&nodes[i]) > span(&nodes[j]) { (i, j) } else { (j, i) }
                 };
                 if nodes[winner].doc.is_none() {
                     let doc = nodes[loser].doc.clone();
@@ -622,8 +627,6 @@ fn extract_from_source(
             } else {
                 format!("{source_name}::{}", sym.name)
             };
-            let id = Node::id_for(source_name, &qualified);
-            id_by_idx[i] = id.clone();
 
             // Recover the tree-sitter AST node for enrichment
             let ts_node = root.descendant_for_byte_range(sym.start_byte, sym.end_byte);
@@ -650,6 +653,16 @@ fn extract_from_source(
             } else {
                 (String::new(), None, sym.doc.clone())
             };
+
+            // Overloads share a signatureless qualified name; the parameter list
+            // separates them. Only function/method kinds overload.
+            let discriminator = if matches!(sym.kind.as_str(), "function" | "method") {
+                Node::param_discriminator(signature.as_deref())
+            } else {
+                String::new()
+            };
+            let id = Node::id_for_symbol(source_name, file_path, &qualified, &discriminator);
+            id_by_idx[i] = id.clone();
 
             let parent_id = parent_idx_map
                 .get(&i)
@@ -1657,7 +1670,13 @@ fn extract_node(
         sym.end_line = node.end_position().row + 1;
         sym.line_count = sym.end_line.saturating_sub(sym.start_line) + 1;
         sym.visibility = detect_visibility(node, code, lang);
-        sym.id = Node::id_for(source_name, &sym.qualified_name);
+        // Separate same-file overloads by parameter list.
+        let discriminator = if matches!(sym.kind.as_str(), "function" | "method") {
+            Node::param_discriminator(sym.signature.as_deref())
+        } else {
+            String::new()
+        };
+        sym.id = Node::id_for_symbol(source_name, file_path, &sym.qualified_name, &discriminator);
         sym.parent_id = parent_id.map(|s| s.to_string());
 
         // Content hash for staleness detection
@@ -3060,6 +3079,98 @@ def _private():
         assert!(
             !refs.is_empty(),
             "should have references edges from backtick mentions"
+        );
+    }
+
+    #[test]
+    fn same_named_symbols_in_different_files_stay_distinct() {
+        // Two top-level `helper`s in different files must not collide
+        // on hash(source, qualified_name) and merge — with one's call edges
+        // misattributed to the other.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("a.rs"),
+            "pub fn helper() { alpha(); }\npub fn alpha() {}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("b.rs"),
+            "pub fn helper() { beta(); }\npub fn beta() {}\n",
+        )
+        .unwrap();
+        let g = extract_dir(dir.path(), "demo", "dev", Some("rust")).unwrap();
+
+        let helpers: Vec<&Node> = g
+            .nodes
+            .iter()
+            .filter(|n| n.name == "helper" && n.kind == "function")
+            .collect();
+        assert_eq!(
+            helpers.len(),
+            2,
+            "two files each with a top-level helper() should yield two distinct nodes"
+        );
+        assert_ne!(helpers[0].id, helpers[1].id, "distinct ids");
+        let files: std::collections::BTreeSet<&str> =
+            helpers.iter().map(|h| h.file_path.as_str()).collect();
+        assert_eq!(files.len(), 2, "the two helpers live in different files");
+
+        // Edges stay correctly attributed: each helper calls the callee in ITS
+        // file, not a merged blob pointing at both.
+        let alpha = g.nodes.iter().find(|n| n.name == "alpha").unwrap();
+        let beta = g.nodes.iter().find(|n| n.name == "beta").unwrap();
+        let helper_a = helpers.iter().find(|h| h.file_path.contains("a.rs")).unwrap();
+        let helper_b = helpers.iter().find(|h| h.file_path.contains("b.rs")).unwrap();
+        assert!(
+            g.edges.iter().any(|e| e.from_id == helper_a.id && e.to_id == alpha.id),
+            "helper in a.rs should call alpha"
+        );
+        assert!(
+            g.edges.iter().any(|e| e.from_id == helper_b.id && e.to_id == beta.id),
+            "helper in b.rs should call beta"
+        );
+    }
+
+    #[test]
+    fn same_file_overloads_stay_distinct() {
+        // C++ overloads share a signatureless qualified name; the
+        // parameter list must keep them as separate nodes rather than collapsing
+        // to one (with the extra signatures silently lost).
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("calc.cpp"),
+            "int add(int a, int b) { return a + b; }\n\
+             double add(double a, double b) { return a + b; }\n\
+             int add(int a, int b, int c) { return a + b + c; }\n",
+        )
+        .unwrap();
+        let g = extract_dir(dir.path(), "demo", "dev", Some("cpp")).unwrap();
+
+        let adds: Vec<&Node> = g.nodes.iter().filter(|n| n.name == "add").collect();
+        assert_eq!(adds.len(), 3, "three overloads should yield three nodes");
+        let ids: std::collections::BTreeSet<&str> = adds.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids.len(), 3, "each overload gets a distinct id");
+    }
+
+    #[test]
+    fn prototype_and_definition_merge_keeping_the_definition() {
+        // A forward declaration and its definition share a parameter
+        // list, so they still merge — and the survivor must be the definition
+        // (with the body) rather than the bare prototype.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("m.cpp"),
+            "int compute(int x);\n\
+             int compute(int x) {\n    return x * 2;\n}\n",
+        )
+        .unwrap();
+        let g = extract_dir(dir.path(), "demo", "dev", Some("cpp")).unwrap();
+
+        let computes: Vec<&Node> = g.nodes.iter().filter(|n| n.name == "compute").collect();
+        assert_eq!(computes.len(), 1, "prototype and definition merge to one node");
+        assert!(
+            computes[0].end_line > computes[0].start_line,
+            "survivor is the multi-line definition, not the one-line prototype"
         );
     }
 
