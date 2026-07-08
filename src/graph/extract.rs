@@ -153,6 +153,118 @@ pub fn extract_file(
     })
 }
 
+/// Re-extract only the files whose content changed since `prior`, keep every
+/// unchanged file's nodes and edges verbatim, then run the global finalize pass
+/// over the combined set. Finalize re-resolves references across the FULL
+/// current node set and re-infers convention edges, so a symbol renamed, added,
+/// or removed in one file correctly rewires references from every other file.
+/// The result is the same node and edge set as a full [`extract_dir`] of the
+/// current tree, at the cost of re-parsing only the touched files.
+///
+/// `prior` is the previously-extracted graph; its `files` manifest is the change
+/// baseline. Nodes are reconstructed in current-manifest order — the same
+/// deterministic order a full walk produces — because [`resolve_references`]
+/// picks the first matching node for an ambiguous reference, making node order a
+/// correctness input to the resolved edge set.
+pub fn reextract_incremental(
+    dir: &Path,
+    source_name: &str,
+    source_version: &str,
+    language_hint: Option<&str>,
+    prior: &FileGraph,
+) -> Result<FileGraph> {
+    use std::collections::{HashMap, HashSet};
+
+    // Current manifest (read + hash only), in the deterministic walk order that
+    // `walk_dir` also uses.
+    let current = list_source_files(dir, language_hint)?;
+
+    let prior_hashes: HashMap<&str, &str> = prior
+        .files
+        .iter()
+        .map(|f| (f.path.as_str(), f.content_hash.as_str()))
+        .collect();
+
+    // A file is unchanged iff it is present in the prior manifest with the same
+    // content hash. Everything else (new or modified) is re-parsed; files only
+    // in `prior` (deleted) simply never contribute kept nodes below.
+    let unchanged: HashSet<&str> = current
+        .iter()
+        .filter(|f| prior_hashes.get(f.path.as_str()) == Some(&f.content_hash.as_str()))
+        .map(|f| f.path.as_str())
+        .collect();
+
+    // Map each prior node id to its file, and group unchanged files' prior nodes
+    // by path (preserving each file's original relative order — prior.nodes is
+    // already in walk order).
+    let mut node_file: HashMap<&str, &str> = HashMap::with_capacity(prior.nodes.len());
+    let mut kept_by_file: HashMap<&str, Vec<Node>> = HashMap::new();
+    for n in &prior.nodes {
+        node_file.insert(n.id.as_str(), n.file_path.as_str());
+        if unchanged.contains(n.file_path.as_str()) {
+            kept_by_file
+                .entry(n.file_path.as_str())
+                .or_default()
+                .push(n.clone());
+        }
+    }
+
+    // Group unchanged files' non-inferred edges by source file, preserving each
+    // file's original relative edge order. Convention edges (tests/overrides/
+    // exports) are dropped — finalize regenerates them over the full node set.
+    // Edge order is load-bearing: generate_descriptions reads the first few
+    // callees/callers per node, so a full walk's file-contiguous edge order must
+    // be reproduced, not merely its edge set.
+    let mut kept_edges_by_file: HashMap<&str, Vec<Edge>> = HashMap::new();
+    for e in &prior.edges {
+        if matches!(e.kind.as_str(), "tests" | "overrides" | "exports") {
+            continue;
+        }
+        if let Some(&file) = node_file.get(e.from_id.as_str())
+            && unchanged.contains(file)
+        {
+            kept_edges_by_file.entry(file).or_default().push(e.clone());
+        }
+    }
+
+    let mut nodes: Vec<Node> = Vec::new();
+    let mut edges: Vec<Edge> = Vec::new();
+    let mut stats = WalkStats::default();
+
+    // Rebuild nodes and edges in current-manifest order, splicing each file's
+    // kept nodes+edges or freshly parsed nodes+edges into place. The combined
+    // order equals a full walk's, so reference resolution and description
+    // generation are identical.
+    for f in &current {
+        match kept_by_file.remove(f.path.as_str()) {
+            Some(kept) => {
+                nodes.extend(kept);
+                if let Some(kept_e) = kept_edges_by_file.remove(f.path.as_str()) {
+                    edges.extend(kept_e);
+                }
+            }
+            None => extract_indexed_file(
+                &dir.join(&f.path),
+                &f.path,
+                source_name,
+                source_version,
+                language_hint,
+                &mut nodes,
+                &mut edges,
+                &mut stats,
+            ),
+        }
+    }
+
+    finalize_graph(&mut nodes, &mut edges);
+
+    Ok(FileGraph {
+        nodes,
+        edges,
+        files: current,
+    })
+}
+
 /// Walk a source tree and return the file manifest WITHOUT parsing — read +
 /// hash only (roux-vmdf). Applies the same skip/inclusion rules as `extract_dir`
 /// (guarded by `manifest_walk_matches_extraction`) so its output can be diffed
@@ -177,7 +289,12 @@ fn list_source_files_inner(
         Ok(e) => e,
         Err(_) => return,
     };
-    for entry in entries.flatten() {
+    // Sort by name to match `walk_dir`'s deterministic order (see the note
+    // there); the two walks must agree so the incremental manifest lines up
+    // with full extraction.
+    let mut entries: Vec<_> = entries.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
         let path = entry.path();
         if path
             .symlink_metadata()
@@ -345,9 +462,14 @@ fn walk_dir(
         Ok(e) => e,
         Err(_) => return Ok(()),
     };
+    // Sort entries by name so extraction visits files in a deterministic order
+    // identical to `list_source_files` (the incremental walk). Reference
+    // resolution picks the first matching node for an ambiguous name, so a
+    // stable node order is a correctness input, not a cosmetic detail.
+    let mut entries: Vec<_> = entries.collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(|e| e.file_name());
 
     for entry in entries {
-        let entry = entry?;
         let path = entry.path();
 
         // Skip symlinks, hidden dirs, node_modules, target, __pycache__
@@ -388,101 +510,122 @@ fn walk_dir(
             continue;
         }
 
-        // Check for markdown docs
-        let ext = path.extension().and_then(|e| e.to_str());
-        if matches!(ext, Some("md" | "markdown")) {
-            let content = match std::fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(_) => {
-                    stats.read_errors += 1;
-                    continue;
-                }
-            };
-            let rel_path = path
-                .strip_prefix(base)
-                .unwrap_or(&path)
-                .to_string_lossy()
-                .to_string();
-            stats.files.push(FileMeta {
-                path: rel_path.clone(),
-                content_hash: blake3::hash(content.as_bytes()).to_hex().to_string(),
-                mtime: entry_mtime(&path),
-            });
-            extract_markdown_doc(&content, &rel_path, source_name, nodes, edges);
-            continue;
-        }
-
-        // Use language hint if it has a grammar, otherwise detect from file extension
-        let lang = language_hint
-            .filter(|l| get_ts_language(l).is_some())
-            .or_else(|| detect_language(&path));
-        let lang = match lang {
-            Some(l) => l,
-            None => continue,
-        };
-
-        let ts_lang = match get_ts_language(lang) {
-            Some(l) => l,
-            None => continue,
-        };
-
-        let code = match std::fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(_) => {
-                stats.read_errors += 1;
-                continue;
-            }
-        };
-
         let rel_path = path
             .strip_prefix(base)
             .unwrap_or(&path)
             .to_string_lossy()
             .to_string();
 
-        // Create a file node
-        let file_qualified = format!("{source_name}::{rel_path}");
-        let file_id = Node::id_for(source_name, &file_qualified);
-        let file_hash = blake3::hash(code.as_bytes()).to_hex().to_string();
-        let file_lines = code.lines().count();
-        stats.files.push(FileMeta {
-            path: rel_path.clone(),
-            content_hash: file_hash.clone(),
-            mtime: entry_mtime(&path),
-        });
-        let file_name = path
-            .file_name()
-            .map(|f| f.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        nodes.push(make_file_node(
-            &file_id,
-            &file_name,
-            &file_qualified,
-            source_name,
-            lang,
-            &rel_path,
-            Some(&file_hash),
-            file_lines,
-        ));
-
-        if let Err(e) = extract_from_source(
-            &code,
-            ts_lang,
-            lang,
+        extract_indexed_file(
+            &path,
             &rel_path,
             source_name,
             source_version,
+            language_hint,
             nodes,
             edges,
-            Some(&file_id),
-        ) {
-            stats.parse_errors += 1;
-            eprintln!("  warning: failed to extract {rel_path}: {e}");
-        }
+            stats,
+        );
     }
 
     Ok(())
+}
+
+/// Parse one already-selected file (code or markdown) into `nodes`/`edges` and
+/// append its manifest entry, exactly as the directory walk does. `rel_path` is
+/// the source-root-relative path used for the file-node id and symbol
+/// qualification. Shared by `walk_dir` and the incremental re-extraction path so
+/// both produce a byte-identical graph for the same file.
+fn extract_indexed_file(
+    path: &Path,
+    rel_path: &str,
+    source_name: &str,
+    source_version: &str,
+    language_hint: Option<&str>,
+    nodes: &mut Vec<Node>,
+    edges: &mut Vec<Edge>,
+    stats: &mut WalkStats,
+) {
+    // Markdown docs: sections + backtick references, no tree-sitter grammar.
+    let ext = path.extension().and_then(|e| e.to_str());
+    if matches!(ext, Some("md" | "markdown")) {
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => {
+                stats.read_errors += 1;
+                return;
+            }
+        };
+        stats.files.push(FileMeta {
+            path: rel_path.to_string(),
+            content_hash: blake3::hash(content.as_bytes()).to_hex().to_string(),
+            mtime: entry_mtime(path),
+        });
+        extract_markdown_doc(&content, rel_path, source_name, nodes, edges);
+        return;
+    }
+
+    // Use the language hint if it has a grammar, else detect from the extension.
+    let lang = language_hint
+        .filter(|l| get_ts_language(l).is_some())
+        .or_else(|| detect_language(path));
+    let lang = match lang {
+        Some(l) => l,
+        None => return,
+    };
+    let ts_lang = match get_ts_language(lang) {
+        Some(l) => l,
+        None => return,
+    };
+
+    let code = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => {
+            stats.read_errors += 1;
+            return;
+        }
+    };
+
+    // Create the file node.
+    let file_qualified = format!("{source_name}::{rel_path}");
+    let file_id = Node::id_for(source_name, &file_qualified);
+    let file_hash = blake3::hash(code.as_bytes()).to_hex().to_string();
+    let file_lines = code.lines().count();
+    stats.files.push(FileMeta {
+        path: rel_path.to_string(),
+        content_hash: file_hash.clone(),
+        mtime: entry_mtime(path),
+    });
+    let file_name = path
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    nodes.push(make_file_node(
+        &file_id,
+        &file_name,
+        &file_qualified,
+        source_name,
+        lang,
+        rel_path,
+        Some(&file_hash),
+        file_lines,
+    ));
+
+    if let Err(e) = extract_from_source(
+        &code,
+        ts_lang,
+        lang,
+        rel_path,
+        source_name,
+        source_version,
+        nodes,
+        edges,
+        Some(&file_id),
+    ) {
+        stats.parse_errors += 1;
+        eprintln!("  warning: failed to extract {rel_path}: {e}");
+    }
 }
 
 /// Map a file extension to a language roux has a tree-sitter grammar for
@@ -3361,5 +3504,277 @@ def expensive():
         let refs = extract_backtick_refs("Run `cargo build --release` and `export PATH=$HOME`.");
         // These contain spaces, =, or $ — should be skipped
         assert!(refs.is_empty(), "should skip non-identifiers: {:?}", refs);
+    }
+
+    /// Sorts a graph's nodes by `id` and its edges by `(from_id, to_id, kind,
+    /// ref_name)` so two independently-produced graphs can be compared for
+    /// exact equality regardless of internal ordering. Both are total orders
+    /// after `finalize_graph` (unique ids; deduped `(from_id, to_id, kind)`),
+    /// so this comparison key is stable and reproducible.
+    fn sorted_graph(g: &FileGraph) -> (Vec<Node>, Vec<Edge>) {
+        let mut nodes = g.nodes.clone();
+        nodes.sort_by(|a, b| a.id.cmp(&b.id));
+        let mut edges = g.edges.clone();
+        edges.sort_by(|a, b| {
+            (&a.from_id, &a.to_id, &a.kind, &a.ref_name).cmp(&(
+                &b.from_id,
+                &b.to_id,
+                &b.kind,
+                &b.ref_name,
+            ))
+        });
+        (nodes, edges)
+    }
+
+    #[test]
+    fn reextract_incremental_matches_full_after_broken_cross_file_reference() {
+        // A (unchanged) calls target(), defined in B. Renaming target in B
+        // (A untouched) must leave A's call unresolved in both a full
+        // re-extraction and an incremental one.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/a")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/b")).unwrap();
+        std::fs::write(
+            dir.path().join("src/a/mod.rs"),
+            "pub fn caller() { target(); }\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("src/b/mod.rs"), "pub fn target() {}\n").unwrap();
+        std::fs::write(dir.path().join("README.md"), "# Demo\n").unwrap();
+
+        let prior = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+
+        std::fs::write(
+            dir.path().join("src/b/mod.rs"),
+            "pub fn target_renamed() {}\n",
+        )
+        .unwrap();
+
+        let incremental =
+            reextract_incremental(dir.path(), "eq", "0", Some("rust"), &prior).unwrap();
+        let full = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+
+        assert_eq!(sorted_graph(&incremental), sorted_graph(&full));
+
+        // Guard against a vacuous pass: the renamed-away call must actually be
+        // the unresolved sentinel, not silently dropped or stale.
+        assert!(
+            incremental
+                .edges
+                .iter()
+                .any(|e| e.to_id == "__unresolved::target"),
+            "expected caller's reference to the renamed target to be unresolved: {:?}",
+            incremental.edges
+        );
+    }
+
+    #[test]
+    fn reextract_incremental_resolves_kept_edge_to_newly_added_symbol() {
+        // A (unchanged) calls future_fn(), which B does not define yet — the
+        // call stays as a retained-but-unresolved edge in `prior`. Adding
+        // future_fn to B must re-resolve A's kept edge to the new concrete
+        // node, in both a full and an incremental re-extraction.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/caller")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/callee")).unwrap();
+        std::fs::write(
+            dir.path().join("src/caller/mod.rs"),
+            "pub fn invoke() { future_fn(); }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/callee/mod.rs"),
+            "pub fn placeholder() {}\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("README.md"), "# Demo\n").unwrap();
+
+        let prior = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+        let invoke = prior
+            .nodes
+            .iter()
+            .find(|n| n.name == "invoke")
+            .expect("invoke node")
+            .clone();
+        assert!(
+            prior
+                .edges
+                .iter()
+                .any(|e| e.from_id == invoke.id && e.to_id == "__unresolved::future_fn"),
+            "prior should retain an unresolved future_fn call: {:?}",
+            prior.edges
+        );
+
+        std::fs::write(
+            dir.path().join("src/callee/mod.rs"),
+            "pub fn placeholder() {}\npub fn future_fn() {}\n",
+        )
+        .unwrap();
+
+        let incremental =
+            reextract_incremental(dir.path(), "eq", "0", Some("rust"), &prior).unwrap();
+        let full = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+
+        assert_eq!(sorted_graph(&incremental), sorted_graph(&full));
+
+        let future_fn = incremental
+            .nodes
+            .iter()
+            .find(|n| n.name == "future_fn")
+            .expect("future_fn node from the edited file");
+        assert!(
+            incremental
+                .edges
+                .iter()
+                .any(|e| e.from_id == invoke.id && e.to_id == future_fn.id && e.kind == "calls"),
+            "expected invoke -> future_fn to resolve to the concrete node id: {:?}",
+            incremental.edges
+        );
+    }
+
+    #[test]
+    fn reextract_incremental_matches_full_order_for_ambiguous_symbol_names() {
+        // Two files each define `shared`; a third unchanged file calls it.
+        // Editing the alphabetically-first `shared` definer must not change
+        // which node the ambiguous reference resolves to relative to a full
+        // re-extraction — incremental must reconstruct nodes in the same
+        // (manifest) order a full walk would.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/aaa_changed")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/bbb_unchanged")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/ccc_caller")).unwrap();
+        std::fs::write(
+            dir.path().join("src/aaa_changed/mod.rs"),
+            "pub fn shared() { let _flag = 1; }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/bbb_unchanged/mod.rs"),
+            "pub fn shared() { let _flag = 2; }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/ccc_caller/mod.rs"),
+            "pub fn invoke() { shared(); }\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("README.md"), "# Demo\n").unwrap();
+
+        let prior = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+
+        std::fs::write(
+            dir.path().join("src/aaa_changed/mod.rs"),
+            "pub fn shared() { let _flag = 3; }\n",
+        )
+        .unwrap();
+
+        let incremental =
+            reextract_incremental(dir.path(), "eq", "0", Some("rust"), &prior).unwrap();
+        let full = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+
+        assert_eq!(sorted_graph(&incremental), sorted_graph(&full));
+    }
+
+    #[test]
+    fn reextract_incremental_matches_full_after_markdown_edit() {
+        // Editing README.md (heading + a backticked identifier) must be
+        // handled by the incremental path the same as a full re-extraction,
+        // proving markdown files re-extract correctly, not just code files.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/a")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/b")).unwrap();
+        std::fs::write(dir.path().join("src/a/mod.rs"), "pub fn alpha() {}\n").unwrap();
+        std::fs::write(dir.path().join("src/b/mod.rs"), "pub fn beta() {}\n").unwrap();
+        std::fs::write(
+            dir.path().join("README.md"),
+            "# Getting Started\nCall `alpha` to begin.\n",
+        )
+        .unwrap();
+
+        let prior = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+
+        std::fs::write(
+            dir.path().join("README.md"),
+            "# Usage Guide\nCall `beta` now, not `alpha`.\n",
+        )
+        .unwrap();
+
+        let incremental =
+            reextract_incremental(dir.path(), "eq", "0", Some("rust"), &prior).unwrap();
+        let full = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+
+        assert_eq!(sorted_graph(&incremental), sorted_graph(&full));
+
+        // Guard against a vacuous pass: the edited heading must actually show
+        // up as a doc_section, proving the markdown was really re-parsed.
+        assert!(
+            incremental
+                .nodes
+                .iter()
+                .any(|n| n.kind == "doc_section" && n.name == "Usage Guide"),
+            "expected the edited README heading in the incremental graph: {:?}",
+            incremental
+                .nodes
+                .iter()
+                .map(|n| &n.name)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn reextract_incremental_matches_full_after_add_and_delete_file() {
+        // Adding src/c.rs (defining a symbol an existing file references) and
+        // deleting an unrelated existing file must both be reflected
+        // identically by the incremental path and a full re-extraction.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/keep_a")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/keep_b")).unwrap();
+        std::fs::write(
+            dir.path().join("src/keep_a/mod.rs"),
+            "pub fn wants_gadget() { gadget(); }\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("src/keep_b/mod.rs"), "pub fn doomed() {}\n").unwrap();
+        std::fs::write(dir.path().join("README.md"), "# Demo\n").unwrap();
+
+        let prior = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+        assert!(
+            prior
+                .edges
+                .iter()
+                .any(|e| e.to_id == "__unresolved::gadget"),
+            "prior should retain an unresolved gadget call: {:?}",
+            prior.edges
+        );
+
+        std::fs::write(dir.path().join("src/c.rs"), "pub fn gadget() {}\n").unwrap();
+        std::fs::remove_file(dir.path().join("src/keep_b/mod.rs")).unwrap();
+        std::fs::remove_dir(dir.path().join("src/keep_b")).unwrap();
+
+        let incremental =
+            reextract_incremental(dir.path(), "eq", "0", Some("rust"), &prior).unwrap();
+        let full = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+
+        assert_eq!(sorted_graph(&incremental), sorted_graph(&full));
+
+        // Guard against a vacuous pass: the deleted node must be gone and the
+        // added node must be present and resolved to, not just coincidentally
+        // equal empty sets.
+        assert!(
+            !incremental.nodes.iter().any(|n| n.name == "doomed"),
+            "deleted file's node must not survive incremental re-extraction"
+        );
+        let gadget = incremental
+            .nodes
+            .iter()
+            .find(|n| n.name == "gadget")
+            .expect("gadget node from the added file");
+        assert!(
+            incremental
+                .edges
+                .iter()
+                .any(|e| e.to_id == gadget.id && e.kind == "calls"),
+            "expected wants_gadget -> gadget to resolve to the concrete added node"
+        );
     }
 }

@@ -4,7 +4,7 @@ pub mod store;
 pub mod tags;
 
 /// A node in the code graph — a file, function, class, etc.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node {
     /// Unique ID (blake3 hash of source_name + qualified_name)
     pub id: String,
@@ -48,7 +48,7 @@ pub struct Node {
 }
 
 /// An edge between two nodes (cross-references only, not containment).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Edge {
     pub from_id: String,
     pub to_id: String,
