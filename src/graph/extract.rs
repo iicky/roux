@@ -25,6 +25,30 @@ pub struct FileGraph {
     pub files: Vec<FileMeta>,
 }
 
+/// Run the global finalize pipeline over a fully-collected graph: dedup nodes,
+/// resolve cross-file references (from persisted ref_names), infer convention
+/// edges (test/override/export), and generate NL descriptions. Shared by
+/// `extract_dir` and the incremental re-extraction path so both produce an
+/// identical graph from the same node/edge set.
+pub(crate) fn finalize_graph(nodes: &mut Vec<Node>, edges: &mut Vec<Edge>) {
+    merge_duplicate_nodes(nodes);
+    resolve_references(edges, nodes);
+    infer_test_edges(nodes, edges);
+    infer_override_edges(nodes, edges);
+    infer_export_edges(nodes, edges);
+    dedup_edges(edges);
+    generate_descriptions(nodes, edges);
+}
+
+/// Collapse duplicate edges by (from_id, to_id, kind), keeping first occurrence.
+/// Several extractors can emit the same edge (e.g. a tags @reference and an
+/// AST-walked call), and the store's PK dedups on insert — dedup here too so the
+/// in-memory graph matches what's stored and an incremental rebuild is stable.
+fn dedup_edges(edges: &mut Vec<Edge>) {
+    let mut seen = std::collections::HashSet::new();
+    edges.retain(|e| seen.insert((e.from_id.clone(), e.to_id.clone(), e.kind.clone())));
+}
+
 /// Extract nodes and edges from a source directory.
 pub fn extract_dir(
     dir: &Path,
@@ -54,27 +78,7 @@ pub fn extract_dir(
         );
     }
 
-    merge_duplicate_nodes(&mut all_nodes);
-
-    // Build cross-file reference edges
-    resolve_references(&mut all_edges, &all_nodes);
-
-    // Post-processing passes for convention-based edges
-    let pre = all_edges.len();
-    infer_test_edges(&all_nodes, &mut all_edges);
-    let post_tests = all_edges.len() - pre;
-    infer_override_edges(&all_nodes, &mut all_edges);
-    let post_overrides = all_edges.len() - pre - post_tests;
-    infer_export_edges(&all_nodes, &mut all_edges);
-    let post_exports = all_edges.len() - pre - post_tests - post_overrides;
-    if post_tests + post_overrides + post_exports > 0 {
-        eprintln!(
-            "  inferred: {post_tests} test, {post_overrides} override, {post_exports} export edges"
-        );
-    }
-
-    // Generate natural language descriptions from graph context
-    generate_descriptions(&mut all_nodes, &all_edges);
+    finalize_graph(&mut all_nodes, &mut all_edges);
 
     Ok(FileGraph {
         nodes: all_nodes,
@@ -538,7 +542,7 @@ fn extract_from_source(
     let code_bytes = code.as_bytes();
 
     // Extract import edges from top-level
-    extract_imports(&root, code_bytes, lang, source_name, edges);
+    extract_imports(&root, code_bytes, lang, file_parent_id, edges);
 
     // Tags-based extraction: use tags.scm queries, fall back to AST walking
     // for languages without a tags query.
@@ -727,8 +731,20 @@ fn extract_from_source(
         // Convert tagged references to unresolved edges
         for r in &tag_refs {
             if !r.name.is_empty() && r.name.len() < 200 {
+                // Attribute the reference to its innermost enclosing symbol so the
+                // edge is a real caller->callee link with a resolvable, file-
+                // attributable from_id; fall back to the file node when nothing
+                // encloses it (e.g. a top-level reference).
+                let from = tag_symbols
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| s.start_line <= r.start_line && r.start_line <= s.end_line)
+                    .min_by_key(|(_, s)| s.end_line.saturating_sub(s.start_line))
+                    .map(|(i, _)| id_by_idx[i].clone())
+                    .or_else(|| file_parent_id.map(|s| s.to_string()))
+                    .unwrap_or_default();
                 edges.push(Edge {
-                    from_id: String::new(),
+                    from_id: from,
                     to_id: format!("__unresolved::{}", r.name),
                     kind: match r.kind {
                         super::tags::RefKind::Call => "calls".to_string(),
@@ -1030,8 +1046,8 @@ fn extract_decorator_edges(
                         .trim();
                     if !decorator_name.is_empty() {
                         edges.push(Edge {
-                            from_id: format!("__unresolved::{decorator_name}"),
-                            to_id: sym_id.to_string(),
+                            from_id: sym_id.to_string(),
+                            to_id: format!("__unresolved::{decorator_name}"),
                             kind: "decorates".to_string(),
                             ref_name: None,
                         });
@@ -1073,8 +1089,8 @@ fn extract_decorator_edges(
                         .trim();
                     if !name.is_empty() {
                         edges.push(Edge {
-                            from_id: format!("__unresolved::{name}"),
-                            to_id: sym_id.to_string(),
+                            from_id: sym_id.to_string(),
+                            to_id: format!("__unresolved::{name}"),
                             kind: "decorates".to_string(),
                             ref_name: None,
                         });
@@ -1457,9 +1473,9 @@ fn generate_descriptions(nodes: &mut [Node], edges: &[Edge]) {
             }
             "decorates" => {
                 decorators
-                    .entry(edge.to_id.as_str())
+                    .entry(edge.from_id.as_str())
                     .or_default()
-                    .push(&edge.from_id);
+                    .push(&edge.to_id);
             }
             _ => {}
         }
@@ -1579,9 +1595,12 @@ fn extract_imports(
     root: &TsNode,
     code: &[u8],
     lang: &str,
-    source_name: &str,
+    file_node_id: Option<&str>,
     edges: &mut Vec<Edge>,
 ) {
+    // The importing file's node id is the edge origin, so imports are attributable
+    // to a file (incremental re-extraction) and re-resolvable. Empty if unavailable.
+    let from = file_node_id.unwrap_or("").to_string();
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
         let kind = child.kind();
@@ -1591,14 +1610,12 @@ fn extract_imports(
                 let text = node_text(&child, code);
                 let imported = text.trim_start_matches("use ").trim_end_matches(';').trim();
                 if !imported.is_empty() {
-                    let file_id = Node::id_for(source_name, &format!("{source_name}::{imported}"));
                     edges.push(Edge {
-                        from_id: String::new(), // resolved later
+                        from_id: from.clone(),
                         to_id: format!("__unresolved::{imported}"),
                         kind: "imports".to_string(),
                         ref_name: None,
                     });
-                    let _ = file_id; // suppress unused
                 }
             }
             "python" if kind == "import_statement" || kind == "import_from_statement" => {
@@ -1611,7 +1628,7 @@ fn extract_imports(
                     .unwrap_or("");
                 if !imported.is_empty() {
                     edges.push(Edge {
-                        from_id: String::new(),
+                        from_id: from.clone(),
                         to_id: format!("__unresolved::{imported}"),
                         kind: "imports".to_string(),
                         ref_name: None,
@@ -1626,7 +1643,7 @@ fn extract_imports(
                         .to_string();
                     if !module.is_empty() {
                         edges.push(Edge {
-                            from_id: String::new(),
+                            from_id: from.clone(),
                             to_id: format!("__unresolved::{module}"),
                             kind: "imports".to_string(),
                             ref_name: None,
@@ -1644,7 +1661,7 @@ fn extract_imports(
                         && cleaned != ")"
                     {
                         edges.push(Edge {
-                            from_id: String::new(),
+                            from_id: from.clone(),
                             to_id: format!("__unresolved::{cleaned}"),
                             kind: "imports".to_string(),
                             ref_name: None,
