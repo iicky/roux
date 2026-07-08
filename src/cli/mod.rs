@@ -1705,6 +1705,7 @@ mod tests {
                 from_id: "build".into(),
                 to_id: "Searcher".into(),
                 kind: "type_ref".into(),
+                ref_name: None,
             }],
             scores: Default::default(),
         };
@@ -1729,6 +1730,7 @@ mod tests {
                 from_id: "build".into(),
                 to_id: "Searcher".into(),
                 kind: "type_ref".into(),
+                ref_name: None,
             }],
             scores: Default::default(),
         };

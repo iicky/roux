@@ -115,6 +115,7 @@ impl GraphStore {
                     from_id TEXT NOT NULL ,
                     to_id   TEXT NOT NULL ,
                     kind    TEXT NOT NULL,
+                    ref_name TEXT,
                     PRIMARY KEY (from_id, to_id, kind)
                 );
 
@@ -201,6 +202,20 @@ impl GraphStore {
                 );
                 CREATE INDEX IF NOT EXISTS idx_files_source ON files(source_name);
                 INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '8');",
+            )?;
+        }
+
+        if version < 9 {
+            // Persist the raw reference token per edge so reference resolution can
+            // be re-run over stored data during an incremental refresh (after a
+            // target symbol is renamed/added/removed). Ignore "duplicate column"
+            // so a freshly-created DB (column already in CREATE TABLE) is fine.
+            let _ = self
+                .conn
+                .execute("ALTER TABLE edges ADD COLUMN ref_name TEXT", []);
+            self.conn.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '9')",
+                [],
             )?;
         }
 
@@ -306,10 +321,10 @@ impl GraphStore {
         // Insert edges
         {
             let mut edge_stmt = tx.prepare_cached(
-                "INSERT OR IGNORE INTO edges (from_id, to_id, kind) VALUES (?1, ?2, ?3)",
+                "INSERT OR IGNORE INTO edges (from_id, to_id, kind, ref_name) VALUES (?1, ?2, ?3, ?4)",
             )?;
             for edge in edges {
-                edge_stmt.execute(params![edge.from_id, edge.to_id, edge.kind])?;
+                edge_stmt.execute(params![edge.from_id, edge.to_id, edge.kind, edge.ref_name])?;
             }
         }
 
@@ -397,8 +412,7 @@ impl GraphStore {
         // Fused matched set: top-`limit` symbols by RRF score.
         let mut fused: Vec<(String, f64)> = rrf.into_iter().collect();
         fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        let matched_ids: Vec<String> =
-            fused.iter().take(limit).map(|(id, _)| id.clone()).collect();
+        let matched_ids: Vec<String> = fused.iter().take(limit).map(|(id, _)| id.clone()).collect();
         let scores: HashMap<String, f64> = fused.into_iter().collect();
 
         // Output nodes: matched first (RRF order), then their neighborhood.
@@ -522,9 +536,11 @@ impl GraphStore {
 
                 // Edge neighbors (both directions), capped to detect hubs.
                 let mut stmt = self.conn.prepare_cached(
-                    "SELECT to_id FROM edges WHERE from_id = ?1
+                    "SELECT to_id FROM edges
+                     WHERE from_id = ?1 AND to_id NOT LIKE '__unresolved::%' AND to_id NOT LIKE '__route::%'
                      UNION
-                     SELECT from_id FROM edges WHERE to_id = ?1
+                     SELECT from_id FROM edges
+                     WHERE to_id = ?1 AND from_id NOT LIKE '__unresolved::%' AND from_id NOT LIKE '__route::%'
                      LIMIT ?2",
                 )?;
                 let neighbors: Vec<String> = stmt
@@ -679,7 +695,9 @@ impl GraphStore {
             let ph2: Vec<String> = (n + 1..=n * 2).map(|i| format!("?{i}")).collect();
             let sql = format!(
                 "SELECT from_id, to_id, kind FROM edges
-                 WHERE from_id IN ({}) OR to_id IN ({})",
+                 WHERE (from_id IN ({}) OR to_id IN ({}))
+                   AND from_id NOT LIKE '__unresolved::%' AND to_id NOT LIKE '__unresolved::%'
+                   AND from_id NOT LIKE '__route::%' AND to_id NOT LIKE '__route::%'",
                 ph1.join(", "),
                 ph2.join(", ")
             );
@@ -699,6 +717,7 @@ impl GraphStore {
                         from_id: row.get(0)?,
                         to_id: row.get(1)?,
                         kind: row.get(2)?,
+                        ref_name: None,
                     })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -706,6 +725,93 @@ impl GraphStore {
         }
 
         Ok(all_edges)
+    }
+
+    /// Load every node in the index (for a global re-resolution pass). Ordered
+    /// deterministically so repeated resolutions break ambiguous-name ties the
+    /// same way every run.
+    fn all_nodes(&self) -> Result<Vec<Node>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, kind, name, qualified_name, source_name, language,
+                    file_path, start_line, start_col, end_line, visibility,
+                    signature, doc, body, parent_id, content_hash, line_count, source_url, description
+             FROM nodes ORDER BY file_path, start_line, id",
+        )?;
+        let nodes = stmt
+            .query_map([], |row| {
+                Ok(Node {
+                    id: row.get(0)?,
+                    kind: row.get(1)?,
+                    name: row.get(2)?,
+                    qualified_name: row.get(3)?,
+                    source_name: row.get(4)?,
+                    language: row.get(5)?,
+                    file_path: row.get(6)?,
+                    start_line: row.get(7)?,
+                    start_col: row.get(8)?,
+                    end_line: row.get(9)?,
+                    visibility: row.get(10)?,
+                    signature: row.get(11)?,
+                    doc: row.get(12)?,
+                    body: row.get(13)?,
+                    parent_id: row.get(14)?,
+                    content_hash: row.get(15)?,
+                    line_count: row.get(16)?,
+                    source_url: row.get(17)?,
+                    description: row.get(18)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(nodes)
+    }
+
+    /// Load every edge WITH its raw ref_name — including retained unresolved
+    /// edges (sentinel to_id). Unlike fetch_edges (query-scoped, ref-name-free),
+    /// this is the input to a re-resolution pass.
+    fn all_edges_with_refs(&self) -> Result<Vec<Edge>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT from_id, to_id, kind, ref_name FROM edges")?;
+        let edges = stmt
+            .query_map([], |row| {
+                Ok(Edge {
+                    from_id: row.get(0)?,
+                    to_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    ref_name: row.get(3)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(edges)
+    }
+
+    /// Re-run reference resolution over all stored edges/nodes. Each edge persists
+    /// its raw ref_name, so resolution is re-runnable after an incremental update
+    /// changes the node set: edges into renamed/moved symbols re-point, and
+    /// previously-unresolved edges connect to newly-added targets. Returns the
+    /// number of edges whose to_id changed.
+    pub fn reresolve(&self) -> Result<usize> {
+        let nodes = self.all_nodes()?;
+        let mut edges = self.all_edges_with_refs()?;
+        let before: Vec<String> = edges.iter().map(|e| e.to_id.clone()).collect();
+        super::extract::resolve_references(&mut edges, &nodes);
+        let changed = edges
+            .iter()
+            .zip(&before)
+            .filter(|(e, b)| e.to_id != **b)
+            .count();
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM edges", [])?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT OR IGNORE INTO edges (from_id, to_id, kind, ref_name) VALUES (?1, ?2, ?3, ?4)",
+            )?;
+            for e in &edges {
+                stmt.execute(params![e.from_id, e.to_id, e.kind, e.ref_name])?;
+            }
+        }
+        tx.commit()?;
+        Ok(changed)
     }
 
     /// Compare stored content hashes against new nodes to find what changed.
@@ -759,7 +865,10 @@ impl GraphStore {
         files: &[super::extract::FileMeta],
     ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
-        tx.execute("DELETE FROM files WHERE source_name = ?1", params![source_name])?;
+        tx.execute(
+            "DELETE FROM files WHERE source_name = ?1",
+            params![source_name],
+        )?;
         {
             let now = now();
             let mut stmt = tx.prepare_cached(
@@ -932,7 +1041,10 @@ fn delete_fts_by_ids(tx: &rusqlite::Transaction<'_>, ids: &[String]) -> Result<(
     // Stay under SQLite's 32766 parameter limit.
     for chunk in ids.chunks(20000) {
         let placeholders: Vec<String> = (1..=chunk.len()).map(|i| format!("?{i}")).collect();
-        let sql = format!("DELETE FROM fts_nodes WHERE id IN ({})", placeholders.join(", "));
+        let sql = format!(
+            "DELETE FROM fts_nodes WHERE id IN ({})",
+            placeholders.join(", ")
+        );
         let params: Vec<&dyn rusqlite::types::ToSql> = chunk
             .iter()
             .map(|id| id as &dyn rusqlite::types::ToSql)
@@ -1458,7 +1570,9 @@ mod tests {
         assert!(names.contains(&"JunctionDeviation"), "got {names:?}");
 
         // A single-element multi search is equivalent to a plain scoped search.
-        let single = store.search_multi(&["InputShaping".into()], 10, None).unwrap();
+        let single = store
+            .search_multi(&["InputShaping".into()], 10, None)
+            .unwrap();
         assert_eq!(single.matched_ids, a.matched_ids);
 
         // Empty input is a no-op, not an error.
@@ -1492,11 +1606,13 @@ mod tests {
                 from_id: auth.id.clone(),
                 to_id: validate.id.clone(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
             Edge {
                 from_id: auth.id.clone(),
                 to_id: hash.id.clone(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
         ];
 
@@ -1623,7 +1739,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "8");
+        assert_eq!(version, "9");
     }
 
     #[test]
@@ -1695,11 +1811,16 @@ mod tests {
         let mut nodes = vec![hub.clone()];
         let mut edges = Vec::new();
         for i in 0..300 {
-            let caller = make_node(&format!("caller_{i}"), "function", &format!("lib::caller_{i}"));
+            let caller = make_node(
+                &format!("caller_{i}"),
+                "function",
+                &format!("lib::caller_{i}"),
+            );
             edges.push(Edge {
                 from_id: caller.id.clone(),
                 to_id: hub.id.clone(),
                 kind: "calls".to_string(),
+                ref_name: None,
             });
             nodes.push(caller);
         }
@@ -1710,7 +1831,11 @@ mod tests {
         // Only the hub matches "dispatch"; its 300 callers do not. Because the
         // hub's degree (300) exceeds the cap, none of the callers are expanded.
         let result = store.search("dispatch", 10).unwrap();
-        assert_eq!(result.matched_ids, vec![hub.id.clone()], "hub is the sole seed");
+        assert_eq!(
+            result.matched_ids,
+            vec![hub.id.clone()],
+            "hub is the sole seed"
+        );
         assert!(
             result.nodes.len() < 128,
             "hub neighborhood should be capped, got {} nodes",
@@ -1730,13 +1855,164 @@ mod tests {
             from_id: seed.id.clone(),
             to_id: callee.id.clone(),
             kind: "calls".to_string(),
+            ref_name: None,
         }];
         store
-            .upsert_source("lib", "1.0", "rust", &[seed.clone(), callee.clone()], &edges)
+            .upsert_source(
+                "lib",
+                "1.0",
+                "rust",
+                &[seed.clone(), callee.clone()],
+                &edges,
+            )
             .unwrap();
 
         let result = store.search("authenticate", 10).unwrap();
         let ids: std::collections::HashSet<&String> = result.nodes.iter().map(|n| &n.id).collect();
-        assert!(ids.contains(&callee.id), "connected neighbor should be expanded in");
+        assert!(
+            ids.contains(&callee.id),
+            "connected neighbor should be expanded in"
+        );
+    }
+
+    #[test]
+    fn resolve_references_retains_unresolved_with_ref_name() {
+        // An edge whose target name never resolves must be RETAINED (not
+        // dropped) with the raw token captured into ref_name, so a later
+        // reresolve() pass can pick it up if the target ever appears.
+        let caller = make_node("caller", "function", "lib::caller");
+        let nodes = vec![caller.clone()];
+        let mut edges = vec![Edge {
+            from_id: caller.id.clone(),
+            to_id: "__unresolved::missing_target".to_string(),
+            kind: "calls".to_string(),
+            ref_name: None,
+        }];
+
+        crate::graph::extract::resolve_references(&mut edges, &nodes);
+
+        assert_eq!(
+            edges.len(),
+            1,
+            "unresolved edge must be retained, not dropped"
+        );
+        assert_eq!(edges[0].to_id, "__unresolved::missing_target");
+        assert_eq!(
+            edges[0].ref_name.as_deref(),
+            Some("missing_target"),
+            "raw ref token must be captured from the sentinel"
+        );
+    }
+
+    #[test]
+    fn resolve_references_is_rerunnable_same_to_id() {
+        // Re-running resolution over edges that already resolved on a prior
+        // pass must be a no-op: it resolves from the persisted ref_name, not
+        // from the now-overwritten sentinel, so the to_id doesn't regress.
+        let caller = make_node("caller", "function", "lib::caller");
+        let target = make_node("target", "function", "lib::target");
+        let nodes = vec![caller.clone(), target.clone()];
+        let mut edges = vec![Edge {
+            from_id: caller.id.clone(),
+            to_id: "__unresolved::target".to_string(),
+            kind: "calls".to_string(),
+            ref_name: None,
+        }];
+
+        crate::graph::extract::resolve_references(&mut edges, &nodes);
+        assert_eq!(edges[0].to_id, target.id, "first pass should resolve");
+        assert_eq!(edges[0].ref_name.as_deref(), Some("target"));
+
+        // Second pass over the already-resolved edge + same nodes.
+        crate::graph::extract::resolve_references(&mut edges, &nodes);
+        assert_eq!(
+            edges[0].to_id, target.id,
+            "re-running resolution must be idempotent"
+        );
+    }
+
+    #[test]
+    fn reresolve_reconnects_previously_unresolved_edge() {
+        // End-to-end: an edge stored unresolved (target absent) stays
+        // unresolved across a reresolve() pass; once the target is ingested,
+        // a second reresolve() reconnects the SAME stored edge to it.
+        let store = GraphStore::open_in_memory().unwrap();
+        let caller = make_node("caller", "function", "lib::caller");
+        let target = make_node("target", "function", "lib::target");
+        let edge = Edge {
+            from_id: caller.id.clone(),
+            to_id: "__unresolved::target".to_string(),
+            kind: "calls".to_string(),
+            ref_name: Some("target".to_string()),
+        };
+
+        // Target absent: edge is stored unresolved.
+        store
+            .upsert_source("lib", "1.0", "rust", &[caller.clone()], &[edge.clone()])
+            .unwrap();
+
+        let changed = store.reresolve().unwrap();
+        assert_eq!(changed, 0, "nothing to connect to yet");
+        let stored = store.all_edges_with_refs().unwrap();
+        assert_eq!(stored.len(), 1, "unresolved edge must still be stored");
+        assert!(
+            stored[0].to_id.starts_with("__unresolved::"),
+            "got {}",
+            stored[0].to_id
+        );
+        assert_eq!(stored[0].ref_name.as_deref(), Some("target"));
+
+        // Target now present: re-ingest with the same edge, then reresolve.
+        store
+            .upsert_source(
+                "lib",
+                "1.0",
+                "rust",
+                &[caller.clone(), target.clone()],
+                &[edge.clone()],
+            )
+            .unwrap();
+        let changed = store.reresolve().unwrap();
+        assert!(
+            changed >= 1,
+            "expected at least one edge to reconnect, got {changed}"
+        );
+        let stored = store.all_edges_with_refs().unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(
+            stored[0].to_id, target.id,
+            "edge should now point at the newly-present target"
+        );
+    }
+
+    #[test]
+    fn retained_unresolved_edges_do_not_surface_in_search() {
+        // A retained-but-unresolved edge is persisted so it can re-resolve
+        // later, but it must never leak into query output as a real edge.
+        let store = GraphStore::open_in_memory().unwrap();
+        let auth = make_node("authenticate", "function", "lib::authenticate");
+        let edge = Edge {
+            from_id: auth.id.clone(),
+            to_id: "__unresolved::nonexistent".to_string(),
+            kind: "calls".to_string(),
+            ref_name: Some("nonexistent".to_string()),
+        };
+        store
+            .upsert_source("lib", "1.0", "rust", &[auth.clone()], &[edge])
+            .unwrap();
+
+        let result = store.search("authenticate", 10).unwrap();
+        assert!(
+            result.nodes.iter().any(|n| n.id == auth.id),
+            "seed node should be present in results"
+        );
+        assert!(
+            !result
+                .edges
+                .iter()
+                .any(|e| e.to_id.starts_with("__unresolved::")),
+            "sentinel edges must be filtered from query output, got {:?}",
+            result.edges
+        );
     }
 }

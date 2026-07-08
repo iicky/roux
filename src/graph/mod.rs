@@ -54,6 +54,10 @@ pub struct Edge {
     pub to_id: String,
     /// Relationship kind: calls, imports, implements, inherits, type_ref
     pub kind: String,
+    /// Raw reference token this edge was created from (the unresolved name),
+    /// persisted so resolution can be re-run over stored data during an
+    /// incremental refresh. None for edges built with a concrete target id.
+    pub ref_name: Option<String>,
 }
 
 impl Node {
@@ -121,7 +125,10 @@ impl Node {
         let Some(close) = close else {
             return String::new();
         };
-        sig[open + 1..close].split_whitespace().collect::<Vec<_>>().join(" ")
+        sig[open + 1..close]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     /// Build the FTS body text from node metadata.

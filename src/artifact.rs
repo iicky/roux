@@ -1,6 +1,6 @@
 //! Portable roux index artifacts — the format CI produces for agents to consume.
 //!
-//! An artifact is a standalone SQLite file (schema v6) with extra manifest rows
+//! An artifact is a standalone SQLite file (current schema) with extra manifest rows
 //! in the `metadata` table identifying the producer. Optionally gzip-wrapped.
 //!
 //! ## Spec v1
@@ -32,7 +32,7 @@ use rusqlite::Connection;
 use crate::graph::store::GraphStore;
 
 pub const ARTIFACT_VERSION: &str = "1";
-pub const SUPPORTED_SCHEMA_MAX: i64 = 8;
+pub const SUPPORTED_SCHEMA_MAX: i64 = 9;
 
 /// Write a portable artifact at `output`. `source_db` is the sqlite file to export.
 ///

@@ -718,6 +718,7 @@ fn extract_from_source(
                         from_id: id.clone(),
                         to_id: format!("__unresolved::{target}"),
                         kind: "references".to_string(),
+                        ref_name: None,
                     });
                 }
             }
@@ -733,6 +734,7 @@ fn extract_from_source(
                         super::tags::RefKind::Call => "calls".to_string(),
                         super::tags::RefKind::Implementation => "implements".to_string(),
                     },
+                    ref_name: None,
                 });
             }
         }
@@ -790,6 +792,7 @@ fn extract_relationship_edges(
                         from_id: sym_id.to_string(),
                         to_id: format!("__unresolved::{trait_name}"),
                         kind: "implements".to_string(),
+                        ref_name: None,
                     });
                 }
             }
@@ -807,6 +810,7 @@ fn extract_relationship_edges(
                             from_id: sym_id.to_string(),
                             to_id: format!("__unresolved::{parent_name}"),
                             kind: "inherits".to_string(),
+                            ref_name: None,
                         });
                     }
                 }
@@ -836,6 +840,7 @@ fn extract_relationship_edges(
                             from_id: sym_id.to_string(),
                             to_id: format!("__unresolved::{leaf}"),
                             kind: "inherits".to_string(),
+                            ref_name: None,
                         });
                     }
                 }
@@ -854,6 +859,7 @@ fn extract_relationship_edges(
                             from_id: sym_id.to_string(),
                             to_id: format!("__unresolved::{parent_name}"),
                             kind: "inherits".to_string(),
+                            ref_name: None,
                         });
                     }
                 }
@@ -872,6 +878,7 @@ fn extract_relationship_edges(
                                 from_id: sym_id.to_string(),
                                 to_id: format!("__unresolved::{iface_name}"),
                                 kind: "implements".to_string(),
+                                ref_name: None,
                             });
                         }
                     }
@@ -946,6 +953,7 @@ fn collect_type_refs_from(
                 from_id: sym_id.to_string(),
                 to_id: format!("__unresolved::{type_name}"),
                 kind: "type_ref".to_string(),
+                ref_name: None,
             });
         }
     }
@@ -1025,6 +1033,7 @@ fn extract_decorator_edges(
                             from_id: format!("__unresolved::{decorator_name}"),
                             to_id: sym_id.to_string(),
                             kind: "decorates".to_string(),
+                            ref_name: None,
                         });
                         // Check for route decorators
                         if decorator_name.contains("route")
@@ -1039,6 +1048,7 @@ fn extract_decorator_edges(
                                     from_id: sym_id.to_string(),
                                     to_id: format!("__route::{route_path}"),
                                     kind: "routes".to_string(),
+                                    ref_name: None,
                                 });
                             }
                         }
@@ -1066,6 +1076,7 @@ fn extract_decorator_edges(
                             from_id: format!("__unresolved::{name}"),
                             to_id: sym_id.to_string(),
                             kind: "decorates".to_string(),
+                            ref_name: None,
                         });
                     }
                 } else {
@@ -1151,6 +1162,7 @@ fn extract_raises_recursive(
                 from_id: sym_id.to_string(),
                 to_id: format!("__unresolved::{name}"),
                 kind: "raises".to_string(),
+                ref_name: None,
             });
         }
         return; // Don't recurse into raise/throw children
@@ -1201,6 +1213,7 @@ fn extract_route_registrations(
                     from_id: sym_id.to_string(),
                     to_id: format!("__route::{path}"),
                     kind: "routes".to_string(),
+                    ref_name: None,
                 });
             }
         }
@@ -1230,6 +1243,7 @@ fn infer_test_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
                     from_id: node.id.clone(),
                     to_id: target.id.clone(),
                     kind: "tests".to_string(),
+                    ref_name: None,
                 });
             }
         }
@@ -1301,6 +1315,7 @@ fn infer_override_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
                         .id
                         .clone(),
                     kind: "overrides".to_string(),
+                    ref_name: None,
                 });
             }
         }
@@ -1326,6 +1341,7 @@ fn infer_export_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
                     from_id: parent.id.clone(),
                     to_id: node.id.clone(),
                     kind: "exports".to_string(),
+                    ref_name: None,
                 });
             }
         }
@@ -1580,6 +1596,7 @@ fn extract_imports(
                         from_id: String::new(), // resolved later
                         to_id: format!("__unresolved::{imported}"),
                         kind: "imports".to_string(),
+                        ref_name: None,
                     });
                     let _ = file_id; // suppress unused
                 }
@@ -1597,6 +1614,7 @@ fn extract_imports(
                         from_id: String::new(),
                         to_id: format!("__unresolved::{imported}"),
                         kind: "imports".to_string(),
+                        ref_name: None,
                     });
                 }
             }
@@ -1611,6 +1629,7 @@ fn extract_imports(
                             from_id: String::new(),
                             to_id: format!("__unresolved::{module}"),
                             kind: "imports".to_string(),
+                            ref_name: None,
                         });
                     }
                 }
@@ -1628,6 +1647,7 @@ fn extract_imports(
                             from_id: String::new(),
                             to_id: format!("__unresolved::{cleaned}"),
                             kind: "imports".to_string(),
+                            ref_name: None,
                         });
                     }
                 }
@@ -1794,6 +1814,7 @@ fn extract_calls_recursive(
                     from_id: caller_id.to_string(),
                     to_id: format!("__unresolved::{short_name}"),
                     kind: "calls".to_string(),
+                    ref_name: None,
                 });
             }
         }
@@ -1816,40 +1837,60 @@ fn extract_calls_recursive(
 /// last segment is equivalent to the `ends_with("::"+ref)` suffix test. Picking
 /// the smaller of the two indexes preserves the "first node in order" tie-break
 /// of the original `find()`. Rare multi-segment refs fall back to a scan.
-fn resolve_references(edges: &mut Vec<Edge>, nodes: &[Node]) {
+pub(crate) fn resolve_references(edges: &mut Vec<Edge>, nodes: &[Node]) {
     use std::collections::HashMap;
     let mut by_name: HashMap<&str, usize> = HashMap::new();
     let mut by_last_seg: HashMap<&str, usize> = HashMap::new();
     for (i, n) in nodes.iter().enumerate() {
         by_name.entry(n.name.as_str()).or_insert(i);
-        let seg = n.qualified_name.rsplit("::").next().unwrap_or(&n.qualified_name);
+        let seg = n
+            .qualified_name
+            .rsplit("::")
+            .next()
+            .unwrap_or(&n.qualified_name);
         by_last_seg.entry(seg).or_insert(i);
     }
 
     for edge in edges.iter_mut() {
-        if let Some(ref_name) = edge.to_id.strip_prefix("__unresolved::") {
-            let idx = if ref_name.contains("::") {
-                // Multi-segment ref: preserve exact suffix semantics via a scan.
-                let needle = format!("::{ref_name}");
-                by_name
-                    .get(ref_name)
-                    .copied()
-                    .or_else(|| nodes.iter().position(|s| s.qualified_name.ends_with(&needle)))
-            } else {
-                match (by_name.get(ref_name), by_last_seg.get(ref_name)) {
-                    (Some(&a), Some(&b)) => Some(a.min(b)),
-                    (Some(&a), None) | (None, Some(&a)) => Some(a),
-                    (None, None) => None,
-                }
-            };
-            if let Some(i) = idx {
-                edge.to_id = nodes[i].id.clone();
+        // Capture the raw reference token once (first extract) from the sentinel,
+        // so resolution stays re-runnable over stored data even after to_id has
+        // been rewritten to a concrete id.
+        if edge.ref_name.is_none() {
+            if let Some(name) = edge.to_id.strip_prefix("__unresolved::") {
+                edge.ref_name = Some(name.to_string());
             }
         }
+        // Concrete edges (ref_name == None: tests/overrides/exports) keep their
+        // target id; name-reference edges resolve from the persisted raw name.
+        let Some(ref_name) = edge.ref_name.clone() else {
+            continue;
+        };
+        let idx = if ref_name.contains("::") {
+            // Multi-segment ref: preserve exact suffix semantics via a scan.
+            let needle = format!("::{ref_name}");
+            by_name.get(ref_name.as_str()).copied().or_else(|| {
+                nodes
+                    .iter()
+                    .position(|s| s.qualified_name.ends_with(&needle))
+            })
+        } else {
+            match (
+                by_name.get(ref_name.as_str()),
+                by_last_seg.get(ref_name.as_str()),
+            ) {
+                (Some(&a), Some(&b)) => Some(a.min(b)),
+                (Some(&a), None) | (None, Some(&a)) => Some(a),
+                (None, None) => None,
+            }
+        };
+        // Resolved -> real node id; unresolved -> keep the sentinel so the edge is
+        // RETAINED (persisted with its ref_name) and re-resolves once the target
+        // appears. Query paths filter sentinel endpoints, so this is query-neutral.
+        edge.to_id = match idx {
+            Some(i) => nodes[i].id.clone(),
+            None => format!("__unresolved::{ref_name}"),
+        };
     }
-
-    // Remove edges that couldn't be resolved (external calls, stdlib, etc.)
-    edges.retain(|e| !e.to_id.starts_with("__unresolved::"));
 }
 
 // ─── Markdown documentation extraction ───────────────────────────────
@@ -1987,6 +2028,7 @@ fn flush_doc_section(
             from_id: id.clone(),
             to_id: format!("__unresolved::{cap}"),
             kind: "references".to_string(),
+            ref_name: None,
         });
     }
 }
@@ -2522,7 +2564,10 @@ mod tests {
     fn detect_language_only_claims_parseable_languages() {
         // Every language detect_language returns must have a wired grammar,
         // otherwise the file is "detected" then silently dropped at parse time.
-        for ext in ["rs", "py", "ts", "tsx", "js", "jsx", "mjs", "go", "cpp", "cc", "hpp", "hh", "hxx", "h", "ino", "c", "sh", "bash"] {
+        for ext in [
+            "rs", "py", "ts", "tsx", "js", "jsx", "mjs", "go", "cpp", "cc", "hpp", "hh", "hxx",
+            "h", "ino", "c", "sh", "bash",
+        ] {
             let lang = detect_language(Path::new(&format!("f.{ext}")))
                 .unwrap_or_else(|| panic!(".{ext} should be detected"));
             assert!(
@@ -2548,7 +2593,10 @@ mod tests {
         // Javadoc / JSDoc / KDoc
         assert_eq!(extract_doc_refs("{@link Widget#render}"), vec!["render"]);
         assert_eq!(extract_doc_refs("{@linkplain Helper}"), vec!["Helper"]);
-        assert_eq!(extract_doc_refs("@see SomeClass#doThing(int, int)"), vec!["doThing"]);
+        assert_eq!(
+            extract_doc_refs("@see SomeClass#doThing(int, int)"),
+            vec!["doThing"]
+        );
         // Sphinx / reST roles
         assert_eq!(extract_doc_refs(":func:`pkg.mod.compute`"), vec!["compute"]);
         assert_eq!(extract_doc_refs("see :class:`~pkg.Model`"), vec!["Model"]);
@@ -2580,7 +2628,11 @@ mod tests {
             .iter()
             .find(|n| n.name == "dispatch")
             .expect("dispatch node");
-        let handle = g.nodes.iter().find(|n| n.name == "handle").expect("handle node");
+        let handle = g
+            .nodes
+            .iter()
+            .find(|n| n.name == "handle")
+            .expect("handle node");
         assert!(
             g.edges.iter().any(|e| e.from_id == dispatch.id
                 && e.to_id == handle.id
@@ -3119,14 +3171,24 @@ def _private():
         // file, not a merged blob pointing at both.
         let alpha = g.nodes.iter().find(|n| n.name == "alpha").unwrap();
         let beta = g.nodes.iter().find(|n| n.name == "beta").unwrap();
-        let helper_a = helpers.iter().find(|h| h.file_path.contains("a.rs")).unwrap();
-        let helper_b = helpers.iter().find(|h| h.file_path.contains("b.rs")).unwrap();
+        let helper_a = helpers
+            .iter()
+            .find(|h| h.file_path.contains("a.rs"))
+            .unwrap();
+        let helper_b = helpers
+            .iter()
+            .find(|h| h.file_path.contains("b.rs"))
+            .unwrap();
         assert!(
-            g.edges.iter().any(|e| e.from_id == helper_a.id && e.to_id == alpha.id),
+            g.edges
+                .iter()
+                .any(|e| e.from_id == helper_a.id && e.to_id == alpha.id),
             "helper in a.rs should call alpha"
         );
         assert!(
-            g.edges.iter().any(|e| e.from_id == helper_b.id && e.to_id == beta.id),
+            g.edges
+                .iter()
+                .any(|e| e.from_id == helper_b.id && e.to_id == beta.id),
             "helper in b.rs should call beta"
         );
     }
@@ -3167,7 +3229,11 @@ def _private():
         let g = extract_dir(dir.path(), "demo", "dev", Some("cpp")).unwrap();
 
         let computes: Vec<&Node> = g.nodes.iter().filter(|n| n.name == "compute").collect();
-        assert_eq!(computes.len(), 1, "prototype and definition merge to one node");
+        assert_eq!(
+            computes.len(),
+            1,
+            "prototype and definition merge to one node"
+        );
         assert!(
             computes[0].end_line > computes[0].start_line,
             "survivor is the multi-line definition, not the one-line prototype"
@@ -3203,7 +3269,11 @@ def _private():
         let paths: std::collections::BTreeSet<&str> =
             listed.iter().map(|f| f.path.as_str()).collect();
         assert!(paths.contains("src/lib.rs") && paths.contains("README.md"));
-        assert!(!paths.iter().any(|p| p.contains("notes.txt") || p.contains("target")));
+        assert!(
+            !paths
+                .iter()
+                .any(|p| p.contains("notes.txt") || p.contains("target"))
+        );
     }
 
     #[test]

@@ -355,11 +355,13 @@ mod tests {
                 from_id: "a".to_string(),
                 to_id: "b".to_string(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
             Edge {
                 from_id: "a".to_string(),
                 to_id: "c".to_string(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
         ];
 
@@ -407,21 +409,25 @@ mod tests {
                 from_id: "seed".to_string(),
                 to_id: "hub".to_string(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
             Edge {
                 from_id: "hub".to_string(),
                 to_id: "a".to_string(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
             Edge {
                 from_id: "hub".to_string(),
                 to_id: "b".to_string(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
             Edge {
                 from_id: "hub".to_string(),
                 to_id: "c".to_string(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
         ];
 
@@ -443,6 +449,7 @@ mod tests {
             from_id: "n0".to_string(),
             to_id: "n1".to_string(),
             kind: "calls".to_string(),
+            ref_name: None,
         }];
 
         let result = rank_subgraph(nodes, edges, &["n0".to_string()], &HashMap::new(), 5);
