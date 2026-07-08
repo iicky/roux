@@ -2,3 +2,4 @@
 *.jsonl
 *.log
 heldout_*.json
+freshness_*.json
