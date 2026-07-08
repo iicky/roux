@@ -277,44 +277,7 @@ impl GraphStore {
             )?;
 
             for node in nodes {
-                node_stmt.execute(params![
-                    node.id,
-                    node.kind,
-                    node.name,
-                    node.qualified_name,
-                    node.source_name,
-                    node.language,
-                    node.file_path,
-                    node.start_line,
-                    node.start_col,
-                    node.end_line,
-                    node.visibility,
-                    node.signature,
-                    node.doc,
-                    node.body,
-                    node.parent_id,
-                    node.content_hash,
-                    node.line_count,
-                    node.source_url,
-                    node.description,
-                ])?;
-                // Index both original text AND tokenized form for best of both
-                let fts_name = format!("{} {}", node.name, tokenize_for_fts(&node.name));
-                let fts_qualified = format!(
-                    "{} {}",
-                    node.qualified_name,
-                    tokenize_for_fts(&node.qualified_name)
-                );
-                let fts_body = format!("{} {}", node.body, tokenize_for_fts(&node.body));
-                fts_stmt.execute(params![
-                    node.id,
-                    fts_name,
-                    fts_qualified,
-                    node.file_path,
-                    node.signature,
-                    node.doc,
-                    fts_body,
-                ])?;
+                insert_node_and_fts(&mut node_stmt, &mut fts_stmt, node)?;
             }
         }
 
@@ -330,6 +293,177 @@ impl GraphStore {
 
         tx.commit()?;
         Ok(())
+    }
+
+    /// Apply a re-extracted graph as a minimal delta against what is stored for
+    /// `source_name`, touching only rows that actually changed. Unlike
+    /// [`GraphStore::upsert_source`], which wipes and reinserts the whole
+    /// source, this updates only added/modified/removed nodes (and their FTS
+    /// rows) and reconciles the source's edges, leaving unchanged rows in place.
+    /// The resulting stored graph is byte-identical to a full `upsert_source` of
+    /// the same `nodes`/`edges`.
+    ///
+    /// A node counts as modified when ANY persisted field differs — not merely
+    /// its `content_hash` — because a global re-resolve/description pass can
+    /// change an unchanged-text symbol's edges, line span, or description.
+    /// Edges are reconciled by full identity `(from_id, to_id, kind, ref_name)`,
+    /// scoped to the source's stored node ids on EITHER endpoint (mirroring
+    /// `remove_source`), so a removed node leaves no dangling incoming edge.
+    pub fn apply_source_delta(
+        &self,
+        source_name: &str,
+        source_version: &str,
+        language: &str,
+        nodes: &[Node],
+        edges: &[Edge],
+    ) -> Result<DeltaStats> {
+        use std::collections::HashSet;
+
+        let tx = self.conn.unchecked_transaction()?;
+
+        // Read current state for this source within the transaction snapshot.
+        let stored_nodes: Vec<Node> = {
+            let mut stmt = tx.prepare(
+                "SELECT id, kind, name, qualified_name, source_name, language,
+                        file_path, start_line, start_col, end_line, visibility,
+                        signature, doc, body, parent_id, content_hash, line_count, source_url, description
+                 FROM nodes WHERE source_name = ?1",
+            )?;
+            stmt.query_map(params![source_name], row_to_node)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        // Edges touching this source on EITHER endpoint — the set a full rebuild
+        // (remove_source + upsert_source) would drop before reinserting.
+        let stored_edges: Vec<Edge> = {
+            let mut stmt = tx.prepare(
+                "SELECT from_id, to_id, kind, ref_name FROM edges
+                 WHERE from_id IN (SELECT id FROM nodes WHERE source_name = ?1)
+                    OR to_id   IN (SELECT id FROM nodes WHERE source_name = ?1)",
+            )?;
+            stmt.query_map(params![source_name], |row| {
+                Ok(Edge {
+                    from_id: row.get(0)?,
+                    to_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    ref_name: row.get(3)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+
+        // Node delta by FULL record equality (content_hash alone is insufficient).
+        let stored_by_id: HashMap<&str, &Node> =
+            stored_nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+        let new_ids: HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
+
+        let mut added = 0usize;
+        let mut modified = 0usize;
+        let mut upsert_ids: Vec<String> = Vec::new();
+        let mut upserts: Vec<&Node> = Vec::new();
+        for node in nodes {
+            match stored_by_id.get(node.id.as_str()) {
+                None => {
+                    added += 1;
+                    upsert_ids.push(node.id.clone());
+                    upserts.push(node);
+                }
+                Some(&stored) if stored != node => {
+                    modified += 1;
+                    upsert_ids.push(node.id.clone());
+                    upserts.push(node);
+                }
+                Some(_) => {}
+            }
+        }
+        let removed_ids: Vec<String> = stored_nodes
+            .iter()
+            .filter(|n| !new_ids.contains(n.id.as_str()))
+            .map(|n| n.id.clone())
+            .collect();
+
+        // Edge delta by full identity (a re-resolved to_id is a delete + insert).
+        let edge_key = |e: &Edge| {
+            (
+                e.from_id.clone(),
+                e.to_id.clone(),
+                e.kind.clone(),
+                e.ref_name.clone(),
+            )
+        };
+        let stored_edge_set: HashSet<_> = stored_edges.iter().map(edge_key).collect();
+        let new_edge_set: HashSet<_> = edges.iter().map(edge_key).collect();
+        let edges_to_delete: Vec<&Edge> = stored_edges
+            .iter()
+            .filter(|e| !new_edge_set.contains(&edge_key(e)))
+            .collect();
+        let edges_to_insert: Vec<&Edge> = edges
+            .iter()
+            .filter(|e| !stored_edge_set.contains(&edge_key(e)))
+            .collect();
+
+        // Source record (version/language/timestamp), as upsert_source does.
+        tx.execute(
+            "INSERT OR REPLACE INTO sources (name, version, language, ingested_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![source_name, source_version, language, now()],
+        )?;
+
+        // Removed nodes: FTS rows then node rows. Their edges are dropped by the
+        // edge reconciliation below (present in stored_edges, absent from new).
+        delete_fts_by_ids(&tx, &removed_ids)?;
+        {
+            let mut del = tx.prepare_cached("DELETE FROM nodes WHERE id = ?1")?;
+            for id in &removed_ids {
+                del.execute(params![id])?;
+            }
+        }
+
+        // Added + modified nodes: drop any stale FTS row, then (re)insert node+FTS.
+        delete_fts_by_ids(&tx, &upsert_ids)?;
+        {
+            let mut node_stmt = tx.prepare_cached(
+                "INSERT OR REPLACE INTO nodes
+                    (id, kind, name, qualified_name, source_name, language,
+                     file_path, start_line, start_col, end_line, visibility,
+                     signature, doc, body, parent_id, content_hash, line_count, source_url, description)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+            )?;
+            let mut fts_stmt = tx.prepare_cached(
+                "INSERT INTO fts_nodes (id, name, qualified_name, file_path, signature, doc, body)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )?;
+            for node in upserts {
+                insert_node_and_fts(&mut node_stmt, &mut fts_stmt, node)?;
+            }
+        }
+
+        // Edges: delete stale, insert new; matched edges are left untouched.
+        {
+            let mut edge_del = tx.prepare_cached(
+                "DELETE FROM edges WHERE from_id = ?1 AND to_id = ?2 AND kind = ?3",
+            )?;
+            for e in &edges_to_delete {
+                edge_del.execute(params![e.from_id, e.to_id, e.kind])?;
+            }
+        }
+        {
+            let mut edge_ins = tx.prepare_cached(
+                "INSERT OR REPLACE INTO edges (from_id, to_id, kind, ref_name) VALUES (?1, ?2, ?3, ?4)",
+            )?;
+            for e in &edges_to_insert {
+                edge_ins.execute(params![e.from_id, e.to_id, e.kind, e.ref_name])?;
+            }
+        }
+
+        tx.commit()?;
+
+        Ok(DeltaStats {
+            nodes_added: added,
+            nodes_modified: modified,
+            nodes_removed: removed_ids.len(),
+            edges_added: edges_to_insert.len(),
+            edges_removed: edges_to_delete.len(),
+        })
     }
 
     /// Search by keyword, return matching nodes + their graph neighborhood.
@@ -738,29 +872,7 @@ impl GraphStore {
              FROM nodes ORDER BY file_path, start_line, id",
         )?;
         let nodes = stmt
-            .query_map([], |row| {
-                Ok(Node {
-                    id: row.get(0)?,
-                    kind: row.get(1)?,
-                    name: row.get(2)?,
-                    qualified_name: row.get(3)?,
-                    source_name: row.get(4)?,
-                    language: row.get(5)?,
-                    file_path: row.get(6)?,
-                    start_line: row.get(7)?,
-                    start_col: row.get(8)?,
-                    end_line: row.get(9)?,
-                    visibility: row.get(10)?,
-                    signature: row.get(11)?,
-                    doc: row.get(12)?,
-                    body: row.get(13)?,
-                    parent_id: row.get(14)?,
-                    content_hash: row.get(15)?,
-                    line_count: row.get(16)?,
-                    source_url: row.get(17)?,
-                    description: row.get(18)?,
-                })
-            })?
+            .query_map([], row_to_node)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(nodes)
     }
@@ -1054,6 +1166,93 @@ fn delete_fts_by_ids(tx: &rusqlite::Transaction<'_>, ids: &[String]) -> Result<(
     Ok(())
 }
 
+/// Insert a node row and its FTS row with the exact column layout and FTS
+/// tokenization used by [`GraphStore::upsert_source`], so an incremental delta
+/// produces rows byte-identical to a full re-insert. Callers MUST have already
+/// removed any prior FTS row for `node.id` (FTS5 has no upsert).
+fn insert_node_and_fts(
+    node_stmt: &mut rusqlite::CachedStatement<'_>,
+    fts_stmt: &mut rusqlite::CachedStatement<'_>,
+    node: &Node,
+) -> rusqlite::Result<()> {
+    node_stmt.execute(params![
+        node.id,
+        node.kind,
+        node.name,
+        node.qualified_name,
+        node.source_name,
+        node.language,
+        node.file_path,
+        node.start_line,
+        node.start_col,
+        node.end_line,
+        node.visibility,
+        node.signature,
+        node.doc,
+        node.body,
+        node.parent_id,
+        node.content_hash,
+        node.line_count,
+        node.source_url,
+        node.description,
+    ])?;
+    // Index both original text AND tokenized form for best of both.
+    let fts_name = format!("{} {}", node.name, tokenize_for_fts(&node.name));
+    let fts_qualified = format!(
+        "{} {}",
+        node.qualified_name,
+        tokenize_for_fts(&node.qualified_name)
+    );
+    let fts_body = format!("{} {}", node.body, tokenize_for_fts(&node.body));
+    fts_stmt.execute(params![
+        node.id,
+        fts_name,
+        fts_qualified,
+        node.file_path,
+        node.signature,
+        node.doc,
+        fts_body,
+    ])?;
+    Ok(())
+}
+
+/// Map a `nodes` row (in the canonical 19-column SELECT order) to a [`Node`].
+fn row_to_node(row: &rusqlite::Row<'_>) -> rusqlite::Result<Node> {
+    Ok(Node {
+        id: row.get(0)?,
+        kind: row.get(1)?,
+        name: row.get(2)?,
+        qualified_name: row.get(3)?,
+        source_name: row.get(4)?,
+        language: row.get(5)?,
+        file_path: row.get(6)?,
+        start_line: row.get(7)?,
+        start_col: row.get(8)?,
+        end_line: row.get(9)?,
+        visibility: row.get(10)?,
+        signature: row.get(11)?,
+        doc: row.get(12)?,
+        body: row.get(13)?,
+        parent_id: row.get(14)?,
+        content_hash: row.get(15)?,
+        line_count: row.get(16)?,
+        source_url: row.get(17)?,
+        description: row.get(18)?,
+    })
+}
+
+/// Row-level summary of a [`GraphStore::apply_source_delta`] update: how many
+/// node and edge rows were actually written, for verifying an incremental
+/// refresh touched only what changed.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct DeltaStats {
+    pub nodes_added: usize,
+    pub nodes_modified: usize,
+    pub nodes_removed: usize,
+    pub edges_added: usize,
+    pub edges_removed: usize,
+}
+
 #[derive(Debug, Default)]
 pub struct SearchResult {
     pub matched_ids: Vec<String>,
@@ -1306,7 +1505,7 @@ pub fn tokenize_for_fts(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::extract::FileMeta;
+    use crate::graph::extract::{FileMeta, extract_dir, reextract_incremental};
 
     fn fmeta(path: &str, hash: &str) -> FileMeta {
         FileMeta {
@@ -2013,6 +2212,547 @@ mod tests {
                 .any(|e| e.to_id.starts_with("__unresolved::")),
             "sentinel edges must be filtered from query output, got {:?}",
             result.edges
+        );
+    }
+
+    // ---- apply_source_delta: byte-identity against a full upsert_source ----
+
+    type FtsRow = (
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+    );
+
+    /// Canonical dump of a store's nodes, edges, and FTS rows: nodes by `id`,
+    /// edges by `(from_id, to_id, kind, ref_name)`, FTS rows by `id`. Two
+    /// stores are byte-identical iff all three dumps are equal.
+    fn canonical_dump(store: &GraphStore) -> (Vec<Node>, Vec<Edge>, Vec<FtsRow>) {
+        let mut nodes = store.all_nodes().unwrap();
+        nodes.sort_by(|a, b| a.id.cmp(&b.id));
+
+        let mut edges = store.all_edges_with_refs().unwrap();
+        edges.sort_by(|a, b| {
+            (&a.from_id, &a.to_id, &a.kind, &a.ref_name).cmp(&(
+                &b.from_id,
+                &b.to_id,
+                &b.kind,
+                &b.ref_name,
+            ))
+        });
+
+        let mut stmt = store
+            .conn
+            .prepare(
+                "SELECT id, name, qualified_name, file_path, signature, doc, body
+                 FROM fts_nodes ORDER BY id",
+            )
+            .unwrap();
+        let mut fts: Vec<FtsRow> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                ))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        fts.sort();
+
+        (nodes, edges, fts)
+    }
+
+    /// Asserts two stores hold byte-identical graphs -- same nodes, same
+    /// edges, same FTS rows -- regardless of whether each was built by a full
+    /// `upsert_source` rebuild or an incremental `apply_source_delta`.
+    fn assert_stores_identical(a: &GraphStore, b: &GraphStore) {
+        let (a_nodes, a_edges, a_fts) = canonical_dump(a);
+        let (b_nodes, b_edges, b_fts) = canonical_dump(b);
+        assert_eq!(a_nodes, b_nodes, "nodes differ between stores");
+        assert_eq!(a_edges, b_edges, "edges differ between stores");
+        assert_eq!(a_fts, b_fts, "fts_nodes rows differ between stores");
+    }
+
+    /// Edges touching `source_name` on EITHER endpoint, sorted by identity --
+    /// the same scope `apply_source_delta` reconciles and `remove_source`
+    /// deletes, so it isolates whether an update leaked past that scope.
+    fn edges_touching_source(store: &GraphStore, source_name: &str) -> Vec<Edge> {
+        let mut stmt = store
+            .conn
+            .prepare(
+                "SELECT from_id, to_id, kind, ref_name FROM edges
+                 WHERE from_id IN (SELECT id FROM nodes WHERE source_name = ?1)
+                    OR to_id   IN (SELECT id FROM nodes WHERE source_name = ?1)",
+            )
+            .unwrap();
+        let mut edges: Vec<Edge> = stmt
+            .query_map(params![source_name], |row| {
+                Ok(Edge {
+                    from_id: row.get(0)?,
+                    to_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    ref_name: row.get(3)?,
+                })
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        edges.sort_by(|a, b| {
+            (&a.from_id, &a.to_id, &a.kind, &a.ref_name).cmp(&(
+                &b.from_id,
+                &b.to_id,
+                &b.kind,
+                &b.ref_name,
+            ))
+        });
+        edges
+    }
+
+    #[test]
+    fn apply_source_delta_updates_unchanged_symbol_after_sibling_line_shift() {
+        // fn bravo is defined before fn alpha in the same file, and alpha's
+        // body makes no calls. Adding a line inside bravo's body doesn't touch
+        // alpha's own source text -- content_hash stays identical -- but
+        // alpha's start_line shifts down because bravo grew. "Modified" is
+        // full-record inequality, not content_hash alone, so the delta must
+        // still update alpha's stored row.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("lib.rs"),
+            "pub fn bravo() {\n    let _x = 1;\n}\n\npub fn alpha() {\n    let _y = 2;\n}\n",
+        )
+        .unwrap();
+
+        let prior = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+        let alpha_before = prior
+            .nodes
+            .iter()
+            .find(|n| n.name == "alpha")
+            .expect("alpha node")
+            .clone();
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let delta_store = GraphStore::open(&db_dir.path().join("graph.db")).unwrap();
+        delta_store
+            .upsert_source("s", "0", "rust", &prior.nodes, &prior.edges)
+            .unwrap();
+
+        std::fs::write(
+            dir.path().join("lib.rs"),
+            "pub fn bravo() {\n    let _x = 1;\n    let _z = 2;\n}\n\npub fn alpha() {\n    let _y = 2;\n}\n",
+        )
+        .unwrap();
+
+        let new = reextract_incremental(dir.path(), "s", "0", Some("rust"), &prior).unwrap();
+        let alpha_after = new
+            .nodes
+            .iter()
+            .find(|n| n.name == "alpha")
+            .expect("alpha node")
+            .clone();
+        assert_eq!(
+            alpha_after.content_hash, alpha_before.content_hash,
+            "alpha's own text is unchanged, so its content_hash must match"
+        );
+        assert!(
+            alpha_after.start_line > alpha_before.start_line,
+            "alpha should shift down: before {} after {}",
+            alpha_before.start_line,
+            alpha_after.start_line
+        );
+
+        delta_store
+            .apply_source_delta("s", "0", "rust", &new.nodes, &new.edges)
+            .unwrap();
+
+        let ref_dir = tempfile::tempdir().unwrap();
+        let reference_store = GraphStore::open(&ref_dir.path().join("graph.db")).unwrap();
+        reference_store
+            .upsert_source("s", "0", "rust", &new.nodes, &new.edges)
+            .unwrap();
+
+        assert_stores_identical(&delta_store, &reference_store);
+
+        // A content_hash-only diff would have skipped alpha and left the
+        // stale line number in place; confirm the delta actually rewrote it.
+        let stored_start_line: i64 = delta_store
+            .conn
+            .query_row(
+                "SELECT start_line FROM nodes WHERE id = ?1",
+                params![alpha_after.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored_start_line as usize, alpha_after.start_line);
+    }
+
+    #[test]
+    fn apply_source_delta_replaces_edge_when_target_is_renamed() {
+        // A (unchanged) calls target(), defined in B. Renaming target in B
+        // must replace the stored concrete A->target edge with an
+        // A->__unresolved::target edge -- not leave a stale duplicate
+        // alongside it.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/a")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/b")).unwrap();
+        std::fs::write(
+            dir.path().join("src/a/mod.rs"),
+            "pub fn caller() { target(); }\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("src/b/mod.rs"), "pub fn target() {}\n").unwrap();
+
+        let prior = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let delta_store = GraphStore::open(&db_dir.path().join("graph.db")).unwrap();
+        delta_store
+            .upsert_source("s", "0", "rust", &prior.nodes, &prior.edges)
+            .unwrap();
+
+        std::fs::write(
+            dir.path().join("src/b/mod.rs"),
+            "pub fn target_renamed() {}\n",
+        )
+        .unwrap();
+
+        let new = reextract_incremental(dir.path(), "s", "0", Some("rust"), &prior).unwrap();
+        delta_store
+            .apply_source_delta("s", "0", "rust", &new.nodes, &new.edges)
+            .unwrap();
+
+        let ref_dir = tempfile::tempdir().unwrap();
+        let reference_store = GraphStore::open(&ref_dir.path().join("graph.db")).unwrap();
+        reference_store
+            .upsert_source("s", "0", "rust", &new.nodes, &new.edges)
+            .unwrap();
+
+        assert_stores_identical(&delta_store, &reference_store);
+
+        let caller = new.nodes.iter().find(|n| n.name == "caller").unwrap();
+        let stored_edges = delta_store.all_edges_with_refs().unwrap();
+        let caller_edges: Vec<&Edge> = stored_edges
+            .iter()
+            .filter(|e| e.from_id == caller.id)
+            .collect();
+        assert_eq!(
+            caller_edges.len(),
+            1,
+            "expected exactly one edge from caller, no stale duplicate: {caller_edges:?}"
+        );
+        assert_eq!(caller_edges[0].to_id, "__unresolved::target");
+    }
+
+    #[test]
+    fn apply_source_delta_resolves_edge_to_newly_added_symbol() {
+        // A (unchanged) calls future_fn(), which B does not define yet --
+        // stored as a retained unresolved edge. Adding future_fn to B must
+        // re-resolve A's kept edge to the new concrete node in the
+        // delta-updated store, not leave it dangling on the sentinel.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/caller")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/callee")).unwrap();
+        std::fs::write(
+            dir.path().join("src/caller/mod.rs"),
+            "pub fn invoke() { future_fn(); }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/callee/mod.rs"),
+            "pub fn placeholder() {}\n",
+        )
+        .unwrap();
+
+        let prior = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+        assert!(
+            prior
+                .edges
+                .iter()
+                .any(|e| e.to_id == "__unresolved::future_fn"),
+            "prior should retain an unresolved future_fn call: {:?}",
+            prior.edges
+        );
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let delta_store = GraphStore::open(&db_dir.path().join("graph.db")).unwrap();
+        delta_store
+            .upsert_source("s", "0", "rust", &prior.nodes, &prior.edges)
+            .unwrap();
+
+        std::fs::write(
+            dir.path().join("src/callee/mod.rs"),
+            "pub fn placeholder() {}\npub fn future_fn() {}\n",
+        )
+        .unwrap();
+
+        let new = reextract_incremental(dir.path(), "s", "0", Some("rust"), &prior).unwrap();
+        delta_store
+            .apply_source_delta("s", "0", "rust", &new.nodes, &new.edges)
+            .unwrap();
+
+        let ref_dir = tempfile::tempdir().unwrap();
+        let reference_store = GraphStore::open(&ref_dir.path().join("graph.db")).unwrap();
+        reference_store
+            .upsert_source("s", "0", "rust", &new.nodes, &new.edges)
+            .unwrap();
+
+        assert_stores_identical(&delta_store, &reference_store);
+
+        let invoke = new.nodes.iter().find(|n| n.name == "invoke").unwrap();
+        let future_fn = new.nodes.iter().find(|n| n.name == "future_fn").unwrap();
+        let stored_edges = delta_store.all_edges_with_refs().unwrap();
+        assert!(
+            stored_edges
+                .iter()
+                .any(|e| e.from_id == invoke.id && e.to_id == future_fn.id && e.kind == "calls"),
+            "expected invoke -> future_fn to resolve to the concrete node id: {stored_edges:?}"
+        );
+    }
+
+    #[test]
+    fn apply_source_delta_removes_dangling_edge_to_deleted_symbol() {
+        // wants_gadget references gadget(), defined in a separate file.
+        // Deleting that file removes gadget's node -- the delta must drop the
+        // now-dangling edge along with it, not leave an edge pointing at a
+        // removed node id.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/keep_a")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/keep_b")).unwrap();
+        std::fs::write(
+            dir.path().join("src/keep_a/mod.rs"),
+            "pub fn wants_gadget() { gadget(); }\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("src/keep_b/mod.rs"), "pub fn gadget() {}\n").unwrap();
+
+        let prior = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+        let gadget_id = prior
+            .nodes
+            .iter()
+            .find(|n| n.name == "gadget")
+            .expect("gadget node")
+            .id
+            .clone();
+        let wants_gadget = prior
+            .nodes
+            .iter()
+            .find(|n| n.name == "wants_gadget")
+            .expect("wants_gadget node")
+            .clone();
+        assert!(
+            prior
+                .edges
+                .iter()
+                .any(|e| e.from_id == wants_gadget.id && e.to_id == gadget_id),
+            "prior should have a resolved edge to gadget: {:?}",
+            prior.edges
+        );
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let delta_store = GraphStore::open(&db_dir.path().join("graph.db")).unwrap();
+        delta_store
+            .upsert_source("s", "0", "rust", &prior.nodes, &prior.edges)
+            .unwrap();
+
+        std::fs::remove_file(dir.path().join("src/keep_b/mod.rs")).unwrap();
+        std::fs::remove_dir(dir.path().join("src/keep_b")).unwrap();
+
+        let new = reextract_incremental(dir.path(), "s", "0", Some("rust"), &prior).unwrap();
+        delta_store
+            .apply_source_delta("s", "0", "rust", &new.nodes, &new.edges)
+            .unwrap();
+
+        let ref_dir = tempfile::tempdir().unwrap();
+        let reference_store = GraphStore::open(&ref_dir.path().join("graph.db")).unwrap();
+        reference_store
+            .upsert_source("s", "0", "rust", &new.nodes, &new.edges)
+            .unwrap();
+
+        assert_stores_identical(&delta_store, &reference_store);
+
+        let dangling: i64 = delta_store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM edges WHERE to_id = ?1",
+                params![gadget_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            dangling, 0,
+            "no edge should point at the removed gadget node id"
+        );
+    }
+
+    #[test]
+    fn apply_source_delta_reports_exact_stats_for_isolated_single_node_change() {
+        // An edit local enough to change exactly one node's stored content,
+        // touching no edges: DeltaStats must report that precisely, not a
+        // coarser count from some broader rescan.
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = GraphStore::open(&db_dir.path().join("graph.db")).unwrap();
+        let isolated = make_node("isolated", "function", "test::isolated");
+        let other = make_node("other", "function", "test::other");
+        store
+            .upsert_source("test", "0", "rust", &[isolated.clone(), other.clone()], &[])
+            .unwrap();
+
+        let mut changed = isolated.clone();
+        changed.body = format!("{} // literal changed", isolated.body);
+        changed.content_hash = Some("changed-hash".to_string());
+
+        let stats = store
+            .apply_source_delta("test", "0", "rust", &[changed, other], &[])
+            .unwrap();
+
+        assert_eq!(
+            stats,
+            DeltaStats {
+                nodes_added: 0,
+                nodes_modified: 1,
+                nodes_removed: 0,
+                edges_added: 0,
+                edges_removed: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn apply_source_delta_leaves_other_sources_nodes_and_edges_untouched() {
+        // Applying a delta to s1 must never touch s2's rows -- guards the
+        // edge-scoping (and node scoping) against a full-table wipe.
+        let dir1 = tempfile::tempdir().unwrap();
+        std::fs::write(dir1.path().join("lib.rs"), "pub fn one() {}\n").unwrap();
+        let dir2 = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir2.path().join("lib.rs"),
+            "pub fn two() { two_helper(); }\npub fn two_helper() {}\n",
+        )
+        .unwrap();
+
+        let prior1 = extract_dir(dir1.path(), "s1", "0", Some("rust")).unwrap();
+        let g2 = extract_dir(dir2.path(), "s2", "0", Some("rust")).unwrap();
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = GraphStore::open(&db_dir.path().join("graph.db")).unwrap();
+        store
+            .upsert_source("s1", "0", "rust", &prior1.nodes, &prior1.edges)
+            .unwrap();
+        store
+            .upsert_source("s2", "0", "rust", &g2.nodes, &g2.edges)
+            .unwrap();
+
+        let mut s2_nodes_before: Vec<Node> = store
+            .all_nodes()
+            .unwrap()
+            .into_iter()
+            .filter(|n| n.source_name == "s2")
+            .collect();
+        s2_nodes_before.sort_by(|a, b| a.id.cmp(&b.id));
+        let s2_edges_before = edges_touching_source(&store, "s2");
+
+        std::fs::write(
+            dir1.path().join("lib.rs"),
+            "pub fn one() { let _changed = 1; }\n",
+        )
+        .unwrap();
+        let new1 = reextract_incremental(dir1.path(), "s1", "0", Some("rust"), &prior1).unwrap();
+        store
+            .apply_source_delta("s1", "0", "rust", &new1.nodes, &new1.edges)
+            .unwrap();
+
+        let mut s2_nodes_after: Vec<Node> = store
+            .all_nodes()
+            .unwrap()
+            .into_iter()
+            .filter(|n| n.source_name == "s2")
+            .collect();
+        s2_nodes_after.sort_by(|a, b| a.id.cmp(&b.id));
+        let s2_edges_after = edges_touching_source(&store, "s2");
+
+        assert_eq!(
+            s2_nodes_before, s2_nodes_after,
+            "s2 nodes must be untouched by s1's delta"
+        );
+        assert_eq!(
+            s2_edges_before, s2_edges_after,
+            "s2 edges must be untouched by s1's delta"
+        );
+    }
+
+    #[test]
+    fn apply_source_delta_drops_cross_source_edge_pointing_into_this_source() {
+        // A full rebuild of s1 (remove_source, matching upsert_source's wipe)
+        // drops every edge touching s1 on EITHER endpoint, including one from
+        // another source into s1. The delta must scope its edge cleanup the
+        // same way -- not just by from_id -- or a foreign edge into a
+        // delta-updated source survives where a full rebuild would drop it.
+        let dir1 = tempfile::tempdir().unwrap();
+        std::fs::write(dir1.path().join("lib.rs"), "pub fn one() {}\n").unwrap();
+        let dir2 = tempfile::tempdir().unwrap();
+        std::fs::write(dir2.path().join("lib.rs"), "pub fn two() {}\n").unwrap();
+
+        let g1 = extract_dir(dir1.path(), "s1", "0", Some("rust")).unwrap();
+        let g2 = extract_dir(dir2.path(), "s2", "0", Some("rust")).unwrap();
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = GraphStore::open(&db_dir.path().join("graph.db")).unwrap();
+        store
+            .upsert_source("s1", "0", "rust", &g1.nodes, &g1.edges)
+            .unwrap();
+        store
+            .upsert_source("s2", "0", "rust", &g2.nodes, &g2.edges)
+            .unwrap();
+
+        let s2_node = g2.nodes.iter().find(|n| n.name == "two").unwrap();
+        let s1_node = g1.nodes.iter().find(|n| n.name == "one").unwrap();
+        store
+            .conn
+            .execute(
+                "INSERT OR REPLACE INTO edges (from_id, to_id, kind, ref_name) VALUES (?1, ?2, ?3, ?4)",
+                params![s2_node.id, s1_node.id, "calls", Some("x")],
+            )
+            .unwrap();
+
+        let cross_before: i64 = store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM edges WHERE from_id = ?1 AND to_id = ?2",
+                params![s2_node.id, s1_node.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            cross_before, 1,
+            "test setup: cross-source edge should exist"
+        );
+
+        // s1's own graph is unchanged -- the delta still must reconcile s1's
+        // edge scope against everything stored, including foreign edges.
+        store
+            .apply_source_delta("s1", "0", "rust", &g1.nodes, &g1.edges)
+            .unwrap();
+
+        let cross_after: i64 = store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM edges WHERE from_id = ?1 AND to_id = ?2",
+                params![s2_node.id, s1_node.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            cross_after, 0,
+            "cross-source edge into s1 must be dropped by the delta, matching a full rebuild"
         );
     }
 }
