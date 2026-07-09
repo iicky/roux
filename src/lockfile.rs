@@ -175,42 +175,57 @@ fn parse_package_lock(path: &Path) -> Result<Vec<Dependency>> {
     Ok(deps)
 }
 
-/// Parse yarn.lock — simplified extraction.
-/// Parse pnpm-lock.yaml for Node.js dependencies.
+/// Parse pnpm-lock.yaml for Node.js dependencies. Handles the `packages:`
+/// section across lockfile versions: keys may be quoted or unquoted (pnpm v9
+/// leaves unscoped keys unquoted, e.g. `acorn@8.11.3:`), carry an optional
+/// leading `/`, and append a parenthesized peer-deps suffix — all normalized
+/// before splitting the name from the version at the last `@`.
 fn parse_pnpm_lock(path: &Path) -> Result<Vec<Dependency>> {
     let content = std::fs::read_to_string(path).context("reading pnpm-lock.yaml")?;
     let mut deps = Vec::new();
     let mut in_packages = false;
+    let mut key_indent: Option<usize> = None;
 
     for line in content.lines() {
-        if line == "packages:" {
+        if line.trim_end() == "packages:" {
             in_packages = true;
             continue;
-        }
-        if in_packages && !line.starts_with(' ') && !line.is_empty() {
-            break; // left the packages section
         }
         if !in_packages {
             continue;
         }
-
-        // Match lines like: '  @scope/name@1.2.3':  or  'name@1.2.3':
-        let trimmed = line.trim();
-        if let Some(entry) = trimmed
-            .strip_prefix('\'')
-            .and_then(|s| s.strip_suffix("':"))
+        if line.trim().is_empty() {
+            continue;
+        }
+        let indent = line.len() - line.trim_start().len();
+        if indent == 0 {
+            break; // next top-level section (e.g. `snapshots:`) — leave packages
+        }
+        // Package keys sit at the shallowest indent under `packages:`; deeper
+        // lines are that package's fields (resolution/dependencies/…).
+        let ki = *key_indent.get_or_insert(indent);
+        if indent != ki {
+            continue;
+        }
+        let Some(key) = line.trim().strip_suffix(':') else {
+            continue;
+        };
+        // Normalize: strip quotes, an optional leading '/', and a trailing
+        // '(peer@ver)' suffix, then split name from version at the last '@'.
+        let key = key.trim_matches('\'').trim_matches('"');
+        let key = key.strip_prefix('/').unwrap_or(key);
+        let key = key.split('(').next().unwrap_or(key);
+        if let Some(at) = key.rfind('@')
+            && at > 0
         {
-            // Split on last '@' to separate name from version
-            if let Some(at_pos) = entry.rfind('@') {
-                let name = &entry[..at_pos];
-                let version = &entry[at_pos + 1..];
-                if !name.is_empty() {
-                    deps.push(Dependency {
-                        name: name.to_string(),
-                        version: Some(version.to_string()),
-                        direct: true, // pnpm-lock doesn't easily distinguish
-                    });
-                }
+            let name = &key[..at];
+            let version = &key[at + 1..];
+            if !name.is_empty() {
+                deps.push(Dependency {
+                    name: name.to_string(),
+                    version: Some(version.to_string()),
+                    direct: true, // pnpm-lock doesn't easily distinguish
+                });
             }
         }
     }
@@ -218,23 +233,37 @@ fn parse_pnpm_lock(path: &Path) -> Result<Vec<Dependency>> {
     Ok(deps)
 }
 
+/// Parse yarn.lock (Yarn v1 / Berry) for package names. Top-level entries are
+/// unindented and end with ':', holding one or more comma-separated
+/// `name@range` specifiers; scoped packages (`@scope/name@range`) keep their
+/// leading `@scope/` because the name is split from the range at the LAST '@'.
 fn parse_yarn_lock(path: &Path) -> Result<Vec<Dependency>> {
     let content = std::fs::read_to_string(path).context("reading yarn.lock")?;
     let mut deps = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
     for line in content.lines() {
-        // yarn.lock entries look like: "package-name@^1.0.0":
-        if !line.starts_with(' ') && !line.starts_with('#') && line.contains('@') {
-            let name = line
-                .trim_matches('"')
-                .split('@')
-                .next()
-                .unwrap_or("")
-                .to_string();
-            if !name.is_empty() && seen.insert(name.clone()) {
+        if line.starts_with(' ') || line.starts_with('#') || !line.contains('@') {
+            continue;
+        }
+        let Some(key) = line.trim_end().strip_suffix(':') else {
+            continue;
+        };
+        // All specifiers on a key line name the same package; take the first.
+        let spec = key
+            .split(',')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'');
+        if let Some(at) = spec.rfind('@')
+            && at > 0
+        {
+            let name = &spec[..at];
+            if !name.is_empty() && seen.insert(name.to_string()) {
                 deps.push(Dependency {
-                    name,
+                    name: name.to_string(),
                     version: None,
                     direct: true, // yarn.lock doesn't distinguish
                 });
@@ -445,5 +474,114 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
         assert_eq!(deps[0].name, "requests");
         assert_eq!(deps[1].name, "flask");
         assert_eq!(deps[2].name, "numpy");
+    }
+
+    #[test]
+    fn test_parse_yarn_lock_scoped_packages() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("yarn.lock"),
+            r#"
+"@babel/core@^7.0.0", "@babel/core@^7.1.0":
+  version "7.23.0"
+
+"@types/node@^18.0.0":
+  version "18.19.0"
+
+lodash@^4.17.21:
+  version "4.17.21"
+"#,
+        )
+        .unwrap();
+
+        let deps = parse_yarn_lock(&dir.path().join("yarn.lock")).unwrap();
+        let names: Vec<&str> = deps.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, vec!["@babel/core", "@types/node", "lodash"]);
+        assert_eq!(
+            deps.iter().filter(|d| d.name == "@babel/core").count(),
+            1,
+            "scoped package listed under two specifiers must be deduplicated"
+        );
+    }
+
+    #[test]
+    fn test_parse_pnpm_lock_v9_unquoted_scoped_and_peer_suffix() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pnpm-lock.yaml"),
+            r#"lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    dependencies:
+      acorn:
+        specifier: ^8.11.3
+        version: 8.11.3
+
+packages:
+
+  acorn@8.11.3:
+    resolution: {integrity: sha512-fake-acorn==}
+    engines: {node: '>=0.4.0'}
+
+  '@babel/core@7.23.0':
+    resolution: {integrity: sha512-fake-babel-core==}
+
+  react-dom@18.2.0(react@18.2.0):
+    resolution: {integrity: sha512-fake-react-dom==}
+
+snapshots:
+
+  acorn@8.11.3: {}
+
+  some-snapshot-only@2.0.0:
+    dependencies:
+      acorn: 8.11.3
+"#,
+        )
+        .unwrap();
+
+        let deps = parse_pnpm_lock(&dir.path().join("pnpm-lock.yaml")).unwrap();
+        assert_eq!(deps.len(), 3);
+
+        let acorn = deps.iter().find(|d| d.name == "acorn").unwrap();
+        assert_eq!(acorn.version.as_deref(), Some("8.11.3"));
+
+        let babel = deps.iter().find(|d| d.name == "@babel/core").unwrap();
+        assert_eq!(babel.version.as_deref(), Some("7.23.0"));
+
+        let react_dom = deps.iter().find(|d| d.name == "react-dom").unwrap();
+        assert_eq!(
+            react_dom.version.as_deref(),
+            Some("18.2.0"),
+            "peer suffix must be stripped from the version"
+        );
+
+        assert!(
+            !deps.iter().any(|d| d.name == "some-snapshot-only"),
+            "packages that only appear under `snapshots:` must not be parsed"
+        );
+    }
+
+    #[test]
+    fn test_parse_pnpm_lock_leading_slash_scoped_key() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pnpm-lock.yaml"),
+            r#"lockfileVersion: '9.0'
+
+packages:
+
+  /@scope/pkg@1.2.3:
+    resolution: {integrity: sha512-fake-scope-pkg==}
+"#,
+        )
+        .unwrap();
+
+        let deps = parse_pnpm_lock(&dir.path().join("pnpm-lock.yaml")).unwrap();
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps[0].name, "@scope/pkg");
+        assert_eq!(deps[0].version.as_deref(), Some("1.2.3"));
     }
 }
