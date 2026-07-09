@@ -1407,28 +1407,31 @@ fn extract_route_registrations(
 
 /// Infer test edges by convention: test_foo → foo, TestFoo → Foo.
 fn infer_test_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
-    let non_test_nodes: Vec<&Node> = nodes.iter().filter(|n| !is_test_node(n)).collect();
+    use std::collections::HashMap;
+    // First non-test node per ASCII-lowercased name, in `nodes` order. The old
+    // predicate `name == n || name.eq_ignore_ascii_case(n)` reduces to a
+    // case-insensitive match (an exact match implies a case-insensitive one), so
+    // one first-wins map reproduces the original first-match-in-order target.
+    let mut by_ci_name: HashMap<String, usize> = HashMap::new();
+    for (i, n) in nodes.iter().enumerate() {
+        if !is_test_node(n) {
+            by_ci_name.entry(n.name.to_ascii_lowercase()).or_insert(i);
+        }
+    }
 
     for node in nodes {
         if !is_test_node(node) {
             continue;
         }
-
-        // Try to find what this test tests
-        let tested_name = extract_tested_name(&node.name);
-        if let Some(name) = tested_name {
-            // Find matching non-test symbol
-            if let Some(target) = non_test_nodes
-                .iter()
-                .find(|n| n.name == name || n.name.eq_ignore_ascii_case(&name))
-            {
-                edges.push(Edge {
-                    from_id: node.id.clone(),
-                    to_id: target.id.clone(),
-                    kind: "tests".to_string(),
-                    ref_name: None,
-                });
-            }
+        if let Some(name) = extract_tested_name(&node.name)
+            && let Some(&idx) = by_ci_name.get(&name.to_ascii_lowercase())
+        {
+            edges.push(Edge {
+                from_id: node.id.clone(),
+                to_id: nodes[idx].id.clone(),
+                kind: "tests".to_string(),
+                ref_name: None,
+            });
         }
     }
 }
@@ -1463,6 +1466,7 @@ fn extract_tested_name(test_name: &str) -> Option<String> {
 
 /// Infer override edges: if a child class has a method with the same name as parent.
 fn infer_override_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
+    use std::collections::HashMap;
     // Collect inherits relationships (clone IDs to avoid borrow conflict)
     let inherits: Vec<(String, String)> = edges
         .iter()
@@ -1470,33 +1474,32 @@ fn infer_override_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
         .map(|e| (e.from_id.clone(), e.to_id.clone()))
         .collect();
 
+    // Group method/function nodes by parent id once, preserving `nodes` order
+    // within each group so same-named parent methods keep first-match semantics.
+    let mut methods_by_parent: HashMap<&str, Vec<&Node>> = HashMap::new();
+    for n in nodes {
+        if matches!(n.kind.as_str(), "function" | "method")
+            && let Some(pid) = n.parent_id.as_deref()
+        {
+            methods_by_parent.entry(pid).or_default().push(n);
+        }
+    }
+
     for (child_id, parent_id) in &inherits {
-        let child_methods: Vec<&Node> = nodes
-            .iter()
-            .filter(|n| {
-                n.parent_id.as_deref() == Some(child_id.as_str())
-                    && matches!(n.kind.as_str(), "function" | "method")
-            })
-            .collect();
-
-        let parent_methods: Vec<&Node> = nodes
-            .iter()
-            .filter(|n| {
-                n.parent_id.as_deref() == Some(parent_id.as_str())
-                    && matches!(n.kind.as_str(), "function" | "method")
-            })
-            .collect();
-
-        for child_method in &child_methods {
-            if parent_methods.iter().any(|pm| pm.name == child_method.name) {
+        let (Some(child_methods), Some(parent_methods)) = (
+            methods_by_parent.get(child_id.as_str()),
+            methods_by_parent.get(parent_id.as_str()),
+        ) else {
+            continue;
+        };
+        for child_method in child_methods {
+            if let Some(parent_method) = parent_methods
+                .iter()
+                .find(|pm| pm.name == child_method.name)
+            {
                 edges.push(Edge {
                     from_id: child_method.id.clone(),
-                    to_id: parent_methods
-                        .iter()
-                        .find(|pm| pm.name == child_method.name)
-                        .unwrap()
-                        .id
-                        .clone(),
+                    to_id: parent_method.id.clone(),
                     kind: "overrides".to_string(),
                     ref_name: None,
                 });
@@ -1507,26 +1510,26 @@ fn infer_override_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
 
 /// Infer export edges from visibility and re-export patterns.
 fn infer_export_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
+    use std::collections::HashMap;
+    // id -> node for O(1) parent lookup (ids are unique after merge).
+    let by_id: HashMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+
     for node in nodes {
         if node.kind == "file" {
             continue;
         }
-
-        // Publicly visible symbols get an "exports" edge from their file
+        // Publicly visible symbols get an "exports" edge from their file.
         if matches!(node.visibility.as_str(), "pub" | "export")
-            && let Some(ref parent_id) = node.parent_id
+            && let Some(parent_id) = node.parent_id.as_deref()
+            && let Some(parent) = by_id.get(parent_id)
+            && parent.kind == "file"
         {
-            // Check if parent is a file node
-            if let Some(parent) = nodes.iter().find(|n| n.id == *parent_id)
-                && parent.kind == "file"
-            {
-                edges.push(Edge {
-                    from_id: parent.id.clone(),
-                    to_id: node.id.clone(),
-                    kind: "exports".to_string(),
-                    ref_name: None,
-                });
-            }
+            edges.push(Edge {
+                from_id: parent.id.clone(),
+                to_id: node.id.clone(),
+                kind: "exports".to_string(),
+                ref_name: None,
+            });
         }
     }
 }
@@ -3520,6 +3523,178 @@ def expensive():
         assert!(
             !exports.is_empty(),
             "pub functions should get exports edges from file"
+        );
+    }
+
+    #[test]
+    fn test_tests_edge_case_insensitive_and_camelcase_matching() {
+        // Pins `extract_tested_name` + the ASCII case-insensitive candidate
+        // match: `test_widget` strips to "widget" (lowercase) but must still
+        // resolve to the differently-cased `Widget` symbol; `testWidget`
+        // (camelCase JS-style convention) strips to "Widget" (exact case);
+        // `TestFoo` (PascalCase convention) strips to "Foo" (exact case).
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("lib.rs"),
+            "pub fn Widget() {}\n\
+             pub fn test_widget() {}\n\
+             pub fn testWidget() {}\n\
+             pub fn Foo() {}\n\
+             pub fn TestFoo() {}\n",
+        )
+        .unwrap();
+
+        let g = extract_dir(dir.path(), "inf", "0", Some("rust")).unwrap();
+        let id_to_name: std::collections::HashMap<&str, &str> = g
+            .nodes
+            .iter()
+            .map(|n| (n.id.as_str(), n.name.as_str()))
+            .collect();
+
+        let has_tests_edge = |from: &str, to: &str| -> bool {
+            g.edges.iter().any(|e| {
+                e.kind == "tests"
+                    && id_to_name.get(e.from_id.as_str()).copied() == Some(from)
+                    && id_to_name.get(e.to_id.as_str()).copied() == Some(to)
+            })
+        };
+
+        assert!(
+            has_tests_edge("test_widget", "Widget"),
+            "test_widget should test Widget despite the case difference (widget vs Widget)"
+        );
+        assert!(
+            has_tests_edge("testWidget", "Widget"),
+            "camelCase testWidget should test Widget"
+        );
+        assert!(
+            has_tests_edge("TestFoo", "Foo"),
+            "PascalCase TestFoo should test Foo"
+        );
+    }
+
+    #[test]
+    fn test_tests_edge_first_match_for_ambiguous_candidate_name() {
+        // Two files each define a symbol named `helper`; a single test targets
+        // that name. The inferred edge must land on the candidate that sorts
+        // FIRST in canonical (file_path, start_line, id) order — a_mod.rs —
+        // not b_mod.rs, pinning first-match determinism through the hashed
+        // lookup refactor.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a_mod.rs"), "pub fn helper() {}\n").unwrap();
+        std::fs::write(dir.path().join("b_mod.rs"), "pub fn helper() {}\n").unwrap();
+        std::fs::write(dir.path().join("caller.rs"), "pub fn test_helper() {}\n").unwrap();
+
+        let g = extract_dir(dir.path(), "inf", "0", Some("rust")).unwrap();
+
+        let test_helper = g
+            .nodes
+            .iter()
+            .find(|n| n.name == "test_helper")
+            .expect("test_helper node");
+        let tests_edge = g
+            .edges
+            .iter()
+            .find(|e| e.kind == "tests" && e.from_id == test_helper.id)
+            .expect("test_helper should get a tests edge to one of the `helper` candidates");
+
+        let target = g
+            .nodes
+            .iter()
+            .find(|n| n.id == tests_edge.to_id)
+            .expect("edge target node exists in the graph");
+        assert_eq!(target.name, "helper");
+        assert_eq!(
+            target.file_path, "a_mod.rs",
+            "ambiguous `helper` should resolve to the canonically-first candidate \
+             (a_mod.rs sorts before b_mod.rs); resolved to {}",
+            target.file_path
+        );
+    }
+
+    #[test]
+    fn test_overrides_edge_inferred_from_python_inheritance() {
+        // Derived(Base) both define `handle`; the override pass must link
+        // Derived.handle -> Base.handle across the (finalize-resolved)
+        // `inherits` edge.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("shapes.py"),
+            "class Base:\n    def handle(self):\n        return 1\n\n\nclass Derived(Base):\n    def handle(self):\n        return 2\n",
+        )
+        .unwrap();
+
+        let g = extract_dir(dir.path(), "inf", "0", Some("python")).unwrap();
+
+        let base = g
+            .nodes
+            .iter()
+            .find(|n| n.name == "Base" && n.kind == "class")
+            .expect("Base class node");
+        let derived = g
+            .nodes
+            .iter()
+            .find(|n| n.name == "Derived" && n.kind == "class")
+            .expect("Derived class node");
+
+        // The override assertion below is only meaningful if the fixture
+        // genuinely produced an inherits edge — verify that first so a
+        // regression in `inherits` extraction can't leave this vacuously true.
+        assert!(
+            g.edges
+                .iter()
+                .any(|e| e.kind == "inherits" && e.from_id == derived.id && e.to_id == base.id),
+            "fixture must produce an inherits edge Derived -> Base; got edges {:?}",
+            g.edges
+                .iter()
+                .map(|e| (&e.kind, &e.from_id, &e.to_id))
+                .collect::<Vec<_>>()
+        );
+
+        let base_handle = g
+            .nodes
+            .iter()
+            .find(|n| n.name == "handle" && n.parent_id.as_deref() == Some(base.id.as_str()))
+            .expect("Base.handle method node");
+        let derived_handle = g
+            .nodes
+            .iter()
+            .find(|n| n.name == "handle" && n.parent_id.as_deref() == Some(derived.id.as_str()))
+            .expect("Derived.handle method node");
+
+        assert!(
+            g.edges.iter().any(|e| e.kind == "overrides"
+                && e.from_id == derived_handle.id
+                && e.to_id == base_handle.id),
+            "expected overrides edge from Derived.handle to Base.handle"
+        );
+    }
+
+    #[test]
+    fn test_tests_edge_not_inferred_when_no_matching_symbol() {
+        // Guards against spurious matches: a test symbol whose conventional
+        // tested name has no corresponding non-test candidate must not get a
+        // `tests` edge to anything.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("lib.rs"),
+            "pub fn test_orphan() {}\npub fn unrelated() {}\n",
+        )
+        .unwrap();
+
+        let g = extract_dir(dir.path(), "inf", "0", Some("rust")).unwrap();
+        let test_orphan = g
+            .nodes
+            .iter()
+            .find(|n| n.name == "test_orphan")
+            .expect("test_orphan node");
+        let has_tests_edge = g
+            .edges
+            .iter()
+            .any(|e| e.kind == "tests" && e.from_id == test_orphan.id);
+        assert!(
+            !has_tests_edge,
+            "test_orphan has no matching `orphan` symbol; must not get a tests edge"
         );
     }
 
