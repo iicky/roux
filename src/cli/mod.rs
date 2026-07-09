@@ -1018,7 +1018,12 @@ pub(crate) fn stale_sources_for_result(
             continue;
         };
         let root = std::path::Path::new(origin);
-        let Ok(current) = crate::graph::extract::list_source_files(root, None) else {
+        // Walk with the source's index-time language hint (as `add`/`update`
+        // do). A `--lang X` source's manifest includes files force-parsed as X
+        // (e.g. extensionless configs); a hint-free walk would omit them and
+        // report them as spuriously deleted on every real change.
+        let hint = (rec.language.as_str() != "unknown").then_some(rec.language.as_str());
+        let Ok(current) = crate::graph::extract::list_source_files(root, hint) else {
             continue;
         };
         let Ok(diff) = store.diff_files(&rec.name, &current) else {
@@ -1766,6 +1771,48 @@ mod tests {
         assert_eq!(diff.modified, vec!["src/lib.rs"]);
         assert_eq!(diff.deleted, vec!["src/util.rs"]);
         assert_eq!(diff.added, vec!["src/new.rs"]);
+    }
+
+    #[test]
+    fn stale_check_honors_index_time_lang_hint_no_spurious_deletes() {
+        use crate::graph::extract;
+        let src = tempfile::tempdir().unwrap();
+        let dbdir = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("lib.rs"), "pub fn findable_symbol() {}\n").unwrap();
+        // Non-grammar file: a rust hint force-parses it into the manifest at
+        // index time, but a hint-free walk (the old buggy behavior) would
+        // never see it and would report it as deleted.
+        std::fs::write(src.path().join("config.txt"), "some = setting\n").unwrap();
+
+        let store = GraphStore::open(&dbdir.path().join("index.sqlite")).unwrap();
+        let fg = extract::extract_dir(src.path(), "mixed", "0", Some("rust")).unwrap();
+        assert!(
+            fg.files.iter().any(|f| f.path == "config.txt"),
+            "sanity: rust hint must force-parse config.txt into the manifest"
+        );
+        store
+            .upsert_source("mixed", "0", "rust", &fg.nodes, &fg.edges)
+            .unwrap();
+        store.replace_files("mixed", &fg.files).unwrap();
+        // Deliberately wrong fingerprint trips the staleness gate without
+        // touching any file on disk.
+        store
+            .set_source_meta(
+                "mixed",
+                "path",
+                src.path().to_str(),
+                Some("deadbeefdeadbeef"),
+            )
+            .unwrap();
+
+        let result = store.search("findable_symbol", 10).unwrap();
+        assert!(result.nodes.iter().any(|n| n.source_name == "mixed"));
+
+        let stale = stale_sources_for_result(&store, &result);
+        assert!(
+            stale.is_empty(),
+            "unchanged content must not be reported stale: {stale:?}"
+        );
     }
 
     #[test]
