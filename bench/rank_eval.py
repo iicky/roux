@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bench_match import strict_match  # noqa: E402  # type: ignore[import-not-found]
+from bench_metrics import first_hit_rank, metrics_from_ranks  # noqa: E402  # type: ignore[import-not-found]
 
 ROOT = Path(__file__).resolve().parent.parent
 ROUX = ROOT / "target" / "release" / "roux"
@@ -64,18 +64,10 @@ def run_query(path: str, query: str, top: int = TOPK) -> list[str]:
     return [s.get("qualified_name") or s.get("name", "") for s in data.get("symbols", [])]
 
 
-def first_hit_rank(names: list[str], expected: list[str]) -> int | None:
-    for i, n in enumerate(names):
-        if any(strict_match(n, e) for e in expected):
-            return i + 1
-    return None
-
-
 def main() -> None:
     want = set(sys.argv[1:])
     personas = parse_personas()
-    grand_h1 = grand_h5 = grand_h10 = grand_n = 0
-    grand_mrr = 0.0
+    all_ranks: list[int | None] = []
     for p in personas:
         if want and not any(w in p["name"] or w in p["path"] for w in want):
             continue
@@ -83,27 +75,24 @@ def main() -> None:
             print(f"— skip {p['name']} (no index)")
             continue
         print(f"\n=== {p['name']} ===")
-        h1 = h5 = h10 = 0
-        mrr = 0.0
+        ranks: list[int | None] = []
         for q, expected in p["queries"]:
             names = run_query(p["path"], q)
             rank = first_hit_rank(names, expected)
-            if rank:
-                h10 += rank <= 10
-                h5 += rank <= 5
-                h1 += rank == 1
-                mrr += 1.0 / rank
+            ranks.append(rank)
             tag = f"#{rank}" if rank else "MISS"
             print(f"  [{tag:>4}] {q[:46]:46}  exp={','.join(expected)}")
-        n = len(p["queries"])
-        print(f"  → Hit@1 {h1}/{n}  Hit@5 {h5}/{n}  Hit@10 {h10}/{n}  MRR {mrr/n:.3f}")
-        grand_h1 += h1; grand_h5 += h5; grand_h10 += h10; grand_n += n; grand_mrr += mrr
-    if grand_n:
-        print(f"\n=== OVERALL ({grand_n} q) ===")
-        print(f"  Hit@1 {grand_h1}/{grand_n} ({grand_h1/grand_n:.0%})  "
-              f"Hit@5 {grand_h5}/{grand_n} ({grand_h5/grand_n:.0%})  "
-              f"Hit@10 {grand_h10}/{grand_n} ({grand_h10/grand_n:.0%})  "
-              f"MRR {grand_mrr/grand_n:.3f}")
+        m = metrics_from_ranks(ranks)
+        print(f"  → Hit@1 {m['hit1']}/{m['n']}  Hit@5 {m['hit5']}/{m['n']}  "
+              f"Hit@10 {m['hit10']}/{m['n']}  MRR {m['mrr']:.3f}")
+        all_ranks.extend(ranks)
+    if all_ranks:
+        g = metrics_from_ranks(all_ranks)
+        print(f"\n=== OVERALL ({g['n']} q) ===")
+        print(f"  Hit@1 {g['hit1']}/{g['n']} ({g['hit1']/g['n']:.0%})  "
+              f"Hit@5 {g['hit5']}/{g['n']} ({g['hit5']/g['n']:.0%})  "
+              f"Hit@10 {g['hit10']}/{g['n']} ({g['hit10']/g['n']:.0%})  "
+              f"MRR {g['mrr']:.3f}")
 
 
 if __name__ == "__main__":

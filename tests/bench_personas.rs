@@ -7,6 +7,8 @@
 
 mod common;
 
+use common::{hit_at_k, mrr};
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum QueryMode {
     /// Agent queries: precise, references specific types/patterns, structured
@@ -304,42 +306,6 @@ const PERSONA_MARLIN: Persona = Persona {
         },
     ],
 };
-
-// ─── Metrics ────────────────────────────────────────────────────────
-
-fn hit_at_k(results: &[(Vec<String>, &[&str])], k: usize) -> f64 {
-    if results.is_empty() {
-        return 0.0;
-    }
-    let hits = results
-        .iter()
-        .filter(|(names, expected)| {
-            names
-                .iter()
-                .take(k)
-                .any(|name| common::any_match(name, expected))
-        })
-        .count();
-    hits as f64 / results.len() as f64
-}
-
-fn mrr(results: &[(Vec<String>, &[&str])]) -> f64 {
-    if results.is_empty() {
-        return 0.0;
-    }
-    let sum: f64 = results
-        .iter()
-        .map(|(names, expected)| {
-            for (i, name) in names.iter().enumerate() {
-                if common::any_match(name, expected) {
-                    return 1.0 / (i + 1) as f64;
-                }
-            }
-            0.0
-        })
-        .sum();
-    sum / results.len() as f64
-}
 
 // ─── Runner ─────────────────────────────────────────────────────────
 

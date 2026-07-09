@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bench_match import strict_match  # noqa: E402  # type: ignore[import-not-found]
+from bench_metrics import first_hit_rank, hit_at_k, mrr  # noqa: E402  # type: ignore[import-not-found]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PERSONAS_RS = REPO_ROOT / "tests" / "bench_personas.rs"
@@ -105,28 +105,6 @@ def run_query(roux_bin: str, db_path: Path, query: str, top: int = 10) -> list[s
     return [s["name"] for s in payload.get("symbols", [])]
 
 
-def hit_at_k(results: list[tuple[list[str], list[str]]], k: int) -> float:
-    if not results:
-        return 0.0
-    hits = 0
-    for names, expected in results:
-        if any(any(strict_match(n, exp) for exp in expected) for n in names[:k]):
-            hits += 1
-    return hits / len(results)
-
-
-def mrr(results: list[tuple[list[str], list[str]]]) -> float:
-    if not results:
-        return 0.0
-    total = 0.0
-    for names, expected in results:
-        for i, n in enumerate(names, start=1):
-            if any(strict_match(n, exp) for exp in expected):
-                total += 1.0 / i
-                break
-    return total / len(results)
-
-
 def metrics_for(entries: list[tuple[list[str], list[str], str]]) -> dict:
     """Compute full metric block for a persona given (names, expected, mode) tuples."""
     all_r = [(n, e) for n, e, _ in entries]
@@ -155,11 +133,7 @@ def run_bench(roux_bin: str, db_dir: Path, queries: list[PQ]) -> dict:
             print(f"  SKIP {q.slug}: no DB at {db_path}", file=sys.stderr)
             continue
         names = run_query(roux_bin, db_path, q.query)
-        rank = next(
-            (i + 1 for i, n in enumerate(names)
-             if any(strict_match(n, e) for e in q.expected)),
-            None,
-        )
+        rank = first_hit_rank(names, q.expected)
         status = "✓" if rank else "✗"
         rank_s = f"@{rank}" if rank else "miss"
         tag = "agent" if q.mode == "Agent" else "dev  "

@@ -2,6 +2,8 @@
 
 mod common;
 
+use common::{hit_at_k, mrr, ndcg_at_k};
+
 /// A test case: a natural language query and the expected symbol names in the result.
 struct QueryCase {
     query: &'static str,
@@ -151,64 +153,6 @@ const ROUX_QUERIES: &[QueryCase] = &[
         expected: &["remove_source"],
     },
 ];
-
-/// Compute Hit@K: fraction of queries where at least one expected symbol appears in top-K results.
-fn hit_at_k(results: &[(Vec<String>, &[&str])], k: usize) -> f64 {
-    let hits = results
-        .iter()
-        .filter(|(names, expected)| {
-            names
-                .iter()
-                .take(k)
-                .any(|name| common::any_match(name, expected))
-        })
-        .count();
-    hits as f64 / results.len() as f64
-}
-
-/// Compute MRR (Mean Reciprocal Rank): average of 1/rank of first correct result.
-fn mrr(results: &[(Vec<String>, &[&str])]) -> f64 {
-    let sum: f64 = results
-        .iter()
-        .map(|(names, expected)| {
-            for (i, name) in names.iter().enumerate() {
-                if common::any_match(name, expected) {
-                    return 1.0 / (i + 1) as f64;
-                }
-            }
-            0.0
-        })
-        .sum();
-    sum / results.len() as f64
-}
-
-/// Compute NDCG@K (Normalized Discounted Cumulative Gain).
-fn ndcg_at_k(results: &[(Vec<String>, &[&str])], k: usize) -> f64 {
-    let sum: f64 = results
-        .iter()
-        .map(|(names, expected)| {
-            let mut dcg = 0.0f64;
-            for (i, name) in names.iter().take(k).enumerate() {
-                let rel = if common::any_match(name, expected) {
-                    1.0
-                } else {
-                    0.0
-                };
-                dcg += rel / (i as f64 + 2.0).log2();
-            }
-
-            // Ideal DCG: all relevant results at top
-            let n_relevant = expected.len().min(k);
-            let mut idcg = 0.0f64;
-            for i in 0..n_relevant {
-                idcg += 1.0 / (i as f64 + 2.0).log2();
-            }
-
-            if idcg > 0.0 { dcg / idcg } else { 0.0 }
-        })
-        .sum();
-    sum / results.len() as f64
-}
 
 /// Compute subgraph coherence: fraction of returned nodes that have at least one edge
 /// to another returned node.

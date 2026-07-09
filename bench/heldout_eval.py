@@ -36,7 +36,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bench_match import strict_match  # noqa: E402  # type: ignore[import-not-found]
+from bench_metrics import (  # noqa: E402  # type: ignore[import-not-found]
+    first_hit_rank,
+    metrics_from_ranks as bucket_metrics,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 ROUX = ROOT / "target" / "release" / "roux"
@@ -75,20 +78,6 @@ def run_query(index: Path, query: str, top: int = TOPK) -> list[str]:
         return []
     names = [s.get("qualified_name") or s.get("name", "") for s in data.get("symbols", [])]
     return names[:top]
-
-
-def first_hit_rank(names: list[str], gold: list[str]) -> int | None:
-    for i, n in enumerate(names):
-        if any(strict_match(n, g) for g in gold):
-            return i + 1
-    return None
-
-
-def bucket_metrics(ranks: list[int | None]) -> dict:
-    n = len(ranks)
-    hit = lambda k: sum(1 for r in ranks if r and r <= k)
-    mrr = sum(1.0 / r for r in ranks if r) / n if n else 0.0
-    return {"n": n, "hit1": hit(1), "hit5": hit(5), "hit10": hit(10), "mrr": mrr}
 
 
 def eval_spec(spec: dict, show: bool) -> dict | None:
