@@ -1009,6 +1009,64 @@ impl GraphStore {
         Ok(map)
     }
 
+    /// The stored per-file manifest for a source as [`FileMeta`] entries — the
+    /// change baseline an incremental refresh diffs the working tree against.
+    pub fn source_files(&self, source_name: &str) -> Result<Vec<super::extract::FileMeta>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT path, content_hash, mtime FROM files WHERE source_name = ?1 ORDER BY path",
+        )?;
+        let files = stmt
+            .query_map(params![source_name], |row| {
+                Ok(super::extract::FileMeta {
+                    path: row.get(0)?,
+                    content_hash: row.get(1)?,
+                    mtime: row.get(2)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(files)
+    }
+
+    /// Reconstruct the stored graph for a source as a [`FileGraph`] — the prior
+    /// input to [`super::extract::reextract_incremental`]. Only the node/edge
+    /// SETS matter (finalize re-canonicalizes order), but rows are loaded in
+    /// canonical order anyway. Edges are scoped to the source's own nodes
+    /// (`from_id`), i.e. the edges this source emitted.
+    pub fn source_graph(&self, source_name: &str) -> Result<super::extract::FileGraph> {
+        let nodes: Vec<Node> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, kind, name, qualified_name, source_name, language,
+                        file_path, start_line, start_col, end_line, visibility,
+                        signature, doc, body, parent_id, content_hash, line_count, source_url, description
+                 FROM nodes WHERE source_name = ?1 ORDER BY file_path, start_line, id",
+            )?;
+            stmt.query_map(params![source_name], row_to_node)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        let edges: Vec<Edge> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT from_id, to_id, kind, ref_name FROM edges
+                 WHERE from_id IN (SELECT id FROM nodes WHERE source_name = ?1)
+                 ORDER BY from_id, to_id, kind",
+            )?;
+            stmt.query_map(params![source_name], |row| {
+                Ok(Edge {
+                    from_id: row.get(0)?,
+                    to_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    ref_name: row.get(3)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        let files = self.source_files(source_name)?;
+        Ok(super::extract::FileGraph {
+            nodes,
+            edges,
+            files,
+        })
+    }
+
     /// Compare a freshly-walked file list against the stored manifest, by
     /// content hash. `current` is typically produced by re-walking the source
     /// tree (cheap: read + hash, no parse).
@@ -2753,6 +2811,159 @@ mod tests {
         assert_eq!(
             cross_after, 0,
             "cross-source edge into s1 must be dropped by the delta, matching a full rebuild"
+        );
+    }
+
+    #[test]
+    fn update_via_db_prior_matches_full_rebuild() {
+        // The property that makes `roux update` safe: reconstructing the prior
+        // graph FROM THE DB (`source_graph`, which loads rows in
+        // (file_path, start_line, id) order -- NOT the walk/emission order
+        // `extract_dir` produces) and feeding it to `reextract_incremental`
+        // must still yield a store byte-identical to a full rebuild. This only
+        // holds because `finalize_graph` canonicalizes node/edge order itself,
+        // making it a pure function of the node/edge SETS.
+        //
+        // The edit exercises cross-file re-resolution on every axis: renaming
+        // a called fn in B breaks A's (unchanged) call; adding a new fn in B
+        // resolves D's (unchanged) previously-unresolved call; a file is added;
+        // a file is deleted.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/a")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/b")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/d")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/f")).unwrap();
+        std::fs::write(
+            dir.path().join("src/a/mod.rs"),
+            "pub fn caller() { helper(); }\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("src/b/mod.rs"), "pub fn helper() {}\n").unwrap();
+        std::fs::write(
+            dir.path().join("src/d/mod.rs"),
+            "pub fn waiter() { future_fn(); }\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("src/f/mod.rs"), "pub fn to_delete() {}\n").unwrap();
+
+        let full1 = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+        assert!(
+            full1
+                .edges
+                .iter()
+                .any(|e| e.to_id == "__unresolved::future_fn"),
+            "test setup: waiter's call to future_fn should start out unresolved: {:?}",
+            full1.edges
+        );
+
+        let db_dir_a = tempfile::tempdir().unwrap();
+        let store_a = GraphStore::open(&db_dir_a.path().join("graph.db")).unwrap();
+        store_a
+            .upsert_source("s", "0", "rust", &full1.nodes, &full1.edges)
+            .unwrap();
+        store_a.replace_files("s", &full1.files).unwrap();
+
+        // Rename the called fn in B (breaks A's unchanged call) and add a new
+        // fn in B that D (unchanged) already referenced.
+        std::fs::write(
+            dir.path().join("src/b/mod.rs"),
+            "pub fn helper_v2() {}\npub fn future_fn() {}\n",
+        )
+        .unwrap();
+        // Delete a file.
+        std::fs::remove_file(dir.path().join("src/f/mod.rs")).unwrap();
+        std::fs::remove_dir(dir.path().join("src/f")).unwrap();
+        // Add a new file.
+        std::fs::create_dir_all(dir.path().join("src/g")).unwrap();
+        std::fs::write(dir.path().join("src/g/mod.rs"), "pub fn new_file_fn() {}\n").unwrap();
+
+        // Reconstruct the prior FROM THE DB -- not from the in-memory `full1`
+        // -- so the test actually exercises `source_graph`'s DB-order load.
+        let prior = store_a.source_graph("s").unwrap();
+        let new = reextract_incremental(dir.path(), "s", "0", Some("rust"), &prior).unwrap();
+        store_a
+            .apply_source_delta("s", "0", "rust", &new.nodes, &new.edges)
+            .unwrap();
+        store_a.replace_files("s", &new.files).unwrap();
+
+        // Reference: an independent full rebuild of the current tree into a
+        // fresh store.
+        let full2 = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+        let db_dir_b = tempfile::tempdir().unwrap();
+        let store_b = GraphStore::open(&db_dir_b.path().join("graph.db")).unwrap();
+        store_b
+            .upsert_source("s", "0", "rust", &full2.nodes, &full2.edges)
+            .unwrap();
+        store_b.replace_files("s", &full2.files).unwrap();
+
+        // The key assertion: a DB-order prior still yields a rebuild-identical
+        // result.
+        assert_stores_identical(&store_a, &store_b);
+
+        // Sanity: the edit actually landed the cross-file re-resolution it was
+        // designed to exercise, so the byte-identity assertion above isn't
+        // vacuously comparing two empty/unrelated graphs.
+        let caller = new.nodes.iter().find(|n| n.name == "caller").unwrap();
+        let waiter = new.nodes.iter().find(|n| n.name == "waiter").unwrap();
+        let future_fn = new.nodes.iter().find(|n| n.name == "future_fn").unwrap();
+        assert!(
+            new.edges
+                .iter()
+                .any(|e| e.from_id == caller.id && e.to_id == "__unresolved::helper"),
+            "renaming helper in B should break A's unchanged call: {:?}",
+            new.edges
+        );
+        assert!(
+            new.edges
+                .iter()
+                .any(|e| e.from_id == waiter.id && e.to_id == future_fn.id && e.kind == "calls"),
+            "D's unchanged call to future_fn should resolve once B adds it: {:?}",
+            new.edges
+        );
+        assert!(
+            new.nodes.iter().any(|n| n.name == "new_file_fn"),
+            "the newly added file's fn should be present"
+        );
+        assert!(
+            !new.nodes.iter().any(|n| n.name == "to_delete"),
+            "the deleted file's fn should not survive re-extraction"
+        );
+    }
+
+    #[test]
+    fn apply_source_delta_via_db_prior_is_idempotent_on_unchanged_tree() {
+        // A refresh with no working-tree changes, driven end-to-end through a
+        // DB-reconstructed prior, must write nothing: DeltaStats all zero.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/a")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/b")).unwrap();
+        std::fs::write(
+            dir.path().join("src/a/mod.rs"),
+            "pub fn caller() { helper(); }\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("src/b/mod.rs"), "pub fn helper() {}\n").unwrap();
+
+        let full = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = GraphStore::open(&db_dir.path().join("graph.db")).unwrap();
+        store
+            .upsert_source("s", "0", "rust", &full.nodes, &full.edges)
+            .unwrap();
+        store.replace_files("s", &full.files).unwrap();
+
+        // No filesystem edits at all: reconstruct the prior from the DB and
+        // re-extract against the untouched tree.
+        let prior = store.source_graph("s").unwrap();
+        let new = reextract_incremental(dir.path(), "s", "0", Some("rust"), &prior).unwrap();
+        let stats = store
+            .apply_source_delta("s", "0", "rust", &new.nodes, &new.edges)
+            .unwrap();
+
+        assert_eq!(
+            stats,
+            DeltaStats::default(),
+            "a no-change refresh should write nothing: {stats:?}"
         );
     }
 }

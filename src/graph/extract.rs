@@ -32,6 +32,18 @@ pub struct FileGraph {
 /// identical graph from the same node/edge set.
 pub(crate) fn finalize_graph(nodes: &mut Vec<Node>, edges: &mut Vec<Edge>) {
     merge_duplicate_nodes(nodes);
+    // Canonical node order: `resolve_references` resolves an ambiguous name to
+    // the FIRST matching node, and the passes below iterate nodes — so a stable
+    // (file_path, start_line, id) order makes finalize a pure function of the
+    // node/edge SETS, independent of collection or DB-load order. It also
+    // matches the order the store reads nodes back in.
+    nodes.sort_by(|a, b| {
+        (a.file_path.as_str(), a.start_line, a.id.as_str()).cmp(&(
+            b.file_path.as_str(),
+            b.start_line,
+            b.id.as_str(),
+        ))
+    });
     resolve_references(edges, nodes);
     infer_test_edges(nodes, edges);
     infer_override_edges(nodes, edges);
@@ -40,11 +52,23 @@ pub(crate) fn finalize_graph(nodes: &mut Vec<Node>, edges: &mut Vec<Edge>) {
     generate_descriptions(nodes, edges);
 }
 
-/// Collapse duplicate edges by (from_id, to_id, kind), keeping first occurrence.
-/// Several extractors can emit the same edge (e.g. a tags @reference and an
-/// AST-walked call), and the store's PK dedups on insert — dedup here too so the
-/// in-memory graph matches what's stored and an incremental rebuild is stable.
+/// Canonicalize edge order and collapse duplicates by (from_id, to_id, kind),
+/// keeping the first survivor after a full-tuple sort. Several extractors can
+/// emit the same edge (e.g. a tags @reference and an AST-walked call), and the
+/// store's PK dedups on insert — dedup here too so the in-memory graph matches
+/// what's stored. Sorting first makes both the survivor (for a rare same-key /
+/// different-ref_name collision) and the final order deterministic, so
+/// `generate_descriptions` (which reads the first few neighbors per node) and
+/// the stored graph are a pure function of the edge SET.
 fn dedup_edges(edges: &mut Vec<Edge>) {
+    edges.sort_by(|a, b| {
+        (&a.from_id, &a.to_id, &a.kind, &a.ref_name).cmp(&(
+            &b.from_id,
+            &b.to_id,
+            &b.kind,
+            &b.ref_name,
+        ))
+    });
     let mut seen = std::collections::HashSet::new();
     edges.retain(|e| seen.insert((e.from_id.clone(), e.to_id.clone(), e.kind.clone())));
 }

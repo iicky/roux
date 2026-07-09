@@ -107,6 +107,20 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Incrementally refresh path/file sources from the working tree
+    Update {
+        /// Update a specific source
+        source: Option<String>,
+        /// Update the local index only (mutually exclusive with --global)
+        #[arg(long, conflicts_with = "global")]
+        local: bool,
+        /// Update the global index only (mutually exclusive with --local)
+        #[arg(long)]
+        global: bool,
+        /// Show what would change without applying
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Remove a source and all its chunks
     Remove {
         /// Source name to remove
@@ -202,6 +216,12 @@ impl Cli {
                 cmd_serve(&config, *local, *global, db.as_deref())
             }
             Command::Sync { source, dry_run } => cmd_sync(&config, source.as_deref(), *dry_run),
+            Command::Update {
+                source,
+                local,
+                global,
+                dry_run,
+            } => cmd_update(&config, source.as_deref(), *local, *global, *dry_run),
             Command::Remove { source } => cmd_remove(&config, source),
             Command::Export {
                 output,
@@ -1474,6 +1494,214 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
 
     eprintln!("\nDone: {updated} updated, {failed} failed");
     Ok(())
+}
+
+/// Outcome of refreshing one source.
+enum UpdateOutcome {
+    /// Nothing changed since the last index.
+    UpToDate,
+    /// Files changed; `files` present for directory sources, `stats` present
+    /// when the delta was actually applied (absent in a dry run).
+    Updated {
+        files: Option<crate::graph::store::FileDiff>,
+        stats: Option<crate::graph::store::DeltaStats>,
+    },
+}
+
+/// Incrementally refresh path/file sources whose working tree drifted from the
+/// index: diff the tree against the stored manifest, re-extract only changed
+/// files, and apply the row delta. Crate/URL sources are upstream-versioned, so
+/// `roux sync` handles those.
+fn cmd_update(
+    config: &Config,
+    source_filter: Option<&str>,
+    local: bool,
+    global: bool,
+    dry_run: bool,
+) -> Result<()> {
+    let store_path = config.resolve_store_path(StoreScope::from_flags(local, global));
+    if !store_path.exists() {
+        anyhow::bail!(
+            "no index found at {}. Run `roux init` or `roux add` first.",
+            store_path.display()
+        );
+    }
+    let store = GraphStore::open(&store_path)?;
+    let sources = store.list_sources()?;
+
+    let mut considered = 0usize;
+    let (mut updated, mut fresh, mut skipped, mut failed) = (0usize, 0usize, 0usize, 0usize);
+
+    for src in &sources {
+        if let Some(f) = source_filter
+            && src.name != f
+        {
+            continue;
+        }
+        // Only locally-editable sources refresh from the working tree.
+        if !matches!(src.source_kind.as_str(), "path" | "file") {
+            continue;
+        }
+        considered += 1;
+
+        let Some(origin) = src.origin.as_deref() else {
+            eprintln!("  {:<24} skip — origin missing", src.name);
+            skipped += 1;
+            continue;
+        };
+        let path = std::path::Path::new(origin);
+        if !path.exists() {
+            eprintln!("  {:<24} skip — origin gone ({origin})", src.name);
+            skipped += 1;
+            continue;
+        }
+        // Reconstruct add's extraction hint: None when detection was unsure, so
+        // the incremental parse matches a full rebuild's language handling.
+        let hint = (src.language.as_str() != "unknown").then_some(src.language.as_str());
+
+        let outcome = if src.source_kind == "path" {
+            update_path_source(&store, src, path, origin, hint, dry_run)
+        } else {
+            update_file_source(&store, src, path, origin, hint, dry_run)
+        };
+
+        match outcome {
+            Ok(UpdateOutcome::UpToDate) => {
+                eprintln!("  {:<24} up to date", src.name);
+                fresh += 1;
+            }
+            Ok(UpdateOutcome::Updated { files, stats }) => {
+                let filepart = files
+                    .map(|f| {
+                        format!(
+                            " (+{} ~{} -{} files)",
+                            f.added.len(),
+                            f.modified.len(),
+                            f.deleted.len()
+                        )
+                    })
+                    .unwrap_or_default();
+                if let Some(s) = stats {
+                    eprintln!(
+                        "  {:<24} updated{filepart} — nodes +{} ~{} -{}, edges +{} -{}",
+                        src.name,
+                        s.nodes_added,
+                        s.nodes_modified,
+                        s.nodes_removed,
+                        s.edges_added,
+                        s.edges_removed
+                    );
+                } else {
+                    eprintln!("  {:<24} would update{filepart}", src.name);
+                }
+                updated += 1;
+            }
+            Err(e) => {
+                eprintln!("  {:<24} failed — {e}", src.name);
+                failed += 1;
+            }
+        }
+    }
+
+    if considered == 0 {
+        if let Some(f) = source_filter {
+            anyhow::bail!(
+                "no path or file source named '{f}' in {}",
+                store_path.display()
+            );
+        }
+        eprintln!("No path or file sources to update.");
+        return Ok(());
+    }
+
+    let verb = if dry_run { "would update" } else { "updated" };
+    eprintln!("\n{updated} {verb}, {fresh} up to date, {skipped} skipped, {failed} failed");
+    Ok(())
+}
+
+/// Refresh a directory source: diff the tree against the manifest and, if
+/// anything changed, re-extract only the changed files and apply the delta.
+fn update_path_source(
+    store: &GraphStore,
+    src: &crate::graph::store::SourceRecord,
+    path: &std::path::Path,
+    origin: &str,
+    hint: Option<&str>,
+    dry_run: bool,
+) -> Result<UpdateOutcome> {
+    let current = graph::extract::list_source_files(path, hint)?;
+    let files = store.diff_files(&src.name, &current)?;
+    if files.added.is_empty() && files.modified.is_empty() && files.deleted.is_empty() {
+        // Content is unchanged, but the directory fingerprint (mtime+size) may
+        // have drifted from a touch or checkout. Refresh it so staleness checks
+        // (`roux status`/`sync`) agree the source is current.
+        if !dry_run {
+            let fp = crate::fingerprint::fingerprint_dir(path).ok();
+            store.set_source_meta(&src.name, "path", Some(origin), fp.as_deref())?;
+        }
+        return Ok(UpdateOutcome::UpToDate);
+    }
+    if dry_run {
+        return Ok(UpdateOutcome::Updated {
+            files: Some(files),
+            stats: None,
+        });
+    }
+    let prior = store.source_graph(&src.name)?;
+    let new = graph::extract::reextract_incremental(path, &src.name, &src.version, hint, &prior)?;
+    let stats = store.apply_source_delta(
+        &src.name,
+        &src.version,
+        &src.language,
+        &new.nodes,
+        &new.edges,
+    )?;
+    store.replace_files(&src.name, &new.files)?;
+    let fp = crate::fingerprint::fingerprint_dir(path).ok();
+    store.set_source_meta(&src.name, "path", Some(origin), fp.as_deref())?;
+    Ok(UpdateOutcome::Updated {
+        files: Some(files),
+        stats: Some(stats),
+    })
+}
+
+/// Refresh a single-file source by re-parsing it and applying the delta. A
+/// no-op delta (nothing changed) reports up to date.
+fn update_file_source(
+    store: &GraphStore,
+    src: &crate::graph::store::SourceRecord,
+    path: &std::path::Path,
+    origin: &str,
+    hint: Option<&str>,
+    dry_run: bool,
+) -> Result<UpdateOutcome> {
+    if dry_run {
+        return Ok(match check_source_status(src) {
+            Status::Fresh => UpdateOutcome::UpToDate,
+            _ => UpdateOutcome::Updated {
+                files: None,
+                stats: None,
+            },
+        });
+    }
+    let new = graph::extract::extract_file(path, &src.name, &src.version, hint)?;
+    let stats = store.apply_source_delta(
+        &src.name,
+        &src.version,
+        &src.language,
+        &new.nodes,
+        &new.edges,
+    )?;
+    if stats == crate::graph::store::DeltaStats::default() {
+        return Ok(UpdateOutcome::UpToDate);
+    }
+    store.replace_files(&src.name, &new.files)?;
+    let fp = crate::fingerprint::fingerprint_file(path).ok();
+    store.set_source_meta(&src.name, "file", Some(origin), fp.as_deref())?;
+    Ok(UpdateOutcome::Updated {
+        files: None,
+        stats: Some(stats),
+    })
 }
 
 fn cmd_remove(config: &Config, source_name: &str) -> Result<()> {
