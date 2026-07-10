@@ -47,7 +47,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "bench"))
-from grep_vs_roux_personas import PQ, parse_personas  # noqa: E402
+from persona_query_set import PQ, parse_personas  # noqa: E402
 
 CONFIGS_DIR = REPO_ROOT / "bench" / "agent-configs"
 RESULTS_DIR = REPO_ROOT / "bench" / "results"
