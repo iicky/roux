@@ -24,14 +24,18 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Detect project type and ingest docs for all dependencies
+    /// Detect project type and ingest docs for all dependencies into a
+    /// project-local .roux/db.sqlite (pass --global for the shared store)
     Init {
         /// Include transitive dependencies
         #[arg(long)]
         transitive: bool,
-        /// Write to .roux/db.sqlite instead of global
-        #[arg(long)]
+        /// Write to the project-local .roux/db.sqlite (this is the default)
+        #[arg(long, conflicts_with = "global")]
         local: bool,
+        /// Write to the shared global index instead of .roux/db.sqlite
+        #[arg(long)]
+        global: bool,
         /// Skip dependencies matching a glob pattern (repeatable, e.g. --exclude 'candle*')
         #[arg(long = "exclude", value_name = "PATTERN")]
         exclude: Vec<String>,
@@ -168,10 +172,11 @@ impl Cli {
         match &self.command {
             Command::Init {
                 transitive,
-                local,
+                global,
                 exclude,
                 timeout,
-            } => cmd_init(&config, *transitive, *local, exclude, *timeout),
+                ..
+            } => cmd_init(&config, *transitive, *global, exclude, *timeout),
             Command::Add {
                 source,
                 lang,
@@ -290,13 +295,21 @@ pub fn list_rows_to_json(
 fn cmd_init(
     config: &Config,
     transitive: bool,
-    local: bool,
+    global: bool,
     exclude: &[String],
     timeout_secs: u64,
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
 
-    let store_path = config.resolve_store_path(StoreScope::from_flags(local, false));
+    // Init is a project-scoped operation, so it writes to the project-local
+    // .roux/db.sqlite by default; --global opts into the shared store. A bare
+    // `roux init` must never silently pollute the global store with this repo.
+    let scope = if global {
+        StoreScope::Global
+    } else {
+        StoreScope::Local
+    };
+    let store_path = config.resolve_store_path(scope);
     if let Some(parent) = store_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -2158,9 +2171,10 @@ mod tests {
 
     #[test]
     fn test_parse_local_global_conflict() {
-        // --local and --global are mutually exclusive on both query and list.
+        // --local and --global are mutually exclusive on query, list, and init.
         assert!(Cli::try_parse_from(["roux", "query", "x", "--local", "--global"]).is_err());
         assert!(Cli::try_parse_from(["roux", "list", "--local", "--global"]).is_err());
+        assert!(Cli::try_parse_from(["roux", "init", "--local", "--global"]).is_err());
     }
 
     #[test]
