@@ -48,6 +48,12 @@ pub(crate) fn finalize_graph(nodes: &mut Vec<Node>, edges: &mut Vec<Edge>) {
     infer_test_edges(nodes, edges);
     infer_override_edges(nodes, edges);
     infer_export_edges(nodes, edges);
+    // Drop edges with no origin node. A reference sitting outside any symbol in
+    // a file whose file node couldn't be built leaves from_id empty; such an
+    // edge has no traversable source, never resolves (resolution only rewrites
+    // to_id), and would seed the empty-string id into graph traversal. Remove it
+    // before the edge set is deduped, described, and persisted.
+    edges.retain(|e| !e.from_id.is_empty());
     dedup_edges(edges);
     generate_descriptions(nodes, edges);
 }
@@ -490,7 +496,19 @@ fn walk_dir(
     // identical to `list_source_files` (the incremental walk). Reference
     // resolution picks the first matching node for an ambiguous name, so a
     // stable node order is a correctness input, not a cosmetic detail.
-    let mut entries: Vec<_> = entries.collect::<std::io::Result<Vec<_>>>()?;
+    // A single unreadable directory entry must not abort the whole walk. Tally
+    // it and continue so the rest of the tree is still indexed; the cheap
+    // manifest walk (`list_source_files`) drops bad entries the same way, so the
+    // two walks stay aligned.
+    let mut entries: Vec<_> = entries
+        .filter_map(|e| match e {
+            Ok(entry) => Some(entry),
+            Err(_) => {
+                stats.read_errors += 1;
+                None
+            }
+        })
+        .collect();
     entries.sort_by_key(|e| e.file_name());
 
     for entry in entries {
@@ -3974,6 +3992,69 @@ def expensive():
                 .iter()
                 .any(|e| e.to_id == gadget.id && e.kind == "calls"),
             "expected wants_gadget -> gadget to resolve to the concrete added node"
+        );
+    }
+
+    /// Build a minimal valid `Node` for finalize_graph tests.
+    fn tnode(name: &str, kind: &str, qualified: &str) -> Node {
+        Node {
+            id: Node::id_for("test", qualified),
+            kind: kind.to_string(),
+            name: name.to_string(),
+            qualified_name: qualified.to_string(),
+            source_name: "test".to_string(),
+            language: "rust".to_string(),
+            file_path: "src/lib.rs".to_string(),
+            start_line: 1,
+            start_col: 0,
+            end_line: 10,
+            visibility: "pub".to_string(),
+            signature: Some(format!("fn {name}()")),
+            doc: None,
+            body: format!("function: {qualified}"),
+            parent_id: None,
+            content_hash: None,
+            line_count: 10,
+            source_url: None,
+            description: None,
+        }
+    }
+
+    #[test]
+    fn finalize_graph_drops_edges_with_empty_from_id() {
+        let caller = tnode("caller", "function", "lib::caller");
+        let callee = tnode("callee", "function", "lib::callee");
+        let caller_id = caller.id.clone();
+        let callee_id = callee.id.clone();
+        let mut nodes = vec![caller, callee];
+        let mut edges = vec![
+            Edge {
+                from_id: caller_id.clone(),
+                to_id: callee_id.clone(),
+                kind: "calls".to_string(),
+                ref_name: None,
+            },
+            // No traversable source node: must be dropped, or the empty
+            // string id would seed graph traversal.
+            Edge {
+                from_id: String::new(),
+                to_id: callee_id.clone(),
+                kind: "calls".to_string(),
+                ref_name: None,
+            },
+        ];
+
+        finalize_graph(&mut nodes, &mut edges);
+
+        assert!(
+            edges.iter().all(|e| !e.from_id.is_empty()),
+            "no surviving edge should have an empty from_id: {edges:?}"
+        );
+        assert!(
+            edges
+                .iter()
+                .any(|e| e.from_id == caller_id && e.kind == "calls"),
+            "the valid caller -> callee edge must survive: {edges:?}"
         );
     }
 }

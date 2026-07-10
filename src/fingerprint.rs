@@ -66,7 +66,12 @@ fn collect(dir: &Path, base: &Path, out: &mut Vec<(String, u64, u64)>, depth: us
         Err(_) => return Ok(()),
     };
     for entry in entries {
-        let entry = entry?;
+        // A single unreadable directory entry must not abort the fingerprint;
+        // skip it and continue so the rest of the tree still contributes.
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
         let path = entry.path();
 
         if path
