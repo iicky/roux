@@ -85,7 +85,10 @@ impl RouxServer {
         let store = self.open_store()?;
         // Bound `top` so a caller can't request an unreasonable result set.
         const MAX_TOP: usize = 1000;
-        let top = args.top.unwrap_or(5).clamp(1, MAX_TOP);
+        let top = args
+            .top
+            .unwrap_or(crate::cli::DEFAULT_TOP_K)
+            .clamp(1, MAX_TOP);
 
         // Validate the source against the index up front so an unknown name
         // gives an actionable error listing what's available, rather than an

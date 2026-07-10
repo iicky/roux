@@ -336,7 +336,7 @@ fn config_parse_malformed_toml_errors() {
 #[test]
 fn config_parse_wrong_type_errors() {
     // A known key with the wrong value type is a user mistake worth surfacing.
-    let result = Config::parse("[search]\ndefault_top_k = \"lots\"");
+    let result = Config::parse("[index]\nprefer_local = \"lots\"");
     assert!(
         result.is_err(),
         "a string where a number is expected should error"
@@ -349,7 +349,7 @@ fn config_parse_empty_and_unknown_keys_are_lenient() {
     // not fatal — so an older binary tolerates a newer config.
     assert!(Config::parse("").is_ok());
     assert!(
-        Config::parse("[search]\ndefault_top_k = 9\nfuture_knob = true").is_ok(),
+        Config::parse("[index]\nprefer_local = true\nfuture_knob = 9").is_ok(),
         "unknown keys should be tolerated"
     );
 }

@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::config::{Config, StoreScope};
 use crate::graph;
@@ -15,8 +15,35 @@ use crate::source::SourceKind;
 
 const DEFAULT_CRATE_TIMEOUT_SECS: u64 = 30;
 
+/// Default number of results for a query when `--top` is not given, shared by
+/// the CLI and the MCP tool so the two never diverge.
+pub const DEFAULT_TOP_K: usize = 5;
+
+/// Output format for `roux query`. A validated enum so an unknown value
+/// (e.g. `--format josn`) is a hard parse error, not a silent fall-through.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum QueryFormat {
+    /// Human-readable ranked list (default).
+    Text,
+    /// Machine-readable JSON envelope.
+    Json,
+    /// Deterministic prompt-prefix block for one-shot context injection.
+    Skeleton,
+    /// Budgeted ranked matches plus neighbor names for a live tool.
+    Compact,
+}
+
+/// Output format for `roux list`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum ListFormat {
+    /// Human-readable table (default).
+    Text,
+    /// Machine-readable JSON.
+    Json,
+}
+
 #[derive(Parser)]
-#[command(name = "roux", about = "Prep fresh docs for your agents")]
+#[command(name = "roux", about = "the base your coding agents build on")]
 pub struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -45,7 +72,7 @@ enum Command {
     },
     /// Ingest a source into the index
     Add {
-        /// Source: crate name, local path, URL, or OpenAPI spec
+        /// Source: a crate name or a local path (directory or file)
         source: String,
         /// Override language detection
         #[arg(long)]
@@ -69,7 +96,7 @@ enum Command {
         #[arg(long = "also", value_name = "QUERY")]
         also: Vec<String>,
         /// Number of results
-        #[arg(long, default_value = "3")]
+        #[arg(long, default_value_t = DEFAULT_TOP_K)]
         top: usize,
         /// Restrict search to a named source
         #[arg(long)]
@@ -77,7 +104,7 @@ enum Command {
         /// Output format: text, json, skeleton (one-shot prompt-prefix block),
         /// or compact (budgeted ranked matches + neighbor names for live use)
         #[arg(long, default_value = "text")]
-        format: String,
+        format: QueryFormat,
         /// Search local index only (mutually exclusive with --global)
         #[arg(long, conflicts_with = "global")]
         local: bool,
@@ -92,7 +119,7 @@ enum Command {
     List {
         /// Output format: text or json
         #[arg(long, default_value = "text")]
-        format: String,
+        format: ListFormat,
         /// List local index only (mutually exclusive with --global)
         #[arg(long, conflicts_with = "global")]
         local: bool,
@@ -206,7 +233,7 @@ impl Cli {
                 also,
                 *top,
                 source.as_deref(),
-                format,
+                *format,
                 *local,
                 *global,
                 db.as_deref(),
@@ -216,7 +243,7 @@ impl Cli {
                 local,
                 global,
                 db,
-            } => cmd_list(&config, format, *local, *global, db.as_deref()),
+            } => cmd_list(&config, *format, *local, *global, db.as_deref()),
             Command::Serve { local, global, db } => {
                 cmd_serve(&config, *local, *global, db.as_deref())
             }
@@ -661,7 +688,7 @@ fn cmd_query(
     also: &[String],
     top: usize,
     source: Option<&str>,
-    format: &str,
+    format: QueryFormat,
     local: bool,
     global: bool,
     db: Option<&std::path::Path>,
@@ -673,7 +700,10 @@ fn cmd_query(
     };
 
     if !store_path.exists() {
-        anyhow::bail!("no index found at {}", store_path.display());
+        anyhow::bail!(
+            "no index found at {}. Run `roux init` or `roux add` first.",
+            store_path.display()
+        );
     }
 
     if db.is_some() {
@@ -692,7 +722,7 @@ fn cmd_query(
     // Non-JSON formats print a human message and stop; JSON must still emit a
     // well-formed envelope (empty arrays) so programmatic consumers don't choke
     // on zero results.
-    if result.nodes.is_empty() && format != "json" {
+    if result.nodes.is_empty() && format != QueryFormat::Json {
         eprintln!("No results found.");
         return Ok(());
     }
@@ -700,12 +730,12 @@ fn cmd_query(
     // Staleness guard (roux-00bf): warn when a returned source's files have
     // changed since indexing, so an agent doesn't trust stale locations.
     let stale = stale_sources_for_result(&store, &result);
-    if format != "json" && !stale.is_empty() {
+    if format != QueryFormat::Json && !stale.is_empty() {
         eprintln!("{}", format_stale_warning(&stale));
     }
 
     match format {
-        "json" => {
+        QueryFormat::Json => {
             let mut value = search_result_to_json(&result);
             if !stale.is_empty()
                 && let Some(obj) = value.as_object_mut()
@@ -714,7 +744,7 @@ fn cmd_query(
             }
             println!("{}", serde_json::to_string_pretty(&value)?);
         }
-        "skeleton" => {
+        QueryFormat::Skeleton => {
             // Compact, deterministic, prompt-prefix-ready block for use as a
             // one-shot context preprocessor (iyi): inject roux's ranked hits
             // into an agent's prompt prefix instead of exposing a live tool.
@@ -724,13 +754,13 @@ fn cmd_query(
             // run-to-run so it caches in the prompt prefix.
             print!("{}", render_skeleton(&result));
         }
-        "compact" => {
+        QueryFormat::Compact => {
             // Progressive-disclosure block for the live query tool: ranked
             // matched symbols + their neighbor names, under a token budget,
             // with an 'N more' marker. A fraction of the JSON payload.
             print!("{}", render_compact(&result));
         }
-        _ => {
+        QueryFormat::Text => {
             // Print matched symbols first, then neighborhood
             for sym in &result.nodes {
                 let is_match = result.matched_ids.contains(&sym.id);
@@ -1095,7 +1125,7 @@ pub(crate) fn stale_to_json(
 
 fn cmd_list(
     config: &Config,
-    format: &str,
+    format: ListFormat,
     local: bool,
     global: bool,
     db: Option<&std::path::Path>,
@@ -1146,13 +1176,13 @@ fn cmd_list(
     }
 
     match format {
-        "json" => {
+        ListFormat::Json => {
             println!(
                 "{}",
                 serde_json::to_string_pretty(&list_rows_to_json(&rows))?
             );
         }
-        _ => {
+        ListFormat::Text => {
             println!(
                 "{:<22} {:<12} {:<10} {:>8}  STATUS",
                 "SOURCE", "VERSION", "LANGUAGE", "SYMBOLS"
@@ -2175,6 +2205,22 @@ mod tests {
         assert!(Cli::try_parse_from(["roux", "query", "x", "--local", "--global"]).is_err());
         assert!(Cli::try_parse_from(["roux", "list", "--local", "--global"]).is_err());
         assert!(Cli::try_parse_from(["roux", "init", "--local", "--global"]).is_err());
+    }
+
+    #[test]
+    fn test_parse_format_is_a_validated_enum() {
+        // Valid formats parse; an unknown value is a hard error, not a silent
+        // fall-through to text.
+        for f in ["text", "json", "skeleton", "compact"] {
+            Cli::try_parse_from(["roux", "query", "x", "--format", f]).unwrap();
+        }
+        for f in ["text", "json"] {
+            Cli::try_parse_from(["roux", "list", "--format", f]).unwrap();
+        }
+        assert!(Cli::try_parse_from(["roux", "query", "x", "--format", "josn"]).is_err());
+        assert!(Cli::try_parse_from(["roux", "list", "--format", "yaml"]).is_err());
+        // list must reject query-only formats.
+        assert!(Cli::try_parse_from(["roux", "list", "--format", "skeleton"]).is_err());
     }
 
     #[test]

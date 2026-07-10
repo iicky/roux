@@ -6,8 +6,6 @@ use std::path::PathBuf;
 pub struct Config {
     #[serde(default)]
     pub index: IndexConfig,
-    #[serde(default)]
-    pub search: SearchConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -16,12 +14,6 @@ pub struct IndexConfig {
     pub global_path: PathBuf,
     #[serde(default = "default_true")]
     pub prefer_local: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SearchConfig {
-    #[serde(default = "default_top_k")]
-    pub default_top_k: usize,
 }
 
 fn home_dir_fallback() -> PathBuf {
@@ -41,23 +33,11 @@ fn default_true() -> bool {
     true
 }
 
-fn default_top_k() -> usize {
-    5
-}
-
 impl Default for IndexConfig {
     fn default() -> Self {
         Self {
             global_path: default_global_path(),
             prefer_local: true,
-        }
-    }
-}
-
-impl Default for SearchConfig {
-    fn default() -> Self {
-        Self {
-            default_top_k: default_top_k(),
         }
     }
 }
@@ -132,26 +112,24 @@ mod tests {
     fn test_default_config() {
         let config = Config::default();
         assert!(config.index.prefer_local);
-        assert_eq!(config.search.default_top_k, 5);
     }
 
     #[test]
     fn test_empty_toml_gives_defaults() {
         let config: Config = toml::from_str("").unwrap();
-        assert_eq!(config.search.default_top_k, 5);
+        assert!(config.index.prefer_local);
     }
 
     #[test]
     fn test_partial_toml_override() {
         let config: Config = toml::from_str(
             r#"
-            [search]
-            default_top_k = 10
+            [index]
+            prefer_local = false
             "#,
         )
         .unwrap();
-        assert_eq!(config.search.default_top_k, 10);
-        assert!(config.index.prefer_local); // still default
+        assert!(!config.index.prefer_local);
     }
 
     #[test]
@@ -179,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_from_str() {
-        let config = Config::parse("[search]\ndefault_top_k = 20").unwrap();
-        assert_eq!(config.search.default_top_k, 20);
+        let config = Config::parse("[index]\nprefer_local = false").unwrap();
+        assert!(!config.index.prefer_local);
     }
 }
