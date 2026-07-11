@@ -21,38 +21,32 @@ use rmcp::{
 };
 use serde::Deserialize;
 
-use crate::cli::{
-    check_source_status, list_rows_to_json, render_compact, render_skeleton,
-    search_result_to_json,
-};
+use crate::cli::{render_compact, render_skeleton, search_result_to_json};
 use crate::graph::store::GraphStore;
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct QueryArgs {
     /// Search query — natural language or keywords. Matches symbol names,
-    /// signatures, docstrings, and bodies. Returned hits include 2-hop graph
-    /// neighbors (callers, callees, parent types).
+    /// signatures, docstrings, and bodies.
     pub query: String,
-    /// Optional extra query variants, fused with `query` via reciprocal-rank
-    /// fusion in one call. Use your domain knowledge to reformulate a plain
-    /// question into the jargon/identifiers the code likely uses, then pass
-    /// them here — e.g. for "limit sudden jolts" pass
-    /// ["jerk limit", "junction deviation", "M205"]. This is the main lever
-    /// for conceptual/behavioral questions where the code's words differ from
-    /// the user's; firing several cheap variants beats one broad query.
+    /// Extra query variants, RRF-fused with `query` in one call. Reformulate the
+    /// question into the identifiers/jargon the code likely uses — e.g. for
+    /// "limit sudden jolts" pass ["jerk limit", "junction deviation", "M205"].
+    /// The main lever for conceptual questions where the code's words differ
+    /// from the user's.
     #[serde(default)]
     pub queries: Option<Vec<String>>,
-    /// Number of matched hits to return. Defaults to 5.
+    /// Max hits to return. Defaults to 5.
     #[serde(default)]
     pub top: Option<usize>,
-    /// Restrict search to a single indexed source (use roux_list to see names).
+    /// Restrict search to a single indexed source.
     #[serde(default)]
     pub source: Option<String>,
-    /// Return a compact text block (ranked matches with signature, one-line doc,
-    /// and neighbor names under a token budget) instead of the full JSON graph.
-    /// Much smaller — prefer it unless you need ids/scores/edges. Defaults false.
+    /// Return the full JSON graph (ids, scores, edges, bodies) instead of the
+    /// default compact text block. Defaults false — prefer the default unless
+    /// you need ids/scores/edges.
     #[serde(default)]
-    pub compact: Option<bool>,
+    pub json: Option<bool>,
 }
 
 #[derive(Clone)]
@@ -76,7 +70,7 @@ impl RouxServer {
     }
 
     #[tool(
-        description = "Search the roux code index. Returns matched symbols plus their graph neighborhood (callers, callees, parent types) — typically more useful than a flat list. Prefer this over grep for code-exploration questions; results carry file path, line, signature, and rendered doc.\n\nRanking is BM25 over symbol names, signatures, and qualified paths, so queries that share tokens with the symbol name work best. For conceptual or behavioral questions (\"how does X work\", \"where is Y handled\") the code rarely uses the user's words — so reformulate into the jargon and identifiers the code likely uses and pass them together in the `queries` array (RRF-fused in one call). E.g. for \"limit sudden jolts when speed changes\" pass queries=[\"jerk limit\", \"junction deviation\", \"M205\"]. Measured to recover behavioral hits a single literal query misses. Each call is cheap; reformulating beats one broad query.\n\nPass compact=true to get a small text block (ranked matches with signature, one-line doc, and neighbor names under a token budget) instead of the full JSON graph — prefer it to keep context small unless you specifically need ids, scores, or edges."
+        description = "Search the code index; returns matched symbols plus their graph neighborhood (callers, callees, parent types) as a compact text block (file:line, symbol, signature, and a `near:` line of neighbors). Prefer over grep for code-exploration questions. Ranking is name-biased BM25, so for conceptual/behavioral questions (\"how does X work\") pass several likely symbol-name variants in `queries` (RRF-fused in one call) rather than one broad query. Set `json:true` for the full graph (ids, scores, edges, bodies)."
     )]
     fn roux_query(
         &self,
@@ -113,15 +107,23 @@ impl RouxServer {
         let result = store
             .search_multi(&queries, top, args.source.as_deref())
             .map_err(|e| McpError::internal_error(format!("search: {e}"), None))?;
-        if args.compact.unwrap_or(false) {
-            return Ok(CallToolResult::success(vec![Content::text(
-                render_compact(&result),
-            )]));
-        }
-        // Staleness guard (roux-00bf): surface changed-since-indexing files so a
-        // live agent doesn't trust stale locations. Same `stale` block as the CLI.
-        let mut json = search_result_to_json(&result);
+        // Staleness guard: surface files changed since indexing so a live agent
+        // doesn't trust stale locations, in both output modes.
         let stale = crate::cli::stale_sources_for_result(&store, &result);
+
+        // Default to a compact one-line-per-hit block (file:line symbol — sig,
+        // plus a `near:` line of graph neighbors): a fraction of the JSON payload
+        // while keeping the neighborhood that sets roux apart from grep. Opt into
+        // the full graph (ids, scores, edges, bodies) with `json:true`.
+        if !args.json.unwrap_or(false) {
+            let mut block = render_compact(&result);
+            if !stale.is_empty() {
+                block = format!("{}\n{block}", crate::cli::format_stale_warning(&stale));
+            }
+            return Ok(CallToolResult::success(vec![Content::text(block)]));
+        }
+
+        let mut json = search_result_to_json(&result);
         if !stale.is_empty()
             && let Some(obj) = json.as_object_mut()
         {
@@ -129,46 +131,6 @@ impl RouxServer {
         }
         let body = serde_json::to_string_pretty(&json)
             .map_err(|e| McpError::internal_error(format!("serialize: {e}"), None))?;
-        Ok(CallToolResult::success(vec![Content::text(body)]))
-    }
-
-    #[tool(
-        description = "List indexed sources at this index location, with version, language, symbol count, and freshness status."
-    )]
-    fn roux_list(&self) -> Result<CallToolResult, McpError> {
-        let store = self.open_store()?;
-        let sources = store
-            .list_sources()
-            .map_err(|e| McpError::internal_error(format!("list sources: {e}"), None))?;
-        let rows: Vec<_> = sources
-            .into_iter()
-            .map(|src| {
-                let status = check_source_status(&src);
-                let display = src.name.clone();
-                (src, status, display)
-            })
-            .collect();
-        let json = list_rows_to_json(&rows);
-        let body = serde_json::to_string_pretty(&json)
-            .map_err(|e| McpError::internal_error(format!("serialize: {e}"), None))?;
-        Ok(CallToolResult::success(vec![Content::text(body)]))
-    }
-
-    #[tool(
-        description = "Quick health check: index path, source count, and total indexed symbols. Use this before querying to confirm the index is populated."
-    )]
-    fn roux_status(&self) -> Result<CallToolResult, McpError> {
-        let store = self.open_store()?;
-        let sources = store
-            .list_sources()
-            .map_err(|e| McpError::internal_error(format!("list sources: {e}"), None))?;
-        let total_symbols: usize = sources.iter().map(|s| s.node_count).sum();
-        let body = serde_json::to_string_pretty(&serde_json::json!({
-            "store_path": self.store_path.display().to_string(),
-            "source_count": sources.len(),
-            "total_symbols": total_symbols,
-        }))
-        .map_err(|e| McpError::internal_error(format!("serialize: {e}"), None))?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 }
@@ -195,16 +157,15 @@ impl ServerHandler for RouxServer {
         )
         .with_server_info(Implementation::from_build_env())
         .with_instructions(
-            "Graph-native code retrieval for AI agents. Use roux_query for symbol search; \
-             results include 2-hop graph neighborhood (callers, callees, parent types). \
-             roux_list shows what's indexed; roux_status reports index health.\n\n\
-             Ranking is name-biased BM25 — for behavioral questions (\"how does X work\"), \
-             follow up with 2–3 likely symbol-name variants in separate calls rather than \
-             one verbose query.\n\n\
-             To spend fewer tokens, read the `roux://skeleton/{query}` resource ONCE at the \
-             start of a task instead of calling roux_query every turn: it returns a compact \
-             ranked skeleton you can keep in context and prompt-cache, avoiding the per-turn \
-             tool-schema and extra-turn cost of live calls."
+            "Graph-native code retrieval for AI agents. Use roux_query to search; \
+             results are a compact block of matched symbols plus their graph \
+             neighborhood (callers, callees, parent types). Ranking is name-biased \
+             BM25 — for behavioral questions (\"how does X work\"), pass 2–3 likely \
+             symbol-name variants in the `queries` array rather than one broad \
+             query.\n\n\
+             For a one-shot, prompt-cacheable context block, read the \
+             `roux://skeleton/{query}` resource ONCE at the start of a task instead \
+             of calling roux_query every turn."
                 .to_string(),
         )
     }
@@ -337,7 +298,7 @@ mod tests {
             queries: None,
             top: None,
             source: source.map(str::to_string),
-            compact: None,
+            json: None,
         }
     }
 
@@ -361,6 +322,48 @@ mod tests {
     fn no_source_filter_is_accepted() {
         let (server, _dir) = server_with_source("known");
         assert!(server.roux_query(Parameters(query(None))).is_ok());
+    }
+
+    fn tool_text(res: CallToolResult) -> String {
+        res.content[0].as_text().unwrap().text.clone()
+    }
+
+    #[test]
+    fn roux_query_defaults_to_compact_text() {
+        let (server, _d) = server_with_source("known");
+        let res = server.roux_query(Parameters(query(None))).unwrap();
+        let text = tool_text(res);
+        // Default output must be the compact text block, not the JSON graph.
+        assert!(text.contains(" — "), "got: {text}");
+        assert!(text.contains("known::foo"), "got: {text}");
+        assert!(text.contains("lib.rs:1"), "got: {text}");
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v.as_object().cloned())
+                .is_none(),
+            "got: {text}"
+        );
+    }
+
+    #[test]
+    fn roux_query_json_flag_returns_full_graph() {
+        let (server, _d) = server_with_source("known");
+        let args = QueryArgs {
+            query: "foo".into(),
+            queries: None,
+            top: None,
+            source: None,
+            json: Some(true),
+        };
+        let res = server.roux_query(Parameters(args)).unwrap();
+        let text = tool_text(res);
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&text)
+                .unwrap()
+                .is_object(),
+            "got: {text}"
+        );
     }
 
     #[test]

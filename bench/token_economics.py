@@ -256,7 +256,7 @@ def roux_format_cli(pq: PQ, fmt: str, top: int = 5) -> str:
     """Render context via a SHIPPED `roux query --format <fmt>` primitive
     verbatim (fmt = skeleton | compact), so the measured block is byte-for-byte
     what production emits — the skeleton bytes match the `roux://skeleton/{query}`
-    MCP resource; the compact bytes match `roux_query(compact=true)` — instead of
+    MCP resource; the compact bytes match roux_query's default output — instead of
     a Python re-implementation that can silently drift from it."""
     try:
         proc = subprocess.run(
@@ -315,11 +315,7 @@ def drive_claude(
     prompt = build_prompt(arm, pq)
     extra_tools: list[str] = []
     if _roux_enabled(arm):
-        extra_tools = [
-            "mcp__roux__roux_query",
-            "mcp__roux__roux_list",
-            "mcp__roux__roux_status",
-        ]
+        extra_tools = ["mcp__roux__roux_query"]
     cmd = [
         "claude", "-p", prompt,
         "--output-format", "json",

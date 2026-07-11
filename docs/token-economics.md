@@ -31,10 +31,9 @@ Arms:
   output is injected statically into the prompt prefix. No live MCP. (This is the
   roux-iyi reframe.)
 - **context-prep-compact** — same injection, but `roux query --format compact`:
-  ranked matched symbols with signature, one-line doc, and neighbor NAMES under a
+  ranked matched symbols with signature and neighbor NAMES under a
   token budget with an `(… N more)` marker. Measured ~22% of the JSON payload's
-  bytes on ripgrep. (This is the roux-ufyq mode, also served by the live tool as
-  `roux_query(compact=true)`.)
+  bytes on ripgrep. (This is also the live tool's default output.)
 - **context-prep-bodies / -neighbors / -scores / -compressed** — variants of the
   injected block (full source bodies, graph neighbors, PPR scores, compressed).
 
@@ -123,8 +122,8 @@ ARMS=no-roux,with-roux,context-prep,context-prep-compact,context-prep-bodies,con
 
 The `context-prep` arm injects `roux query --format skeleton` verbatim (the same
 bytes the `roux://skeleton/{query}` MCP resource serves) and `context-prep-compact`
-injects `roux query --format compact` (the bytes `roux_query(compact=true)`
-returns), so both measured blocks match production rather than a Python
+injects `roux query --format compact` (the bytes roux_query returns by default),
+so both measured blocks match production rather than a Python
 re-implementation.
 
 Raw runs cited: `bench/results/token_economics_2026062{1T2004,2T1446,2T1803,2T1958}.jsonl`.

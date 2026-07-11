@@ -34,7 +34,7 @@ custom agent profiles installed at `~/.vibe/agents/`:
 
 3. Sanity-check: `vibe --version` should still work, and
    `vibe --prompt "List your tools" --output text --agent roux-bench-with`
-   should mention `roux_roux_query`, `roux_roux_list`, and `roux_roux_status`
+   should mention `roux_roux_query`
    among the available tools.
 
 ## Why custom agents instead of `--enabled-tools`

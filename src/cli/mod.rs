@@ -295,8 +295,7 @@ pub fn search_result_to_json(result: &crate::graph::store::SearchResult) -> serd
     })
 }
 
-/// JSON shape for `roux list`. Shared by the CLI handler and the MCP
-/// `roux_list` tool.
+/// JSON shape for `roux list`, produced by the CLI list handler.
 pub fn list_rows_to_json(
     rows: &[(crate::graph::store::SourceRecord, Status, String)],
 ) -> serde_json::Value {
@@ -847,16 +846,16 @@ pub fn render_skeleton(result: &crate::graph::store::SearchResult) -> String {
 /// ~2000 chars ≈ 500 tokens — a live-tool payload small enough to not dominate
 /// context, while still carrying the top matches and their graph neighborhood.
 const COMPACT_BUDGET_CHARS: usize = 2000;
-const COMPACT_DOC_MAX: usize = 120;
+const COMPACT_SIG_MAX: usize = 160;
 const COMPACT_NEAR_MAX: usize = 6;
 
 /// Render a search result as a `--format compact` block for the live query
-/// tool. Progressive disclosure: only the ranked *matched* symbols are primary
-/// entries (signature + one-line doc); each symbol's graph neighborhood is
-/// summarized as a `near:` line of NAMES — no bodies, ids, scores, or edge
-/// arrays. A hard character budget caps the block; matches that don't fit
-/// collapse into a trailing `(… N more)` marker so the agent knows to refine or
-/// fetch bodies. This is a fraction of the `--format json` payload.
+/// tool and the MCP default: one line per ranked *matched* symbol —
+/// `file:line  qualified_name — signature` — with the symbol's graph
+/// neighborhood summarized as an indented `near:` line of NAMES (no bodies,
+/// ids, scores, or edge arrays). A hard character budget caps the block; matches
+/// that don't fit collapse into a trailing `(… N more)` marker. A fraction of
+/// the `--format json` payload.
 pub fn render_compact(result: &crate::graph::store::SearchResult) -> String {
     render_compact_budgeted(result, COMPACT_BUDGET_CHARS)
 }
@@ -884,30 +883,28 @@ fn render_compact_budgeted(
         .iter()
         .filter(|n| matched.contains(n.id.as_str()))
     {
-        let mut entry = format!(
-            "● {} ({}:{})\n",
-            node.qualified_name, node.file_path, node.start_line
-        );
-        if let Some(sig) = node
+        let sig = node
             .signature
             .as_deref()
-            .map(str::trim)
+            .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
             .filter(|s| !s.is_empty())
-        {
-            entry.push_str(&format!("    {sig}\n"));
-        }
-        if let Some(doc) = node.doc.as_deref() {
-            let flat = doc.split_whitespace().collect::<Vec<_>>().join(" ");
-            if !flat.is_empty() {
-                let d = if flat.chars().count() > COMPACT_DOC_MAX {
-                    let cut: String = flat.chars().take(COMPACT_DOC_MAX).collect();
-                    format!("{cut}…")
+            .map(|s| {
+                if s.chars().count() > COMPACT_SIG_MAX {
+                    format!("{}…", s.chars().take(COMPACT_SIG_MAX).collect::<String>())
                 } else {
-                    flat
-                };
-                entry.push_str(&format!("    // {d}\n"));
-            }
-        }
+                    s
+                }
+            });
+        let mut entry = match sig {
+            Some(s) => format!(
+                "{}:{}  {} — {}\n",
+                node.file_path, node.start_line, node.qualified_name, s
+            ),
+            None => format!(
+                "{}:{}  {}\n",
+                node.file_path, node.start_line, node.qualified_name
+            ),
+        };
         let near = compact_neighbor_names(node, result, &name_of);
         if !near.is_empty() {
             entry.push_str(&format!("    near: {}\n", near.join(", ")));
@@ -1079,8 +1076,9 @@ pub(crate) fn stale_sources_for_result(
     out
 }
 
-/// One-line human warning for stale sources, for stderr in non-JSON formats.
-fn format_stale_warning(stale: &[(String, crate::graph::store::FileDiff)]) -> String {
+/// One-line human warning for stale sources — CLI stderr in non-JSON formats
+/// and the MCP compact block.
+pub(crate) fn format_stale_warning(stale: &[(String, crate::graph::store::FileDiff)]) -> String {
     let parts: Vec<String> = stale
         .iter()
         .map(|(name, d)| {
@@ -2028,12 +2026,10 @@ mod tests {
             scores: Default::default(),
         };
         let out = render_compact(&result);
-        assert!(out.contains("● demo::build (lib.rs:10)"), "got:\n{out}");
-        assert!(out.contains("pub fn build() -> Searcher"), "got:\n{out}");
-        assert!(out.contains("// Build a searcher."), "got:\n{out}");
-        // neighbor appears as a NAME, not its own primary entry
+        assert!(out.contains("lib.rs:10  demo::build — pub fn build() -> Searcher"), "got:\n{out}");
+        // neighbor appears as a NAME on the near: line, not its own primary entry
         assert!(out.contains("near: Searcher"), "got:\n{out}");
-        assert!(!out.contains("● demo::Searcher"), "neighbor should not be a primary entry:\n{out}");
+        assert!(!out.contains("lib.rs:10  demo::Searcher"), "neighbor should not be a primary entry:\n{out}");
     }
 
     #[test]
@@ -2075,8 +2071,8 @@ mod tests {
             scores: Default::default(),
         };
         let out = render_compact_budgeted(&result, 40);
-        assert!(out.contains("● demo::alpha"), "got:\n{out}");
-        assert!(!out.contains("● demo::beta"), "beta should be budgeted out:\n{out}");
+        assert!(out.contains("demo::alpha"), "got:\n{out}");
+        assert!(!out.contains("demo::beta"), "beta should be budgeted out:\n{out}");
         assert!(out.contains("1 more match "), "got:\n{out}");
     }
 
