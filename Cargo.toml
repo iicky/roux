@@ -4,6 +4,7 @@ version = "0.0.1"
 edition = "2024"
 rust-version = "1.88.0"
 description = "the base your coding agents build on"
+readme = "README.md"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/iicky/roux"
 keywords = ["code-search", "graph", "tree-sitter", "rag", "ai"]
