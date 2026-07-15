@@ -433,7 +433,9 @@ fn extract_dir_only_unsupported_files_yields_no_code_symbols() {
     // Must not panic on binary/unknown content; produces no code symbols.
     let g = roux_cli::graph::extract::extract_dir(tmp.path(), "weird", "0", None).unwrap();
     assert!(
-        g.nodes.iter().all(|n| n.kind != "function" && n.kind != "class"),
+        g.nodes
+            .iter()
+            .all(|n| n.kind != "function" && n.kind != "class"),
         "unsupported files should not yield code symbols"
     );
 }

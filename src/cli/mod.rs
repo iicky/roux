@@ -393,7 +393,10 @@ fn index_project(
 
     // 2. Local source — always. `None` language hint so each file is parsed by
     // its own extension (a mixed/monorepo tree isn't forced to one language).
-    let project_name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("project");
+    let project_name = dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("project");
     eprintln!("\nIndexing local source as '{project_name}'...");
     let file_graph = graph::extract::extract_dir(dir, project_name, "dev", None)?;
     if file_graph.nodes.is_empty() {
@@ -502,7 +505,10 @@ fn ingest_deps(
         } else {
             // For other languages, we can only ingest local paths
             // TODO: add PyPI, npm registry support
-            eprintln!("  {} (skip — no registry support for {kind:?} yet)", dep.name);
+            eprintln!(
+                "  {} (skip — no registry support for {kind:?} yet)",
+                dep.name
+            );
             skipped += 1;
         }
     }
@@ -860,10 +866,7 @@ pub fn render_compact(result: &crate::graph::store::SearchResult) -> String {
     render_compact_budgeted(result, COMPACT_BUDGET_CHARS)
 }
 
-fn render_compact_budgeted(
-    result: &crate::graph::store::SearchResult,
-    budget: usize,
-) -> String {
+fn render_compact_budgeted(result: &crate::graph::store::SearchResult, budget: usize) -> String {
     use std::collections::HashSet;
 
     // Resolve neighbor ids to short names; only neighbors present in the result
@@ -1042,8 +1045,11 @@ pub(crate) fn stale_sources_for_result(
     store: &GraphStore,
     result: &crate::graph::store::SearchResult,
 ) -> Vec<(String, crate::graph::store::FileDiff)> {
-    let present: std::collections::BTreeSet<&str> =
-        result.nodes.iter().map(|n| n.source_name.as_str()).collect();
+    let present: std::collections::BTreeSet<&str> = result
+        .nodes
+        .iter()
+        .map(|n| n.source_name.as_str())
+        .collect();
     let Ok(records) = store.list_sources() else {
         return Vec::new();
     };
@@ -2014,7 +2020,11 @@ mod tests {
         let result = SearchResult {
             matched_ids: vec!["build".into()],
             nodes: vec![
-                node("build", Some("pub fn build() -> Searcher"), Some("Build a searcher.")),
+                node(
+                    "build",
+                    Some("pub fn build() -> Searcher"),
+                    Some("Build a searcher."),
+                ),
                 node("Searcher", None, None), // neighbor, not matched
             ],
             edges: vec![Edge {
@@ -2026,10 +2036,16 @@ mod tests {
             scores: Default::default(),
         };
         let out = render_compact(&result);
-        assert!(out.contains("lib.rs:10  demo::build — pub fn build() -> Searcher"), "got:\n{out}");
+        assert!(
+            out.contains("lib.rs:10  demo::build — pub fn build() -> Searcher"),
+            "got:\n{out}"
+        );
         // neighbor appears as a NAME on the near: line, not its own primary entry
         assert!(out.contains("near: Searcher"), "got:\n{out}");
-        assert!(!out.contains("lib.rs:10  demo::Searcher"), "neighbor should not be a primary entry:\n{out}");
+        assert!(
+            !out.contains("lib.rs:10  demo::Searcher"),
+            "neighbor should not be a primary entry:\n{out}"
+        );
     }
 
     #[test]
@@ -2037,8 +2053,16 @@ mod tests {
         let result = SearchResult {
             matched_ids: vec!["build".into()],
             nodes: vec![
-                node("build", Some("pub fn build() -> Searcher"), Some("Build a searcher.")),
-                node("Searcher", Some("pub struct Searcher"), Some("The searcher.")),
+                node(
+                    "build",
+                    Some("pub fn build() -> Searcher"),
+                    Some("Build a searcher."),
+                ),
+                node(
+                    "Searcher",
+                    Some("pub struct Searcher"),
+                    Some("The searcher."),
+                ),
             ],
             edges: vec![Edge {
                 from_id: "build".into(),
@@ -2072,7 +2096,10 @@ mod tests {
         };
         let out = render_compact_budgeted(&result, 40);
         assert!(out.contains("demo::alpha"), "got:\n{out}");
-        assert!(!out.contains("demo::beta"), "beta should be budgeted out:\n{out}");
+        assert!(
+            !out.contains("demo::beta"),
+            "beta should be budgeted out:\n{out}"
+        );
         assert!(out.contains("1 more match "), "got:\n{out}");
     }
 
@@ -2319,9 +2346,16 @@ mod tests {
         let sources = store.list_sources().unwrap();
         assert_eq!(sources.len(), 1, "local source should be indexed");
         assert!(sources[0].node_count > 0, "expected symbols from cpp files");
-        assert_eq!(sources[0].language, "cpp", "dominant language should be cpp");
+        assert_eq!(
+            sources[0].language, "cpp",
+            "dominant language should be cpp"
+        );
         assert!(
-            !store.search("plan_buffer_line", 5).unwrap().matched_ids.is_empty(),
+            !store
+                .search("plan_buffer_line", 5)
+                .unwrap()
+                .matched_ids
+                .is_empty(),
             "a known cpp symbol should be searchable"
         );
     }
@@ -2333,11 +2367,19 @@ mod tests {
         std::fs::write(tmp.path().join("package.json"), "{\"name\":\"root\"}\n").unwrap();
         let pkg = tmp.path().join("packages").join("app");
         std::fs::create_dir_all(&pkg).unwrap();
-        std::fs::write(pkg.join("index.js"), "function handleRequest() { return 1; }\n").unwrap();
+        std::fs::write(
+            pkg.join("index.js"),
+            "function handleRequest() { return 1; }\n",
+        )
+        .unwrap();
 
         let store = index_temp(tmp.path());
         assert!(
-            !store.search("handleRequest", 5).unwrap().matched_ids.is_empty(),
+            !store
+                .search("handleRequest", 5)
+                .unwrap()
+                .matched_ids
+                .is_empty(),
             "monorepo package source should be indexed even with no root deps"
         );
     }
@@ -2348,13 +2390,24 @@ mod tests {
         // per-file detection must parse each by its own extension.
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(tmp.path().join("lib.rs"), "pub fn rusty_fn() {}\n").unwrap();
-        std::fs::write(tmp.path().join("script.py"), "def pythonic_fn():\n    pass\n").unwrap();
+        std::fs::write(
+            tmp.path().join("script.py"),
+            "def pythonic_fn():\n    pass\n",
+        )
+        .unwrap();
 
         let store = index_temp(tmp.path());
         // If either file were parsed as the other's language, its symbol would
         // not extract — so both hits prove per-file detection.
         let rust_hit = !store.search("rusty_fn", 5).unwrap().matched_ids.is_empty();
-        let py_hit = !store.search("pythonic_fn", 5).unwrap().matched_ids.is_empty();
-        assert!(rust_hit && py_hit, "both rust and python symbols should index");
+        let py_hit = !store
+            .search("pythonic_fn", 5)
+            .unwrap()
+            .matched_ids
+            .is_empty();
+        assert!(
+            rust_hit && py_hit,
+            "both rust and python symbols should index"
+        );
     }
 }

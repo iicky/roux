@@ -287,7 +287,9 @@ mod tests {
                 source_url: None,
                 description: None,
             };
-            store.upsert_source(name, "1.0", "rust", &[node], &[]).unwrap();
+            store
+                .upsert_source(name, "1.0", "rust", &[node], &[])
+                .unwrap();
         }
         (RouxServer::new(path), dir)
     }
@@ -308,8 +310,16 @@ mod tests {
         let err = server
             .roux_query(Parameters(query(Some("nope"))))
             .expect_err("unknown source should be rejected");
-        assert!(err.message.contains("unknown source"), "got: {}", err.message);
-        assert!(err.message.contains("known"), "should list available: {}", err.message);
+        assert!(
+            err.message.contains("unknown source"),
+            "got: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("known"),
+            "should list available: {}",
+            err.message
+        );
     }
 
     #[test]
@@ -384,7 +394,11 @@ mod tests {
         let err = server
             .render_skeleton_uri("roux://bogus/foo")
             .expect_err("non-skeleton URI should be rejected");
-        assert!(err.message.contains("unknown resource"), "got: {}", err.message);
+        assert!(
+            err.message.contains("unknown resource"),
+            "got: {}",
+            err.message
+        );
     }
 
     #[test]

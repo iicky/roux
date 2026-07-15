@@ -105,8 +105,12 @@ impl Settings {
             kind_weight_doc: parse_or(&get, "ROUX_KIND_WEIGHT_DOC", d.kind_weight_doc),
             max_node_degree: parse_or(&get, "ROUX_MAX_NODE_DEGREE", d.max_node_degree),
             max_subgraph_nodes: parse_or(&get, "ROUX_MAX_SUBGRAPH_NODES", d.max_subgraph_nodes),
-            candidate_multiplier: parse_or(&get, "ROUX_CANDIDATE_MULTIPLIER", d.candidate_multiplier)
-                .max(1),
+            candidate_multiplier: parse_or(
+                &get,
+                "ROUX_CANDIDATE_MULTIPLIER",
+                d.candidate_multiplier,
+            )
+            .max(1),
             max_file_bytes: parse_or(&get, "ROUX_MAX_FILE_BYTES", d.max_file_bytes),
             worker_stack_bytes: parse_or(&get, "ROUX_WORKER_STACK_BYTES", d.worker_stack_bytes)
                 .max(1024 * 1024),
@@ -188,9 +192,8 @@ mod tests {
     #[test]
     fn candidate_multiplier_is_floored_at_one() {
         // A 0 multiplier would starve re-ranking of candidates; clamp it up.
-        let s = Settings::from_lookup(|k| {
-            (k == "ROUX_CANDIDATE_MULTIPLIER").then(|| "0".to_string())
-        });
+        let s =
+            Settings::from_lookup(|k| (k == "ROUX_CANDIDATE_MULTIPLIER").then(|| "0".to_string()));
         assert_eq!(s.candidate_multiplier, 1);
     }
 }
