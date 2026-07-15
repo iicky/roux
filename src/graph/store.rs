@@ -185,7 +185,7 @@ impl GraphStore {
         }
 
         if version < 8 {
-            // Per-file manifest (roux-vmdf): lets an incremental refresh compute
+            // Per-file manifest: lets an incremental refresh compute
             // the changed-file set (added/modified/deleted) without re-parsing
             // unchanged files, and lets a query detect staleness vs the working
             // tree. content_hash is the authoritative change key; mtime is a
@@ -968,7 +968,7 @@ impl GraphStore {
         Ok((added, modified, removed))
     }
 
-    /// Replace the per-file manifest for a source (roux-vmdf). Called alongside
+    /// Replace the per-file manifest for a source. Called alongside
     /// `upsert_source` at index time so a later refresh can compute the
     /// changed-file set without re-parsing.
     pub fn replace_files(
@@ -1322,8 +1322,8 @@ pub struct SearchResult {
 
 use std::collections::HashMap;
 
-/// Result of comparing a freshly-walked file list against the stored manifest
-/// (roux-vmdf). Paths are relative to the source root.
+/// Result of comparing a freshly-walked file list against the stored manifest.
+/// Paths are relative to the source root.
 #[derive(Debug, Default, PartialEq)]
 pub struct FileDiff {
     pub added: Vec<String>,
@@ -2205,7 +2205,13 @@ mod tests {
 
         // Target absent: edge is stored unresolved.
         store
-            .upsert_source("lib", "1.0", "rust", &[caller.clone()], &[edge.clone()])
+            .upsert_source(
+                "lib",
+                "1.0",
+                "rust",
+                std::slice::from_ref(&caller),
+                std::slice::from_ref(&edge),
+            )
             .unwrap();
 
         let changed = store.reresolve().unwrap();
@@ -2226,7 +2232,7 @@ mod tests {
                 "1.0",
                 "rust",
                 &[caller.clone(), target.clone()],
-                &[edge.clone()],
+                std::slice::from_ref(&edge),
             )
             .unwrap();
         let changed = store.reresolve().unwrap();
@@ -2255,7 +2261,7 @@ mod tests {
             ref_name: Some("nonexistent".to_string()),
         };
         store
-            .upsert_source("lib", "1.0", "rust", &[auth.clone()], &[edge])
+            .upsert_source("lib", "1.0", "rust", std::slice::from_ref(&auth), &[edge])
             .unwrap();
 
         let result = store.search("authenticate", 10).unwrap();

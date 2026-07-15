@@ -21,7 +21,7 @@ pub struct FileMeta {
 pub struct FileGraph {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
-    /// One entry per file that was read and indexed (roux-vmdf).
+    /// One entry per file that was read and indexed.
     pub files: Vec<FileMeta>,
 }
 
@@ -296,7 +296,7 @@ pub fn reextract_incremental(
 }
 
 /// Walk a source tree and return the file manifest WITHOUT parsing — read +
-/// hash only (roux-vmdf). Applies the same skip/inclusion rules as `extract_dir`
+/// hash only. Applies the same skip/inclusion rules as `extract_dir`
 /// (guarded by `manifest_walk_matches_extraction`) so its output can be diffed
 /// against a stored manifest to find changed files cheaply.
 pub fn list_source_files(dir: &Path, language_hint: Option<&str>) -> Result<Vec<FileMeta>> {
@@ -404,7 +404,11 @@ fn merge_duplicate_nodes(nodes: &mut Vec<Node>) {
                     // the one with the larger line span so the survivor points at
                     // the body, not the bare declaration.
                     let span = |n: &Node| n.end_line.saturating_sub(n.start_line);
-                    if span(&nodes[i]) > span(&nodes[j]) { (i, j) } else { (j, i) }
+                    if span(&nodes[i]) > span(&nodes[j]) {
+                        (i, j)
+                    } else {
+                        (j, i)
+                    }
                 };
                 if nodes[winner].doc.is_none() {
                     let doc = nodes[loser].doc.clone();
@@ -434,7 +438,7 @@ fn merge_duplicate_nodes(nodes: &mut Vec<Node>) {
 struct WalkStats {
     read_errors: usize,
     parse_errors: usize,
-    /// Per-file manifest accumulated across the walk (roux-vmdf).
+    /// Per-file manifest accumulated across the walk.
     files: Vec<FileMeta>,
 }
 
@@ -2042,7 +2046,7 @@ fn extract_calls_recursive(
 /// last segment is equivalent to the `ends_with("::"+ref)` suffix test. Picking
 /// the smaller of the two indexes preserves the "first node in order" tie-break
 /// of the original `find()`. Rare multi-segment refs fall back to a scan.
-pub(crate) fn resolve_references(edges: &mut Vec<Edge>, nodes: &[Node]) {
+pub(crate) fn resolve_references(edges: &mut [Edge], nodes: &[Node]) {
     use std::collections::HashMap;
     let mut by_name: HashMap<&str, usize> = HashMap::new();
     let mut by_last_seg: HashMap<&str, usize> = HashMap::new();
@@ -2060,10 +2064,10 @@ pub(crate) fn resolve_references(edges: &mut Vec<Edge>, nodes: &[Node]) {
         // Capture the raw reference token once (first extract) from the sentinel,
         // so resolution stays re-runnable over stored data even after to_id has
         // been rewritten to a concrete id.
-        if edge.ref_name.is_none() {
-            if let Some(name) = edge.to_id.strip_prefix("__unresolved::") {
-                edge.ref_name = Some(name.to_string());
-            }
+        if edge.ref_name.is_none()
+            && let Some(name) = edge.to_id.strip_prefix("__unresolved::")
+        {
+            edge.ref_name = Some(name.to_string());
         }
         // Concrete edges (ref_name == None: tests/overrides/exports) keep their
         // target id; name-reference edges resolve from the persisted raw name.
