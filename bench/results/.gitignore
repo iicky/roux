@@ -3,3 +3,4 @@
 *.log
 heldout_*.json
 freshness_*.json
+vocab_gap_*.json
