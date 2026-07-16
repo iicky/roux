@@ -151,7 +151,7 @@ PROMPT_TEMPLATE_ROUX_FIRST = (
 )
 
 
-# context-prep (iyi) arm: roux runs ONCE up front; a compact skeleton of the
+# context-prep arm: roux runs ONCE up front; a compact skeleton of the
 # ranked symbols is injected into the prompt prefix, and the agent gets NO live
 # roux tool. Tests roux-as-preprocessor — removes the per-turn schema tax and
 # the turn-amplification, and the injected block is a cacheable prefix.
@@ -164,7 +164,7 @@ PROMPT_TEMPLATE_CONTEXT_PREP = (
 )
 
 
-# iyi+rk2 (context-prep-bodies): substitutive output. Inject the actual source
+# context-prep-bodies: substitutive output. Inject the actual source
 # body of the top-K ranked symbols so the agent can answer WITHOUT re-reading
 # files. Bounded by env to keep the injected block from blowing up token count:
 #   PREP_BODY_K     = how many top symbols get bodies (default 3)
@@ -185,7 +185,7 @@ def _read_span(repo: Path, file_rel: str, start_line: int, n: int) -> str:
 
 def _neighbor_names(target: dict, symbols: list[dict], edges: list[dict],
                     id_to_qn: dict[str, str]) -> list[str]:
-    """1-hop neighbor NAMES for the iyi --neighbors layer (names only, no bodies).
+    """1-hop neighbor NAMES for the --neighbors layer (names only, no bodies).
     Best-effort from CLI JSON: parent (parent_id), children (symbols whose parent
     is this one), and edge peers. Neighbors whose id is not in the result set are
     unresolvable from CLI JSON (the graph has the name; the export doesn't) — those
@@ -211,9 +211,9 @@ def roux_context(pq: PQ, bodies: bool = False, neighbors: bool = False,
                  scores: bool = False) -> str:
     """Run roux once and render a COMPACT skeleton block (drop the hash-laden
     edges/matched arrays the raw JSON carries; keep name/loc/sig/doc). Layers:
-    bodies=True inlines top-PREP_BODY_K source spans (rk2, disproven — kept for
-    reference). neighbors=True adds a names-only `near:` line (iyi Layer 1).
-    scores=True prefixes each entry with roux's raw score (iyi Layer 2 — raw,
+    bodies=True inlines top-PREP_BODY_K source spans (disproven — kept for
+    reference). neighbors=True adds a names-only `near:` line (Layer 1).
+    scores=True prefixes each entry with roux's raw score (Layer 2 — raw,
     UNCALIBRATED, the test is whether even raw scores shift agent behavior)."""
     try:
         proc = subprocess.run(
@@ -295,11 +295,24 @@ def _roux_enabled(arm: str) -> bool:
     return arm in ("with-roux", "roux-first")
 
 
-def _success(result_text: str, expected: list[str]) -> bool:
-    if not result_text:
+# A concrete source location the agent actually pointed at: file.ext:line.
+_CITATION_RE = re.compile(r"[\w./-]+\.[A-Za-z][A-Za-z0-9+]*:\d+")
+
+
+def _success(final_text: str, expected: list[str]) -> bool:
+    """Grade the FULL agent answer (not a truncated preview) against the gold.
+
+    A hit requires the answer to BOTH name a gold symbol AND cite a concrete
+    file:line location. The citation requirement is what stops a disclaimer that
+    merely echoes the symbol name — "I could not find SearcherBuilder" — from
+    grading as SUCCESS, and makes the pass/fail signal publicly citable rather
+    than substring-lucky."""
+    if not final_text:
         return False
-    lower = result_text.lower()
-    return any(e.lower() in lower for e in expected)
+    lower = final_text.lower()
+    if not any(e.lower() in lower for e in expected):
+        return False
+    return bool(_CITATION_RE.search(final_text))
 
 
 def _preview(result_text: str, n: int = 240) -> str:
@@ -400,13 +413,14 @@ def _run_subprocess(
                 error=f"exit={proc.returncode}: {proc.stderr[:200]}",
             )
         parsed = parse_fn(proc.stdout, proc.stderr)
+        final_text = parsed.pop("final_text", parsed.get("result_preview", ""))
         return RunResult(
             agent=agent, model=model, arm=arm,
             persona=short_persona(pq.persona), query=pq.query,
             expected=list(pq.expected), run_idx=run_idx, run_id=run_id,
             wall_ms=wall_ms,
             **parsed,
-            success=_success(parsed["result_preview"], list(pq.expected)),
+            success=_success(final_text, list(pq.expected)),
             error=None,
         )
     except subprocess.TimeoutExpired:
@@ -445,6 +459,7 @@ def parse_claude(stdout: str, stderr: str) -> dict[str, Any]:
         "reasoning_output_tokens": 0,
         "num_turns": int(data.get("num_turns", 0) or 0),
         "result_preview": _preview(data.get("result", "") or ""),
+        "final_text": data.get("result", "") or "",
     }
 
 
@@ -481,6 +496,7 @@ def parse_codex(stdout: str, stderr: str) -> dict[str, Any]:
         "reasoning_output_tokens": int(last_usage.get("reasoning_output_tokens", 0) or 0),
         "num_turns": num_turns,
         "result_preview": _preview(final_text),
+        "final_text": final_text,
     }
 
 
@@ -582,6 +598,7 @@ def parse_vibe(stdout: str, stderr: str) -> dict[str, Any]:
         "reasoning_output_tokens": 0,
         "num_turns": int(stats.get("steps", 0) or 0),
         "result_preview": _preview(final_text),
+        "final_text": final_text,
     }
 
 
