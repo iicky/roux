@@ -1,4 +1,4 @@
-# roux
+# <img src="logo.svg" height="28" alt="roux"> roux
 
 **the base your coding agents build on**
 
@@ -14,18 +14,46 @@ One static binary and a SQLite file per project.
 
 ## Why roux
 
-- **Natural-language queries.** Ask `"how does buffered reading work"` instead of
-  guessing the exact identifier. A literal `grep` of a full sentence finds
-  nothing; roux ranks the symbols whose names, signatures, and docs match.
-- **Graph neighborhood for free.** Every hit carries a 2-hop neighborhood
-  (callers, callees, parent types). There is no `grep` equivalent — this is
-  roux's durable edge over line-oriented search.
-- **Dependencies, not just your tree.** `roux init` detects the project type and
-  indexes the code of its dependencies, so an agent can read the library it is
-  calling, not just your repo.
+- **A call graph, not a line hit.** Every result carries its 2-hop neighborhood
+  — callers, callees, enclosing types — so an agent gets a map of the code, not
+  a lone match. There is no `grep` equivalent; this is roux's durable edge.
+- **Your dependencies, not just your tree.** `roux init` detects the project
+  type and indexes the *source of the libraries you import*, so an agent can
+  read the crate it's calling — not just your usage of it. Most tools stop at
+  the workspace boundary.
+- **Natural-language queries.** Ask `"how does buffered reading work"` instead
+  of guessing the identifier. A literal `grep` of a full sentence finds nothing;
+  roux ranks the symbols whose names, signatures, and docs match.
 - **Built for agents.** Runs as an MCP server, or renders a compact,
   prompt-cacheable skeleton you inject once at the start of a task.
-- **Boring by design.** CPU-only, offline, deterministic. Nothing to host.
+- **No embedding stack.** CPU-only, offline, deterministic — no GPU, no model
+  download, no vector database, no reindex lag. One static binary and a SQLite
+  file per project.
+
+## How roux compares
+
+roux sits between two tools you already know — line search and embedding RAG —
+and takes what each is missing:
+
+| | roux | grep / ripgrep | embedding RAG (Cursor, Cody, vector DBs) |
+|---|---|---|---|
+| Natural-language queries | Yes | No (literal patterns) | Yes |
+| Returns a call graph, not just matches | Yes | No | No (opaque chunks) |
+| Indexes your dependencies' source | Yes | Only files on disk | Rarely |
+| Offline, CPU-only, no GPU | Yes | Yes | No |
+| Deterministic, no reindex drift | Yes | Yes | No |
+| Infrastructure to run | One binary + SQLite | None | Vector DB / service / model |
+
+- **vs `grep`/ripgrep** — grep returns a line; roux returns the *symbol, its
+  neighbors in the call graph, and the same for the libraries you import*. It is
+  line search that understands structure and doesn't stop at your repo boundary.
+- **vs embedding RAG** — the natural-language retrieval of semantic search
+  without the embedding stack (nothing to host, no GPU, no reindex lag), handing
+  the agent a call graph instead of opaque chunks.
+
+roux makes no token-savings claim; see [Benchmarks](#benchmarks) for what it
+measurably does (retrieval quality) and [docs/token-economics.md] for the
+honest, directional cost analysis.
 
 ## Install
 

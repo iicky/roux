@@ -33,5 +33,6 @@ pub mod fingerprint;
 pub mod graph;
 pub mod lockfile;
 pub mod mcp;
+pub mod output;
 pub mod settings;
 pub mod source;

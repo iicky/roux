@@ -43,7 +43,7 @@ enum ListFormat {
 }
 
 #[derive(Parser)]
-#[command(name = "roux", about = "the base your coding agents build on")]
+#[command(name = "roux", version, about = "the base your coding agents build on")]
 pub struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -547,7 +547,7 @@ fn extract_crate_with_timeout(name: &str, version: &str, timeout: Duration) -> C
     let (tx, rx) = mpsc::channel();
     // Extraction recurses over the syntax tree as deep as the source nests, so
     // this worker needs the same large stack `main` reserves — the default
-    // ~2 MB thread stack overflows on deeply nested dependency ASTs (roux-s3s1).
+    // ~2 MB thread stack overflows on deeply nested dependency ASTs.
     thread::Builder::new()
         .stack_size(crate::settings::get().worker_stack_bytes)
         .spawn(move || {
@@ -732,7 +732,7 @@ fn cmd_query(
         return Ok(());
     }
 
-    // Staleness guard (roux-00bf): warn when a returned source's files have
+    // Staleness guard: warn when a returned source's files have
     // changed since indexing, so an agent doesn't trust stale locations.
     let stale = stale_sources_for_result(&store, &result);
     if format != QueryFormat::Json && !stale.is_empty() {
@@ -751,7 +751,7 @@ fn cmd_query(
         }
         QueryFormat::Skeleton => {
             // Compact, deterministic, prompt-prefix-ready block for use as a
-            // one-shot context preprocessor (iyi): inject roux's ranked hits
+            // one-shot context preprocessor: inject roux's ranked hits
             // into an agent's prompt prefix instead of exposing a live tool.
             // Measured to cut a capable agent's input tokens ~20-40% with no
             // accuracy loss. Fields kept minimal on purpose (no edges/scores/
@@ -1034,8 +1034,8 @@ pub fn check_source_status(record: &crate::graph::store::SourceRecord) -> Status
     }
 }
 
-/// File-level staleness for the `path` sources present in a query result
-/// (roux-00bf). Cheap by construction: the fingerprint gate (`check_source_status`,
+/// File-level staleness for the `path` sources present in a query result.
+/// Cheap by construction: the fingerprint gate (`check_source_status`,
 /// stat-only) skips the per-file walk for unchanged sources, so a fresh local
 /// repo costs one stat-walk. Crate/URL sources are immutable at a pinned version
 /// and never checked. When the gate trips only because mtimes moved (a
@@ -2323,7 +2323,7 @@ mod tests {
         assert!(Cli::try_parse_from(["roux", "unknown"]).is_err());
     }
 
-    // --- roux-8trh: index_project on manifest-less / monorepo / mixed trees ---
+    // --- index_project on manifest-less / monorepo / mixed trees ---
 
     fn index_temp(dir: &Path) -> GraphStore {
         let store = GraphStore::open_in_memory().unwrap();

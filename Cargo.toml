@@ -19,6 +19,9 @@ path = "src/main.rs"
 # CLI
 clap = { version = "4", features = ["derive"] }
 
+# Terminal status output (brand color + status prefixes)
+colored = "3"
+
 # Serialization & config
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
