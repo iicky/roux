@@ -1,5 +1,5 @@
 {
-  "_comment": "HUMAN-REVIEWED frozen held-out set for roux-x6fs (remix) \u2014 anti-Goodhart. Harvested by bench/harvest_persona_queries.py, frozen/reviewed by bench/freeze_heldout.py. S/L by distinctive query<->gold(qualified_name) token overlap (source-prefix stripped, stoplist-filtered): S = no distinctive overlap (vocab/semantic gap \u2014 the real test); L = distinctive overlap (control). gold = qualified_name substrings; any in top-K = hit. Reviewed: generic-constructor gold removed (harvester + freeze), maintainer-process queries and weak-gold mis-pins pruned (see freeze_provenance.review). FROZEN: never tune against it; report SEPARATELY from the CI gate.",
+  "_comment": "HUMAN-REVIEWED frozen held-out set (remix) \u2014 anti-Goodhart. Harvested by bench/harvest_persona_queries.py, frozen/reviewed by bench/freeze_heldout.py. S/L by distinctive query<->gold(qualified_name) token overlap (source-prefix stripped, stoplist-filtered): S = no distinctive overlap (vocab/semantic gap \u2014 the real test); L = distinctive overlap (control). gold = qualified_name substrings; any in top-K = hit. Reviewed: generic-constructor gold removed (harvester + freeze), maintainer-process queries and weak-gold mis-pins pruned (see freeze_provenance.review). FROZEN: never tune against it; report SEPARATELY from the CI gate.",
   "source_name": "remix",
   "index_path": "/Users/mickey/Repos/iicky/roux/bench/snapshots/remix.sqlite",
   "pinned_ref": "remix@2.13.1",
@@ -12,7 +12,7 @@
     "harvester": "bench/harvest_persona_queries.py",
     "triage": "S/L by distinctive query<->gold token overlap (source-prefix stripped, stoplist-filtered)",
     "review": {
-      "reviewer": "roux-x6fs.3 gold-tightening pass",
+      "reviewer": "gold-tightening pass",
       "generic_gold": "dunders/from_low_args/per-persona skip_syms dropped at pin time + freeze safety-net",
       "off_topic_rule": "CI/TST/STYLE/test/CLN prefixes, doctest/pylint/flake8/mypy, typo, sweeping-doc edits, bare-path titles",
       "weak_gold_manual": [],

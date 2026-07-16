@@ -1,4 +1,4 @@
-//! Regression for roux-s3s1: `roux init` stack-overflowed while ingesting a
+//! Regression: `roux init` stack-overflowed while ingesting a
 //! dependency because crate extraction ran on a worker thread with the default
 //! (~2 MB) stack, while the deep recursive AST walk needs the same large stack
 //! `main` reserves for local extraction. This exercises that path on deeply

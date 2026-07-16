@@ -7,8 +7,7 @@
 //! So `search` no longer matches `research`, but `JSON` still matches `BindJSON`
 //! and `Searcher` still matches `SearcherBuilder`.
 //!
-//! Mirrors `bench/bench_match.py`; keep the two in sync (unification tracked in
-//! roux-mj3k).
+//! Mirrors `bench/bench_match.py`; keep the two in sync (they intentionally duplicate matching logic).
 
 #![allow(dead_code)]
 

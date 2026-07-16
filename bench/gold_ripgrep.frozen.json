@@ -1,5 +1,5 @@
 {
-  "_comment": "FROZEN held-out set for roux-x6fs (anti-Goodhart). Built by bench/harvest_persona_queries.py from ripgrep's own closed issues (titles = real user queries), then triaged. bucket S = NO lexical overlap between query and gold (pure vocab/semantic gap \u2014 the real test); bucket L = distinctive lexical overlap (control). gold = qualified_name substrings; any in top-K = hit. FROZEN: never tune against this; report SEPARATELY from the CI gate set. Every entry keeps full provenance (PROV).",
+  "_comment": "FROZEN held-out set (anti-Goodhart). Built by bench/harvest_persona_queries.py from ripgrep's own closed issues (titles = real user queries), then triaged. bucket S = NO lexical overlap between query and gold (pure vocab/semantic gap \u2014 the real test); bucket L = distinctive lexical overlap (control). gold = qualified_name substrings; any in top-K = hit. FROZEN: never tune against this; report SEPARATELY from the CI gate set. Every entry keeps full provenance (PROV).",
   "source_name": "ripgrep",
   "index_path": "/Users/mickey/Repos/iicky/roux/bench/snapshots/ripgrep.sqlite",
   "pinned_ref": "14.1.1",

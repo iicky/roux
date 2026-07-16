@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Eval roux on the authored vocabulary-mismatch sets (roux-pc7u), per bucket.
+"""Eval roux on the authored vocabulary-mismatch sets, per bucket.
 
 Reads bench/hard_queries_<repo>.json, runs `roux query` against the local index
 (same invocation as bench/rank_eval.py), and reports Hit@K / MRR split by bucket.

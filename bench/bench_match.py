@@ -6,8 +6,7 @@ name's tokens. Tokenizing splits snake_case, kebab/dot separators, and camelCase
 (including acronym boundaries like ``JSONParser`` -> [json, parser]). So
 ``search`` no longer matches ``research`` but ``JSON`` still matches ``BindJSON``.
 
-Mirrors tests/common/mod.rs; keep the two in sync (unification tracked in
-roux-mj3k).
+Mirrors tests/common/mod.rs; keep the two in sync (they intentionally duplicate matching logic).
 """
 
 from __future__ import annotations

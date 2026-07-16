@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Freeze a harvested DRAFT held-out set into a human-reviewed frozen set (roux-x6fs.3).
+"""Freeze a harvested DRAFT held-out set into a human-reviewed frozen set.
 
 This is the gold-tightening / review pass. It:
   * assigns the final S/L bucket by DISTINCTIVE query<->gold lexical overlap (exact token
@@ -161,7 +161,7 @@ def freeze(draft_path: Path, force: bool, named: set[str]) -> dict | None:
     reasons = {r: sum(1 for d in dropped if d["reason"] == r) for r in {d["reason"] for d in dropped}}
     doc = {
         "_comment": (
-            f"HUMAN-REVIEWED frozen held-out set for roux-x6fs ({persona}) — anti-Goodhart. "
+            f"HUMAN-REVIEWED frozen held-out set ({persona}) — anti-Goodhart. "
             "Harvested by bench/harvest_persona_queries.py, frozen/reviewed by bench/freeze_heldout.py. "
             "S/L by distinctive query<->gold(qualified_name) token overlap (source-prefix stripped, "
             "stoplist-filtered): S = no distinctive overlap (vocab/semantic gap — the real test); "
@@ -182,7 +182,7 @@ def freeze(draft_path: Path, force: bool, named: set[str]) -> dict | None:
             "harvester": "bench/harvest_persona_queries.py",
             "triage": "S/L by distinctive query<->gold token overlap (source-prefix stripped, stoplist-filtered)",
             "review": {
-                "reviewer": "roux-x6fs.3 gold-tightening pass",
+                "reviewer": "gold-tightening pass",
                 "generic_gold": "dunders/from_low_args/per-persona skip_syms dropped at pin time + freeze safety-net",
                 "off_topic_rule": "CI/TST/STYLE/test/CLN prefixes, doctest/pylint/flake8/mypy, typo, sweeping-doc edits, bare-path titles",
                 "weak_gold_manual": sorted(f"{p}-{i}" for p, i in WEAK_GOLD if p == persona),

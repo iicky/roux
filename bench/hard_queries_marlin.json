@@ -1,5 +1,5 @@
 {
-  "_comment": "Vocabulary-mismatch query set for roux-pc7u. bucket S = zero query-lexical overlap with gold's INDEXED text (verified against the roux DB, not raw source); only S tests embeddings. L/B = lexical controls (must be easy). gold = list of qualified_name substrings; any match in top-K = hit (same semantics as bench/rank_eval.py). source repo: Marlin 2.1.2.5, index built by bench/build_persona_indexes.sh.",
+  "_comment": "Vocabulary-mismatch query set. bucket S = zero query-lexical overlap with gold's INDEXED text (verified against the roux DB, not raw source); only S tests embeddings. L/B = lexical controls (must be easy). gold = list of qualified_name substrings; any match in top-K = hit (same semantics as bench/rank_eval.py). source repo: Marlin 2.1.2.5, index built by bench/build_persona_indexes.sh.",
   "source_name": "Marlin",
   "index_path": "/tmp/roux-sources/Marlin",
   "queries": [

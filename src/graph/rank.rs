@@ -126,7 +126,7 @@ pub fn rank_subgraph_with(
                     // Floor BM25 at ε: graph neighbors (no lexical hit) and the
                     // worst BM25 candidate both normalize to 0, and 0^α zeroes
                     // the product regardless of PPR. With the floor, PPR ranks
-                    // the lexically weak/absent nodes (roux-u4wz).
+                    // the lexically weak/absent nodes.
                     let bm25 = bm25_scores
                         .get(&n.id)
                         .copied()

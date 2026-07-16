@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Freshness bench — the honest gate for the incremental-freshness epic (roux-bhl9/2g6p).
+"""Freshness bench — the honest gate for the incremental-freshness epic.
 
 The persona Hit@10 bench scores a STATIC snapshot and structurally cannot see this
 epic's vision: after you edit code, does roux reflect the change, cheaply, without
-returning ghosts? A real ranking fix once moved Hit@10 by 0.000 (roux-u4wz). This
+returning ghosts? A real ranking fix once moved Hit@10 by 0.000. This
 arm measures the two things that matter for "roux keeps agents on UP-TO-DATE code":
 
   1. FRESHNESS LATENCY — wall-clock to make an edit queryable, as a fraction of a
      full re-index. Today the only refresh path is a full `roux add`, so the ratio
-     is ~1.0; when `roux update` (roux-qrg5) lands this harness auto-uses it and the
+     is ~1.0; when `roux update` lands this harness auto-uses it and the
      ratio should collapse. That ratio is the epic's headline number.
   2. POST-EDIT CORRECTNESS (pass/fail) — after add/rename/move/delete/body-shift, a
      query must return the CURRENT reality: the new symbol is findable, renamed and
@@ -108,7 +108,7 @@ def update_available() -> bool:
 
 def refresh(cwd: Path) -> tuple[float, str]:
     """Make edits queryable via the cheapest available path; returns (seconds, path)."""
-    if update_available():  # roux-qrg5, when it lands
+    if update_available():  # when it lands
         t = time.perf_counter()
         roux("update", "--local", cwd=cwd)
         return time.perf_counter() - t, "update"
@@ -232,7 +232,7 @@ def run_scenario(name, edit, check, n_filler: int) -> dict:
             write_fixture(d, n_filler)
             full0 = index_full(d)                 # initial full index (baseline denominator)
             edit(d)
-            staleness_seen = bool(stale_block(d))  # shipped guard (roux-00bf) should notice pre-refresh
+            staleness_seen = bool(stale_block(d))  # shipped guard should notice pre-refresh
             secs, path = refresh(d)
             checks = check(d)
     except HarnessError as e:
@@ -255,8 +255,8 @@ def main() -> None:
             n_filler = int(a.split("=", 1)[1])
 
     print("=" * 78)
-    print("FRESHNESS EVAL — post-edit correctness + refresh latency (roux-bhl9/2g6p)")
-    print(f"refresh path: {'roux update' if update_available() else 'full re-index (roux update not built yet — roux-qrg5)'}")
+    print("FRESHNESS EVAL — post-edit correctness + refresh latency")
+    print(f"refresh path: {'roux update' if update_available() else 'full re-index (roux update not built yet)'}")
     print(f"fixture: {n_filler + len(FIXTURE)} files (+{n_filler} filler for a stable baseline)")
     print("=" * 78)
 
@@ -279,7 +279,7 @@ def main() -> None:
     n_full = sum(1 for r in results if r.get("refresh_path") == "full-reindex")
     n_err = sum(1 for r in results if "error" in r)
     print(f"\n  latency ratio ~1.0 expected while refresh=full-reindex ({n_full}/{len(results)}); "
-          "roux-qrg5 must collapse it.")
+          "an incremental refresh path must collapse it.")
     print(f"  correctness: {'ALL PASS' if all_ok else 'FAILURES ABOVE'} "
           f"({sum(r['correct'] for r in results)}/{len(results)} scenarios"
           f"{f', {n_err} HARNESS ERROR' if n_err else ''})")

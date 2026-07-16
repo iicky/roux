@@ -1,4 +1,4 @@
-# Hard vocabulary-mismatch queries — Marlin (roux-pc7u)
+# Hard vocabulary-mismatch queries — Marlin
 
 Authored to settle whether dense retrieval earns its keep. The only bucket that
 tests embeddings is **S** (semantic-only): the gold symbol's full indexed text
@@ -63,7 +63,7 @@ does NOT bridge vocabulary mismatch. Headroom for embeddings is real.
 
 All these symbols exist in the index; they are simply not reachable from the
 query's lexical seeds within 2 graph hops. **Consequence:** dense *rerank over the
-BM25+2-hop pool* (bead roux-w6id, the latency-safe lever) recovers ~1/5 at best —
+BM25+2-hop pool* (the latency-safe lever) recovers ~1/5 at best —
 the rest are not in the pool to rerank. Moving the S bucket requires **full-corpus
 ANN dense retrieval**, the latency-expensive path. The embeddings decision is
 therefore "is full-corpus ANN worth the latency," not "cheap rerank or not."

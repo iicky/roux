@@ -4,8 +4,7 @@
 #
 # Why this exists: rank_eval.py queries the on-disk index at
 # /tmp/roux-sources/<repo>/.roux/db.sqlite. `roux init` cannot create those for
-# a JS monorepo (remix) or a manifest-less C++ root (Marlin) — see bead
-# roux-8trh — so without this script those two silently drop and the headline
+# a JS monorepo (remix) or a manifest-less C++ root (Marlin), so without this script those two silently drop and the headline
 # MRR re-inflates from the real 0.791 to the flattering 3-persona 0.859.
 #
 # `roux add <path>` indexes the project's OWN source (what the personas test);

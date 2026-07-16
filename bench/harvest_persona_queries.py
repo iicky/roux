@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Harvest a blind, in-index gold query set from a persona repo's own issue history.
 
-Motivation (roux-x6fs): the CI-gating query set is lexically self-fulfilling — the
+Motivation: the CI-gating query set is lexically self-fulfilling — the
 target's name words are in the query — so it is Goodharted and cannot detect ranking
 improvements. This tool builds a *held-out* set from signal the maintainer never wrote
 to flatter roux: real user-reported issues, and the symbols the fix actually touched.
@@ -19,10 +19,10 @@ Pipeline (commit-first, robust to line drift):
   5. Query = issue TITLE only (bodies leak identifiers/paths/flags — advisory).
   6. Pre-score with the real roux binary against the snapshot to bucket hardness.
   7. Emit a DRAFT json (field shape mirrors bench/hard_queries_*.json; pairs with the
-     x6fs eval harness bench/heldout_eval.py that reads gold via `roux query --db`) for review.
+     held-out eval harness bench/heldout_eval.py that reads gold via `roux query --db`) for review.
 
-This is a *draft generator*, not an oracle. Gold is candidate-grade; a human freezes it
-(roux-x6fs.3). Multi-language via the LANGS registry — Rust/Python/Go/TypeScript/C++.
+This is a *draft generator*, not an oracle. Gold is candidate-grade; a human freezes it.
+Multi-language via the LANGS registry — Rust/Python/Go/TypeScript/C++.
 
 Usage:
   python3 bench/harvest_persona_queries.py <persona> [--max-commits N] [--limit N]
@@ -83,7 +83,7 @@ STOP_NAMES = frozenset({
 })
 # generic/god symbols make useless gold: every class has __init__, mega-constructors
 # (from_low_args) & dispatchers get swept into unrelated fixes. Dropped from gold at pin
-# time (roux-x6fs.3); per-persona extras live in PERSONAS[...]["skip_syms"].
+# time; per-persona extras live in PERSONAS[...]["skip_syms"].
 GENERIC_SYM = re.compile(r"^__\w+__$")   # dunders
 MEGA_SYM = frozenset({"from_low_args"})  # known cross-cutting god-constructors
 CPP_KW = re.compile(r"\b(?:class|struct|enum|namespace|union)\s+([A-Za-z_]\w*)")
@@ -439,13 +439,13 @@ def main() -> None:
     dist = {k: sum(1 for q in out_queries if q["bucket"] == k) for k in ("L", "G", "S")}
     doc = {
         "_comment": (
-            f"DRAFT harvested query set for roux-x6fs ({args.persona}) — NOT frozen, needs human "
+            f"DRAFT harvested query set ({args.persona}) — NOT frozen, needs human "
             "review. Queries are real user issue TITLES from the persona repo; gold = qualified_name "
             "substrings pinned to the fix commit's touched symbols, validated against the snapshot "
             "index. bucket: L=roux top-1 (lexical), G=roux ranks 2-10 (graph/tail), S=roux misses@10 "
             "(vocab/semantic gap — the anti-Goodhart core). query_leaks_gold flags titles that already "
             "contain a gold identifier (should be pruned/relabeled). Review: drop off-topic/feature-"
-            "request titles, tighten gold, then freeze (roux-x6fs.3)."
+            "request titles, tighten gold, then freeze."
         ),
         "source_name": args.persona,
         "index_path": str(snapshot),

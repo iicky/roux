@@ -1,5 +1,5 @@
 {
-  "_comment": "DRAFT harvested query set for roux-x6fs (pandas) \u2014 NOT frozen, needs human review. Queries are real user issue TITLES from the persona repo; gold = qualified_name substrings pinned to the fix commit's touched symbols, validated against the snapshot index. bucket: L=roux top-1 (lexical), G=roux ranks 2-10 (graph/tail), S=roux misses@10 (vocab/semantic gap \u2014 the anti-Goodhart core). query_leaks_gold flags titles that already contain a gold identifier (should be pruned/relabeled). Review: drop off-topic/feature-request titles, tighten gold, then freeze (roux-x6fs.3).",
+  "_comment": "DRAFT harvested query set (pandas) \u2014 NOT frozen, needs human review. Queries are real user issue TITLES from the persona repo; gold = qualified_name substrings pinned to the fix commit's touched symbols, validated against the snapshot index. bucket: L=roux top-1 (lexical), G=roux ranks 2-10 (graph/tail), S=roux misses@10 (vocab/semantic gap \u2014 the anti-Goodhart core). query_leaks_gold flags titles that already contain a gold identifier (should be pruned/relabeled). Review: drop off-topic/feature-request titles, tighten gold, then freeze.",
   "source_name": "pandas",
   "index_path": "/Users/mickey/Repos/iicky/roux/bench/snapshots/pandas.sqlite",
   "pinned_ref": "v2.2.3",

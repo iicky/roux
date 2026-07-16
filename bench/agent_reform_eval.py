@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Agent-reformulation eval (roux-hcwl): does an LLM caller close the vocabulary
+"""Agent-reformulation eval: does an LLM caller close the vocabulary
 gap that a single literal query can't?
 
 roux serves LLM agents, but the hard_queries S-bucket (bench/hard_queries_marlin.json)

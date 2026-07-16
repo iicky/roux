@@ -16,7 +16,7 @@ tuned heuristic can masquerade as an oracle:
 "Distinctive" = freeze_heldout.toks(query) minus its STOP list — the exact token
 set that assigned each query its S/L bucket, so the floor is consistent with the
 buckets it is scored against. The retired whole-query strawman is shown only as a
-dim context line, never as a cited baseline (see roux-mxdk).
+dim context line, never as a cited baseline.
 
 grep hits map to the tightest enclosing symbol via the frozen snapshot's node
 spans (file_path + [start_line, end_line]); the snapshot and clone are pinned to

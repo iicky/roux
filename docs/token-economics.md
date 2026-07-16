@@ -114,7 +114,7 @@ scores are tested and not pursued.
 ARMS=no-roux,context-prep ONLY_PERSONAS=ripgrep python3 bench/token_economics.py
 python3 bench/aggregate_token_economics.py bench/results/<latest>.jsonl
 
-# second-repo run to break the single-repo caveat (roux-l5rf / roux-uqus)
+# second-repo run to break the single-repo caveat
 ARMS=no-roux,with-roux,context-prep,context-prep-compact,context-prep-bodies,context-prep-scores \
   ONLY_PERSONAS=ripgrep,pandas ONLY_AGENTS=codex,vibe \
   python3 bench/token_economics.py

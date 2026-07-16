@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score the FROZEN, blind, held-out query sets — reported SEPARATELY from the CI gate.
 
-This is the anti-Goodhart companion to the persona CI gate (roux-x6fs). The gate
+This is the anti-Goodhart companion to the persona CI gate. The gate
 set (tests/bench_personas.rs / baseline-metrics.json) is lexically friendly and
 was edited post-hoc after observing misses; it can regress-trip but cannot
 honestly source public ranking claims. The held-out sets here are harvested
@@ -89,7 +89,7 @@ def eval_spec(spec: dict, show: bool) -> dict | None:
         return None
 
     fp = spec.get("freeze_provenance", {})
-    badge = "AUTO-FROZEN · review pending (x6fs.3)" if fp.get("auto_frozen") else "human-reviewed"
+    badge = "AUTO-FROZEN · review pending" if fp.get("auto_frozen") else "human-reviewed"
     print(f"\n=== HELD-OUT · {name} @ {spec.get('pinned_ref', '?')} "
           f"(frozen {fp.get('frozen', '?')}, roux {fp.get('roux_commit', '?')} · {badge}) ===")
     print(f"    index: {index}")

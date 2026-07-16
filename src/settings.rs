@@ -40,7 +40,7 @@ pub struct Settings {
     /// no BM25 score (0), and the worst BM25 candidate min-max-normalizes to 0,
     /// so `bm25^α × ppr^β` would zero them out regardless of PPR — neighbors
     /// could never be promoted. Flooring BM25 at ε lets PPR rank the lexically
-    /// weak/absent nodes (see roux-u4wz).
+    /// weak/absent nodes.
     pub fusion_bm25_floor: f64,
     /// Reciprocal-rank-fusion constant `k` in `1/(k + rank)`.
     pub rrf_k: f64,
@@ -60,7 +60,7 @@ pub struct Settings {
     pub max_file_bytes: usize,
     /// Stack size (bytes) for threads that run the recursive-descent AST walk.
     /// Deeply nested syntax recurses as deep as it nests, so extraction needs a
-    /// far larger stack than the ~2 MB thread default (see roux-s3s1).
+    /// far larger stack than the ~2 MB thread default.
     pub worker_stack_bytes: usize,
 }
 
