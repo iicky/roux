@@ -5,6 +5,11 @@ use rusqlite::{Connection, params};
 
 use super::{Edge, Node};
 
+/// The current on-disk schema version. Bump this when adding a migration step
+/// in `migrate`; the runner applies every step between a database's recorded
+/// version and this value.
+const CURRENT_SCHEMA_VERSION: i64 = 9;
+
 pub struct GraphStore {
     conn: Connection,
 }
@@ -47,7 +52,8 @@ impl GraphStore {
     }
 
     fn migrate(&self) -> Result<()> {
-        // Check schema version
+        // Version tracking lives in `metadata`; create it first so even a
+        // brand-new database has somewhere to record its schema version.
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
         )?;
@@ -61,26 +67,45 @@ impl GraphStore {
             )
             .unwrap_or(0);
 
-        if version < 4 {
-            // Drop old tables if they exist (pre-v1 data)
-            self.conn.execute_batch(
-                "DROP TABLE IF EXISTS fts_symbols;
-                 DROP TABLE IF EXISTS fts_nodes;
-                 DROP TABLE IF EXISTS fts_chunks;
-                 DROP TABLE IF EXISTS vec_chunks;
-                 DROP TABLE IF EXISTS edges;
-                 DROP TABLE IF EXISTS symbols;
-                 DROP TABLE IF EXISTS nodes;
-                 DROP TABLE IF EXISTS chunks;
-                 DROP TABLE IF EXISTS sources;",
-            )?;
+        // A database written by a newer roux may rely on tables or columns this
+        // build does not know about. Refuse to open it rather than operate on a
+        // schema we do not understand.
+        if version > CURRENT_SCHEMA_VERSION {
+            anyhow::bail!(
+                "database schema version {version} is newer than this build supports \
+                 (max {CURRENT_SCHEMA_VERSION}); upgrade roux to open it"
+            );
+        }
+        if version == CURRENT_SCHEMA_VERSION {
+            return Ok(());
+        }
 
-            self.conn.execute_batch(
+        // Apply all pending steps in one transaction: any failure rolls back and
+        // the database keeps its previous version instead of being left in a
+        // half-migrated, unopenable state.
+        let tx = self.conn.unchecked_transaction()?;
+
+        if version == 0 {
+            // Version 0 means either a brand-new database or one that predates
+            // schema versioning. Bootstrap only when it is genuinely empty; an
+            // unversioned database that already holds tables is a legacy schema
+            // with no non-destructive upgrade path, so refuse it rather than drop
+            // the user's data.
+            if Self::user_tables_exist(&tx)? {
+                anyhow::bail!(
+                    "database predates schema versioning and cannot be upgraded in place; \
+                     delete the index directory (.roux) and re-run `roux init` or `roux add`"
+                );
+            }
+            tx.execute_batch(
                 "CREATE TABLE sources (
                     name        TEXT PRIMARY KEY,
                     version     TEXT NOT NULL,
                     language    TEXT NOT NULL,
-                    ingested_at INTEGER NOT NULL
+                    ingested_at INTEGER NOT NULL,
+                    source_kind TEXT NOT NULL DEFAULT '',
+                    origin      TEXT,
+                    fingerprint TEXT
                 );
 
                 CREATE TABLE nodes (
@@ -112,9 +137,9 @@ impl GraphStore {
                 CREATE INDEX idx_nodes_parent    ON nodes(parent_id);
 
                 CREATE TABLE edges (
-                    from_id TEXT NOT NULL ,
-                    to_id   TEXT NOT NULL ,
-                    kind    TEXT NOT NULL,
+                    from_id  TEXT NOT NULL,
+                    to_id    TEXT NOT NULL,
+                    kind     TEXT NOT NULL,
                     ref_name TEXT,
                     PRIMARY KEY (from_id, to_id, kind)
                 );
@@ -132,42 +157,46 @@ impl GraphStore {
                     doc,
                     body,
                     tokenize='unicode61 remove_diacritics 2'
-                );",
-            )?;
+                );
 
-            self.conn.execute(
-                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '5')",
-                [],
+                CREATE TABLE files (
+                    source_name  TEXT NOT NULL,
+                    path         TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    mtime        INTEGER,
+                    indexed_at   INTEGER NOT NULL,
+                    PRIMARY KEY (source_name, path)
+                );
+                CREATE INDEX idx_files_source ON files(source_name);",
             )?;
+            Self::set_schema_version(&tx, CURRENT_SCHEMA_VERSION)?;
+            tx.commit()?;
+            return Ok(());
         }
 
-        if (4..5).contains(&version) {
-            // v4→v5 historically added a `vectors` table for the (now removed)
-            // embedding pipeline; the table is unused, so this is a version bump.
-            self.conn.execute(
-                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '5')",
-                [],
-            )?;
+        // Versions 1-3 predate the current table layout and were never given a
+        // non-destructive upgrade path.
+        if version < 4 {
+            anyhow::bail!(
+                "database schema version {version} is too old to upgrade; \
+                 delete the index directory (.roux) and re-index"
+            );
         }
 
+        // Released schemas from v4 onward upgrade in place, one delta at a time.
         if version < 6 {
             // Staleness metadata: per-source origin and fingerprint.
             // source_kind: "crate", "path", "file", "url", or "" if unknown
-            // origin: original input (crate name, local path, URL) the source was loaded from
-            // fingerprint: a value that changes when the upstream changes — mtime/size rollup
-            //              for path sources, file content hash for file sources, version for crates
+            // origin: original input (crate name, local path, URL) the source came from
+            // fingerprint: changes when the upstream changes — mtime/size rollup for
+            //              path sources, content hash for files, version for crates
             for sql in [
                 "ALTER TABLE sources ADD COLUMN source_kind TEXT NOT NULL DEFAULT ''",
                 "ALTER TABLE sources ADD COLUMN origin TEXT",
                 "ALTER TABLE sources ADD COLUMN fingerprint TEXT",
             ] {
-                // ignore "duplicate column" errors so repeated opens on already-migrated DBs work
-                let _ = self.conn.execute(sql, []);
+                Self::add_column_if_missing(&tx, sql)?;
             }
-            self.conn.execute(
-                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '6')",
-                [],
-            )?;
         }
 
         if version < 7 {
@@ -176,22 +205,20 @@ impl GraphStore {
             // double-weighting PPR seeds. Heal in place by keeping the lowest
             // rowid per id; FTS body is identical across duplicates so the
             // surviving row is correct.
-            self.conn.execute_batch(
+            tx.execute_batch(
                 "DELETE FROM fts_nodes WHERE rowid NOT IN (
                      SELECT MIN(rowid) FROM fts_nodes GROUP BY id
-                 );
-                 INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '7');",
+                 );",
             )?;
         }
 
         if version < 8 {
-            // Per-file manifest: lets an incremental refresh compute
-            // the changed-file set (added/modified/deleted) without re-parsing
-            // unchanged files, and lets a query detect staleness vs the working
-            // tree. content_hash is the authoritative change key; mtime is a
-            // cheap pre-filter. Existing indexes gain an empty manifest until
-            // their next `roux add`/`init`.
-            self.conn.execute_batch(
+            // Per-file manifest: lets an incremental refresh compute the changed-
+            // file set (added/modified/deleted) without re-parsing unchanged files,
+            // and lets a query detect staleness vs the working tree. content_hash is
+            // the authoritative change key; mtime is a cheap pre-filter. Existing
+            // indexes gain an empty manifest until their next `roux add`/`init`.
+            tx.execute_batch(
                 "CREATE TABLE IF NOT EXISTS files (
                     source_name  TEXT NOT NULL,
                     path         TEXT NOT NULL,
@@ -200,26 +227,57 @@ impl GraphStore {
                     indexed_at   INTEGER NOT NULL,
                     PRIMARY KEY (source_name, path)
                 );
-                CREATE INDEX IF NOT EXISTS idx_files_source ON files(source_name);
-                INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '8');",
+                CREATE INDEX IF NOT EXISTS idx_files_source ON files(source_name);",
             )?;
         }
 
         if version < 9 {
             // Persist the raw reference token per edge so reference resolution can
             // be re-run over stored data during an incremental refresh (after a
-            // target symbol is renamed/added/removed). Ignore "duplicate column"
-            // so a freshly-created DB (column already in CREATE TABLE) is fine.
-            let _ = self
-                .conn
-                .execute("ALTER TABLE edges ADD COLUMN ref_name TEXT", []);
-            self.conn.execute(
-                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '9')",
-                [],
-            )?;
+            // target symbol is renamed/added/removed).
+            Self::add_column_if_missing(&tx, "ALTER TABLE edges ADD COLUMN ref_name TEXT")?;
         }
 
+        Self::set_schema_version(&tx, CURRENT_SCHEMA_VERSION)?;
+        tx.commit()?;
         Ok(())
+    }
+
+    /// Record the schema version in the `metadata` table.
+    fn set_schema_version(conn: &Connection, version: i64) -> Result<()> {
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?1)",
+            params![version.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// True if the database holds any table other than `metadata` (ignoring
+    /// SQLite's internal tables). Distinguishes a fresh database from a legacy
+    /// one so the bootstrap never overwrites existing data.
+    fn user_tables_exist(conn: &Connection) -> Result<bool> {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master \
+             WHERE type = 'table' AND name != 'metadata' AND name NOT LIKE 'sqlite_%'",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    /// Run an `ALTER TABLE ... ADD COLUMN`, treating an already-present column as
+    /// success so re-running a migration is idempotent. Any other error (e.g. a
+    /// missing table) propagates instead of being swallowed.
+    fn add_column_if_missing(conn: &Connection, sql: &str) -> Result<()> {
+        match conn.execute(sql, []) {
+            Ok(_) => Ok(()),
+            Err(rusqlite::Error::SqliteFailure(_, Some(msg)))
+                if msg.contains("duplicate column name") =>
+            {
+                Ok(())
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// Insert nodes and edges for a source, replacing any existing data.
@@ -1996,7 +2054,146 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "9");
+        assert_eq!(version, CURRENT_SCHEMA_VERSION.to_string());
+    }
+
+    #[test]
+    fn migrate_bootstraps_fresh_file_db_at_current_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("graph.db");
+        let store = GraphStore::open(&path).unwrap();
+        let version: i64 = store
+            .conn
+            .query_row(
+                "SELECT CAST(value AS INTEGER) FROM metadata WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, CURRENT_SCHEMA_VERSION);
+        // Reopening an already-current database is a no-op, not an error.
+        drop(store);
+        GraphStore::open(&path).unwrap();
+    }
+
+    #[test]
+    fn migrate_rejects_future_schema_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("graph.db");
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 INSERT INTO metadata (key, value) VALUES ('schema_version', '999');",
+            )
+            .unwrap();
+        }
+        let err = GraphStore::open(&path).err().unwrap().to_string();
+        assert!(err.contains("newer"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn migrate_rejects_pre_v4_versioned_db() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("graph.db");
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 INSERT INTO metadata (key, value) VALUES ('schema_version', '2');",
+            )
+            .unwrap();
+        }
+        let err = GraphStore::open(&path).err().unwrap().to_string();
+        assert!(err.contains("too old"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn migrate_refuses_legacy_db_without_dropping_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("graph.db");
+        {
+            // A legacy, pre-versioning database: real tables, no schema_version.
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE symbols (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+                 INSERT INTO symbols (id, name) VALUES ('a', 'keep_me');",
+            )
+            .unwrap();
+        }
+        // Opening must fail rather than silently wipe the schema.
+        assert!(GraphStore::open(&path).is_err());
+        // The user's data must still be present after the refused open.
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let name: String = conn
+            .query_row("SELECT name FROM symbols WHERE id = 'a'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(name, "keep_me");
+    }
+
+    #[test]
+    fn migrate_upgrades_released_schema_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("graph.db");
+        {
+            // A v5-era database: base tables, no staleness columns, no files
+            // table, no edges.ref_name, and a source row that must survive.
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 INSERT INTO metadata (key, value) VALUES ('schema_version', '5');
+                 CREATE TABLE sources (
+                     name TEXT PRIMARY KEY, version TEXT NOT NULL,
+                     language TEXT NOT NULL, ingested_at INTEGER NOT NULL
+                 );
+                 INSERT INTO sources (name, version, language, ingested_at)
+                     VALUES ('demo', '1.0', 'rust', 0);
+                 CREATE TABLE edges (
+                     from_id TEXT NOT NULL, to_id TEXT NOT NULL, kind TEXT NOT NULL,
+                     PRIMARY KEY (from_id, to_id, kind)
+                 );
+                 CREATE VIRTUAL TABLE fts_nodes USING fts5(id UNINDEXED, name);",
+            )
+            .unwrap();
+        }
+        let store = GraphStore::open(&path).unwrap();
+        let version: i64 = store
+            .conn
+            .query_row(
+                "SELECT CAST(value AS INTEGER) FROM metadata WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, CURRENT_SCHEMA_VERSION);
+        // The pre-existing source row survives, with the new column defaulted.
+        let (name, kind): (String, String) = store
+            .conn
+            .query_row(
+                "SELECT name, source_kind FROM sources WHERE name = 'demo'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(name, "demo");
+        assert_eq!(kind, "");
+        // The files table and edges.ref_name column were added.
+        let files: i64 = store
+            .conn
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(files, 0);
+        let has_ref_name: i64 = store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('edges') WHERE name = 'ref_name'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(has_ref_name, 1);
     }
 
     #[test]
