@@ -20,6 +20,10 @@ fn run(cwd: &Path, home_root: &Path, args: &[&str]) -> bool {
         .env("HOME", home_root)
         .env("XDG_DATA_HOME", home_root.join("data"))
         .env("XDG_CONFIG_HOME", home_root.join("config"))
+        .env(
+            "ROUX_GLOBAL_PATH",
+            home_root.join("global").join("db.sqlite"),
+        )
         .output()
         .unwrap_or_else(|e| panic!("failed to spawn `roux {args:?}`: {e}"));
     output.status.success()

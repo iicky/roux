@@ -20,6 +20,10 @@ fn run(cwd: &Path, args: &[&str]) -> (bool, String, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_roux"))
         .args(args)
         .current_dir(cwd)
+        .env("HOME", cwd)
+        .env("XDG_DATA_HOME", cwd.join("xdg-data"))
+        .env("XDG_CONFIG_HOME", cwd.join("xdg-config"))
+        .env("ROUX_GLOBAL_PATH", cwd.join("global").join("db.sqlite"))
         .output()
         .unwrap_or_else(|e| panic!("failed to spawn `roux {args:?}`: {e}"));
     (
