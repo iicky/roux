@@ -39,7 +39,9 @@ impl GraphStore {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")?;
 
         let store = Self { conn };
-        store.migrate()?;
+        store
+            .migrate()
+            .with_context(|| format!("opening index at {}", path.display()))?;
         Ok(store)
     }
 
@@ -93,8 +95,8 @@ impl GraphStore {
             // the user's data.
             if Self::user_tables_exist(&tx)? {
                 anyhow::bail!(
-                    "database predates schema versioning and cannot be upgraded in place; \
-                     delete the index directory (.roux) and re-run `roux init` or `roux add`"
+                    "database uses an unsupported legacy schema and cannot be upgraded in place; \
+                     delete the index file and re-run `roux init` or `roux add`"
                 );
             }
             tx.execute_batch(
@@ -179,7 +181,7 @@ impl GraphStore {
         if version < 4 {
             anyhow::bail!(
                 "database schema version {version} is too old to upgrade; \
-                 delete the index directory (.roux) and re-index"
+                 delete the index file and re-index"
             );
         }
 
@@ -2088,7 +2090,7 @@ mod tests {
             )
             .unwrap();
         }
-        let err = GraphStore::open(&path).err().unwrap().to_string();
+        let err = format!("{:#}", GraphStore::open(&path).err().unwrap());
         assert!(err.contains("newer"), "unexpected error: {err}");
     }
 
@@ -2104,7 +2106,7 @@ mod tests {
             )
             .unwrap();
         }
-        let err = GraphStore::open(&path).err().unwrap().to_string();
+        let err = format!("{:#}", GraphStore::open(&path).err().unwrap());
         assert!(err.contains("too old"), "unexpected error: {err}");
     }
 
@@ -2200,7 +2202,6 @@ mod tests {
     fn test_fts_walkdir() {
         // Verify index-time concatenation: "walk_dir" should be findable as "walkdir"
         let fts = tokenize_for_fts("walk_dir");
-        eprintln!("tokenize_for_fts('walk_dir') = '{fts}'");
         assert!(
             fts.contains("walkdir"),
             "should contain concatenated form, got: {fts}"

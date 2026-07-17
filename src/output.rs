@@ -11,8 +11,10 @@
 use std::fmt::Display;
 use std::io::IsTerminal;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::time::Duration;
 
 use colored::Colorize;
+use indicatif::ProgressBar;
 
 /// roux's brand mark — the single source of truth for the glyph (mirrors
 /// `logo.svg`). Change this one constant to rebrand the CLI.
@@ -105,6 +107,38 @@ pub fn hint(msg: impl Display) {
 pub fn detail(msg: impl Display) {
     if at_least(Level::Verbose) {
         eprintln!("{}", msg.to_string().dimmed());
+    }
+}
+
+/// A live progress spinner for a long, otherwise-silent operation. On a terminal
+/// it animates until dropped; when stderr is not a terminal it degrades to a
+/// single [`step`] line so pipes and logs still record the operation. Silent
+/// under `--quiet`. Clears itself on drop so the next status line prints clean.
+pub struct Spinner(Option<ProgressBar>);
+
+/// Start a [`Spinner`] labeled `msg`. Keep the returned guard alive for the
+/// duration of the work; dropping it stops and clears the animation.
+pub fn spinner(msg: impl Display) -> Spinner {
+    if !at_least(Level::Normal) {
+        return Spinner(None);
+    }
+    if std::io::stderr().is_terminal() {
+        let pb = ProgressBar::new_spinner();
+        pb.set_message(msg.to_string());
+        pb.enable_steady_tick(Duration::from_millis(100));
+        Spinner(Some(pb))
+    } else {
+        // A spinning animation is noise in a pipe or log file; emit one line.
+        step(msg);
+        Spinner(None)
+    }
+}
+
+impl Drop for Spinner {
+    fn drop(&mut self) {
+        if let Some(pb) = self.0.take() {
+            pb.finish_and_clear();
+        }
     }
 }
 

@@ -126,7 +126,7 @@ fn parse_or<T: FromStr>(get: &impl Fn(&str) -> Option<String>, key: &str, defaul
         Some(raw) => match raw.parse() {
             Ok(v) => v,
             Err(_) => {
-                eprintln!("roux: ignoring invalid {key}={raw:?}, using default");
+                crate::output::warn(format!("ignoring invalid {key}={raw:?}, using default"));
                 default
             }
         },

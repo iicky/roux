@@ -70,7 +70,7 @@ pub fn detect_project(dir: &Path) -> Option<ProjectInfo> {
                     });
                 }
                 Err(e) => {
-                    eprintln!("  warning: failed to parse {filename}: {e}");
+                    crate::output::warn(format!("failed to parse {filename}: {e}"));
                     continue;
                 }
             }

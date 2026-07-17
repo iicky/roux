@@ -80,7 +80,7 @@ pub fn extract_tags(
     let query = match Query::new(&ts_lang, &clean_query) {
         Ok(q) => q,
         Err(e) => {
-            eprintln!("  warning: tags query failed for {lang}: {e}");
+            crate::output::warn(format!("tags query failed for {lang}: {e}"));
             return (vec![], vec![]);
         }
     };

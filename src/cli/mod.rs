@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 use crate::config::{Config, StoreScope};
 use crate::graph;
@@ -79,8 +79,9 @@ enum Command {
     },
     /// Ingest a source into the index
     Add {
-        /// Source: a crate name or a local path (directory or file)
-        source: String,
+        /// Sources: crate names or local paths (directory or file), space-separated
+        #[arg(required = true, num_args = 1.., value_name = "SOURCE")]
+        sources: Vec<String>,
         /// Override language detection
         #[arg(long)]
         lang: Option<String>,
@@ -188,6 +189,11 @@ enum Command {
         #[arg(long)]
         global: bool,
     },
+    /// Generate a shell completion script for your shell
+    Completions {
+        /// Shell to generate completions for (bash, zsh, fish, powershell, elvish)
+        shell: clap_complete::Shell,
+    },
 }
 
 impl Cli {
@@ -209,8 +215,14 @@ impl Cli {
             output::Level::Normal
         };
         output::init(level);
-        let config = Config::load()?;
 
+        // Completions generation is pure stdout and must work even when config
+        // or the home directory is unavailable, so handle it before loading config.
+        if let Command::Completions { shell } = &self.command {
+            return cmd_completions(*shell);
+        }
+
+        let config = Config::load()?;
         match &self.command {
             Command::Init {
                 transitive,
@@ -220,14 +232,14 @@ impl Cli {
                 ..
             } => cmd_init(&config, *transitive, *global, exclude, *timeout),
             Command::Add {
-                source,
+                sources,
                 lang,
                 local,
                 version,
                 name,
             } => cmd_add(
                 &config,
-                source,
+                sources,
                 name.clone(),
                 lang.clone(),
                 version.clone(),
@@ -275,8 +287,18 @@ impl Cli {
                 gzip,
                 global,
             } => cmd_export(&config, output, *gzip, *global),
+            Command::Completions { .. } => {
+                unreachable!("completions handled before config load")
+            }
         }
     }
+}
+
+/// Write a shell completion script for `shell` to stdout (data, not status).
+fn cmd_completions(shell: clap_complete::Shell) -> Result<()> {
+    let mut cmd = <Cli as CommandFactory>::command();
+    clap_complete::generate(shell, &mut cmd, "roux", &mut std::io::stdout());
+    Ok(())
 }
 
 /// JSON shape for a single `SearchResult` — matched IDs, ranked symbols (with
@@ -417,8 +439,10 @@ fn index_project(
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("project");
-    output::step(format!("Indexing local source as '{project_name}'..."));
-    let file_graph = graph::extract::extract_dir(dir, project_name, "dev", None)?;
+    let file_graph = {
+        let _spin = output::spinner(format!("Indexing local source as '{project_name}'..."));
+        graph::extract::extract_dir(dir, project_name, "dev", None)?
+    };
     if file_graph.nodes.is_empty() {
         output::warn("No indexable source found");
     } else {
@@ -482,7 +506,10 @@ fn ingest_deps(
 
         // For Rust crates, download from crates.io
         if kind == crate::lockfile::ProjectKind::Rust {
-            match extract_crate_with_timeout(&dep.name, version_str, timeout) {
+            let spin = output::spinner(format!("{} v{version_str} ...", dep.name));
+            let outcome = extract_crate_with_timeout(&dep.name, version_str, timeout);
+            drop(spin);
+            match outcome {
                 CrateOutcome::Ok { version, graph } => {
                     let count = graph.nodes.len();
                     if count == 0 {
@@ -622,12 +649,63 @@ fn matches_glob(pattern: &str, name: &str) -> bool {
 
 fn cmd_add(
     config: &Config,
-    raw_source: &str,
+    sources: &[String],
     name: Option<String>,
     lang: Option<String>,
     version: Option<String>,
     local: bool,
 ) -> Result<()> {
+    // --name/--version rename or pin a single source; they cannot fan out across
+    // a batch, so reject the ambiguous combination up front.
+    if sources.len() > 1 && (name.is_some() || version.is_some()) {
+        anyhow::bail!(
+            "--name and --version apply to a single source; run one `roux add` per source to override them"
+        );
+    }
+
+    // Open the store once and reuse it for every source in the batch.
+    let store_path = config.resolve_store_path(StoreScope::from_flags(local, false));
+    let store = GraphStore::open(&store_path)?;
+
+    let mut indexed = 0usize;
+    let mut failed = 0usize;
+    for raw in sources {
+        // name/version are single-source overrides, only ever set when len == 1.
+        match add_one(&store, raw, name.clone(), lang.clone(), version.clone()) {
+            Ok(0) => output::warn(format!("{raw} — no symbols found")),
+            Ok(n) => {
+                output::ok(format!("{raw} — {n} symbols"));
+                indexed += 1;
+            }
+            Err(e) => {
+                output::warn(format!("{raw} — failed: {e}"));
+                failed += 1;
+            }
+        }
+    }
+
+    if failed > 0 {
+        anyhow::bail!(
+            "{failed} of {} source(s) failed to index (indexed {indexed})",
+            sources.len()
+        );
+    }
+    output::done(format!(
+        "Added {indexed} source(s) to {}",
+        store_path.display()
+    ));
+    Ok(())
+}
+
+/// Extract one source and write it into `store`; returns the indexed symbol
+/// count (0 means nothing extractable was found).
+fn add_one(
+    store: &GraphStore,
+    raw_source: &str,
+    name: Option<String>,
+    lang: Option<String>,
+    version: Option<String>,
+) -> Result<usize> {
     let source = Source::from_raw(raw_source, name, lang, version);
     let mut source_version = source
         .version
@@ -639,13 +717,12 @@ fn cmd_add(
     let hint = source.detected_language();
     let language = hint.unwrap_or("unknown").to_string();
     output::detail(format!(
-        "language hint: {}",
+        "{}: language hint {}",
+        source.name,
         hint.unwrap_or("(auto-detect)")
     ));
+    let _spin = output::spinner(format!("Extracting graph from {}...", source.name));
 
-    output::step(format!("Extracting graph from {}...", source.name));
-
-    // Use tree-sitter graph extraction
     let (file_graph, source_kind, origin, fingerprint) = match &source.kind {
         SourceKind::LocalPath(path) => {
             let fg = graph::extract::extract_dir(path, &source.name, &source_version, hint)?;
@@ -674,20 +751,10 @@ fn cmd_add(
         SourceKind::Url(_) => anyhow::bail!("URL sources not yet supported for graph extraction"),
     };
 
-    output::ok(format!(
-        "Extracted {} symbols, {} edges",
-        file_graph.nodes.len(),
-        file_graph.edges.len()
-    ));
-
     if file_graph.nodes.is_empty() {
-        output::warn("No symbols found");
-        return Ok(());
+        return Ok(0);
     }
 
-    // Store in graph database
-    let store_path = config.resolve_store_path(StoreScope::from_flags(local, false));
-    let store = GraphStore::open(&store_path)?;
     store.upsert_source(
         &source.name,
         &source_version,
@@ -702,15 +769,7 @@ fn cmd_add(
         origin.as_deref(),
         fingerprint.as_deref(),
     )?;
-
-    output::done(format!(
-        "Indexed {} symbols from {} into {}",
-        file_graph.nodes.len(),
-        source.name,
-        store_path.display()
-    ));
-
-    Ok(())
+    Ok(file_graph.nodes.len())
 }
 
 fn cmd_query(
@@ -1465,7 +1524,10 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
         match action {
             SyncAction::Crate { new_version } => {
                 let crate_name = src.origin.as_deref().unwrap_or(&src.name);
-                match extract_crate_with_timeout(crate_name, new_version, timeout) {
+                let spin = output::spinner(format!("{crate_name} v{new_version} ..."));
+                let outcome = extract_crate_with_timeout(crate_name, new_version, timeout);
+                drop(spin);
+                match outcome {
                     CrateOutcome::Ok { version, graph } => {
                         let count = graph.nodes.len();
                         if let Err(e) = store
@@ -1958,7 +2020,20 @@ mod tests {
     #[test]
     fn test_parse_add() {
         let cli = Cli::try_parse_from(["roux", "add", "tokio"]).unwrap();
-        assert!(matches!(cli.command, Command::Add { ref source, .. } if source == "tokio"));
+        assert!(
+            matches!(cli.command, Command::Add { ref sources, .. } if sources.len() == 1 && sources[0] == "tokio")
+        );
+    }
+
+    #[test]
+    fn test_parse_add_multiple_sources() {
+        let cli = Cli::try_parse_from(["roux", "add", "tokio", "serde", "futures"]).unwrap();
+        assert!(matches!(cli.command, Command::Add { ref sources, .. } if sources.len() == 3));
+    }
+
+    #[test]
+    fn test_add_requires_a_source() {
+        assert!(Cli::try_parse_from(["roux", "add"]).is_err());
     }
 
     #[test]

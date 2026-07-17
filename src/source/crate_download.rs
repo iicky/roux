@@ -37,7 +37,11 @@ pub fn download_crate(name: &str, version: &str) -> Result<(PathBuf, String)> {
         let ver = meta["crate"]["max_stable_version"]
             .as_str()
             .or_else(|| meta["crate"]["max_version"].as_str())
-            .context("could not determine latest version")?;
+            .with_context(|| {
+                format!(
+                    "could not determine the latest version of '{name}' (check the crate name and your network connection)"
+                )
+            })?;
         resolved_version = ver.to_string();
         format!("https://crates.io/api/v1/crates/{name}/{ver}/download")
     } else {
@@ -45,7 +49,6 @@ pub fn download_crate(name: &str, version: &str) -> Result<(PathBuf, String)> {
         format!("https://crates.io/api/v1/crates/{name}/{version}/download")
     };
 
-    eprintln!("Downloading {name}...");
     let client = reqwest::blocking::Client::builder()
         .user_agent("roux-cli/0.0.1")
         .build()?;

@@ -18,9 +18,12 @@ path = "src/main.rs"
 [dependencies]
 # CLI
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 
 # Terminal status output (brand color + status prefixes)
 colored = "3"
+# Progress spinners for long operations (extraction of large trees)
+indicatif = "0.17"
 
 # Serialization & config
 serde = { version = "1", features = ["derive"] }

@@ -102,10 +102,10 @@ pub fn extract_dir(
         &mut stats,
     )?;
     if stats.read_errors > 0 || stats.parse_errors > 0 {
-        eprintln!(
-            "  skipped {} unreadable file(s), {} failed to parse",
+        crate::output::warn(format!(
+            "skipped {} unreadable file(s), {} failed to parse",
             stats.read_errors, stats.parse_errors
-        );
+        ));
     }
 
     finalize_graph(&mut all_nodes, &mut all_edges);
@@ -126,9 +126,18 @@ pub fn extract_file(
 ) -> Result<FileGraph> {
     let lang = language_hint
         .or_else(|| detect_language(path))
-        .context("cannot detect language")?;
+        .with_context(|| {
+            format!(
+                "cannot detect language for {} — pass --lang <rust|python|javascript|typescript|go|cpp|bash>",
+                path.display()
+            )
+        })?;
 
-    let ts_lang = get_ts_language(lang).with_context(|| format!("unsupported language: {lang}"))?;
+    let ts_lang = get_ts_language(lang).with_context(|| {
+        format!(
+            "unsupported language '{lang}' (supported: rust, python, javascript, typescript, go, cpp, bash; override with --lang)"
+        )
+    })?;
 
     let code =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
@@ -670,7 +679,7 @@ fn extract_indexed_file(
         Some(&file_id),
     ) {
         stats.parse_errors += 1;
-        eprintln!("  warning: failed to extract {rel_path}: {e}");
+        crate::output::warn(format!("failed to extract {rel_path}: {e}"));
     }
 }
 
