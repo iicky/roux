@@ -9,12 +9,13 @@
 //! in [`init`]), so piped or redirected output degrades to plain text.
 
 use std::fmt::Display;
-use std::io::IsTerminal;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::io::{IsTerminal, Write};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use colored::Colorize;
-use indicatif::ProgressBar;
 
 /// roux's brand mark — the single source of truth for the glyph (mirrors
 /// `logo.svg`). Change this one constant to rebrand the CLI.
@@ -114,30 +115,61 @@ pub fn detail(msg: impl Display) {
 /// it animates until dropped; when stderr is not a terminal it degrades to a
 /// single [`step`] line so pipes and logs still record the operation. Silent
 /// under `--quiet`. Clears itself on drop so the next status line prints clean.
-pub struct Spinner(Option<ProgressBar>);
+pub struct Spinner {
+    stop: Option<Arc<AtomicBool>>,
+    handle: Option<JoinHandle<()>>,
+}
 
 /// Start a [`Spinner`] labeled `msg`. Keep the returned guard alive for the
-/// duration of the work; dropping it stops and clears the animation.
+/// duration of the work; dropping it stops and clears the animation. Uses only
+/// `\r` and spaces (no ANSI), so it renders on every terminal, Windows included.
 pub fn spinner(msg: impl Display) -> Spinner {
     if !at_least(Level::Normal) {
-        return Spinner(None);
+        return Spinner {
+            stop: None,
+            handle: None,
+        };
     }
-    if std::io::stderr().is_terminal() {
-        let pb = ProgressBar::new_spinner();
-        pb.set_message(msg.to_string());
-        pb.enable_steady_tick(Duration::from_millis(100));
-        Spinner(Some(pb))
-    } else {
-        // A spinning animation is noise in a pipe or log file; emit one line.
+    if !std::io::stderr().is_terminal() {
+        // Not a terminal: a spinning animation is noise in a pipe or log; emit
+        // one plain line so the operation is still recorded.
         step(msg);
-        Spinner(None)
+        return Spinner {
+            stop: None,
+            handle: None,
+        };
+    }
+    let msg = msg.to_string();
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_thread = Arc::clone(&stop);
+    let handle = std::thread::spawn(move || {
+        const FRAMES: [char; 4] = ['|', '/', '-', '\\'];
+        let mut err = std::io::stderr();
+        let mut i = 0usize;
+        while !stop_thread.load(Ordering::Relaxed) {
+            let _ = write!(err, "\r{} {msg}", FRAMES[i % FRAMES.len()]);
+            let _ = err.flush();
+            i += 1;
+            std::thread::sleep(Duration::from_millis(90));
+        }
+        // Overwrite the line with spaces and return the cursor so the next
+        // status line prints clean, without relying on ANSI clear sequences.
+        let _ = write!(err, "\r{}\r", " ".repeat(msg.chars().count() + 2));
+        let _ = err.flush();
+    });
+    Spinner {
+        stop: Some(stop),
+        handle: Some(handle),
     }
 }
 
 impl Drop for Spinner {
     fn drop(&mut self) {
-        if let Some(pb) = self.0.take() {
-            pb.finish_and_clear();
+        if let Some(stop) = self.stop.take() {
+            stop.store(true, Ordering::Relaxed);
+        }
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
         }
     }
 }

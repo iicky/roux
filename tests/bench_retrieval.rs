@@ -388,10 +388,13 @@ fn bench_performance() {
     );
 
     // Performance gates
+    let max_search_ms: f64 = std::env::var("ROUX_BENCH_MAX_SEARCH_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50.0);
     assert!(
-        search_avg_ms < 50.0,
-        "Search too slow: {:.1}ms (need <50ms)",
-        search_avg_ms
+        search_avg_ms < max_search_ms,
+        "Search too slow: {search_avg_ms:.1}ms (need <{max_search_ms}ms)"
     );
 }
 

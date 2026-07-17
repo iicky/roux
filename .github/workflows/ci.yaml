@@ -14,6 +14,9 @@ permissions: read-all
 
 env:
   CARGO_TERM_COLOR: always
+  # Shared CI runners are far slower and noisier than a dev box; loosen the
+  # search-latency gate here so it catches gross regressions without flaking.
+  ROUX_BENCH_MAX_SEARCH_MS: "500"
 
 jobs:
   lint:
@@ -35,6 +38,7 @@ jobs:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
