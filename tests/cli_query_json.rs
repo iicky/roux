@@ -151,7 +151,7 @@ fn query_text_zero_match_prints_no_results_message() {
         "text format should print nothing to stdout on zero matches, got {stdout:?}"
     );
     assert!(
-        stderr.contains("No results found."),
-        "expected 'No results found.' on stderr, got {stderr:?}"
+        stderr.contains("No results found"),
+        "expected 'No results found' on stderr, got {stderr:?}"
     );
 }

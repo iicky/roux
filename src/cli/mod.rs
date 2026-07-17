@@ -10,6 +10,7 @@ use crate::config::{Config, StoreScope};
 use crate::graph;
 use crate::graph::extract::FileGraph;
 use crate::graph::store::GraphStore;
+use crate::output;
 use crate::source::Source;
 use crate::source::SourceKind;
 
@@ -45,6 +46,12 @@ enum ListFormat {
 #[derive(Parser)]
 #[command(name = "roux", version, about = "the base your coding agents build on")]
 pub struct Cli {
+    /// Suppress routine status (progress, completions); warnings and errors still show
+    #[arg(long, global = true, conflicts_with = "verbose")]
+    quiet: bool,
+    /// Show verbose detail output
+    #[arg(long, global = true)]
+    verbose: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -194,6 +201,14 @@ impl Cli {
     }
 
     pub fn run(&self) -> Result<()> {
+        let level = if self.quiet {
+            output::Level::Quiet
+        } else if self.verbose {
+            output::Level::Verbose
+        } else {
+            output::Level::Normal
+        };
+        output::init(level);
         let config = Config::load()?;
 
         match &self.command {
@@ -342,7 +357,12 @@ fn cmd_init(
     let store = GraphStore::open(&store_path)?;
 
     let timeout = Duration::from_secs(timeout_secs);
-    index_project(&cwd, &store, transitive, exclude, timeout)
+    index_project(&cwd, &store, transitive, exclude, timeout)?;
+    output::done(format!(
+        "init complete — indexed to {}",
+        store_path.display()
+    ));
+    Ok(())
 }
 
 /// Ingest a project into `store`: dependencies when a manifest is present, plus
@@ -361,7 +381,7 @@ fn index_project(
     // 1. Dependencies — only when a manifest is present.
     if let Some(project) = &project {
         let direct_count = project.deps.iter().filter(|d| d.direct).count();
-        eprintln!(
+        output::step(format!(
             "Detected {:?} project ({} direct deps, {} total) from {}",
             project.kind,
             direct_count,
@@ -371,7 +391,7 @@ fn index_project(
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy(),
-        );
+        ));
 
         let deps: Vec<&crate::lockfile::Dependency> = if transitive {
             project.deps.iter().collect()
@@ -382,13 +402,13 @@ fn index_project(
         if deps.is_empty() {
             // Not an error: a monorepo root or an app with no declared deps
             // still has local source worth indexing below.
-            eprintln!("No dependencies to ingest.");
+            output::step("No dependencies to ingest");
         } else {
-            eprintln!("Ingesting {} dependencies...\n", deps.len());
+            output::step(format!("Ingesting {} dependencies", deps.len()));
             ingest_deps(&deps, project.kind, exclude, timeout, store);
         }
     } else {
-        eprintln!("No lockfile or manifest found — indexing local source only.");
+        output::step("No lockfile or manifest found — indexing local source only");
     }
 
     // 2. Local source — always. `None` language hint so each file is parsed by
@@ -397,10 +417,10 @@ fn index_project(
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("project");
-    eprintln!("\nIndexing local source as '{project_name}'...");
+    output::step(format!("Indexing local source as '{project_name}'..."));
     let file_graph = graph::extract::extract_dir(dir, project_name, "dev", None)?;
     if file_graph.nodes.is_empty() {
-        eprintln!("No indexable source found.");
+        output::warn("No indexable source found");
     } else {
         // Conservative label: the project kind when known, else the dominant
         // language among the extracted symbols.
@@ -418,11 +438,11 @@ fn index_project(
         store.replace_files(project_name, &file_graph.files)?;
         let fp = crate::fingerprint::fingerprint_dir(dir).ok();
         store.set_source_meta(project_name, "path", dir.to_str(), fp.as_deref())?;
-        eprintln!(
+        output::ok(format!(
             "Indexed {} symbols, {} edges from local source",
             file_graph.nodes.len(),
             file_graph.edges.len()
-        );
+        ));
     }
 
     // 3. Lockfile hash for staleness detection — only when a manifest exists.
@@ -455,20 +475,18 @@ fn ingest_deps(
         let version_str = dep.version.as_deref().unwrap_or("latest");
 
         if exclude.iter().any(|p| matches_glob(p, &dep.name)) {
-            eprintln!("  {} (excluded)", dep.name);
+            output::step(format!("{} (excluded)", dep.name));
             excluded += 1;
             continue;
         }
 
         // For Rust crates, download from crates.io
         if kind == crate::lockfile::ProjectKind::Rust {
-            eprint!("  {} v{} ... ", dep.name, version_str);
-
             match extract_crate_with_timeout(&dep.name, version_str, timeout) {
                 CrateOutcome::Ok { version, graph } => {
                     let count = graph.nodes.len();
                     if count == 0 {
-                        eprintln!("0 symbols");
+                        output::ok(format!("{} v{version} — 0 symbols", dep.name));
                         success += 1;
                         continue;
                     }
@@ -484,38 +502,42 @@ fn ingest_deps(
                         });
                     match upsert {
                         Ok(()) => {
-                            eprintln!("{count} symbols");
+                            output::ok(format!("{} v{version} — {count} symbols", dep.name));
                             success += 1;
                         }
                         Err(e) => {
-                            eprintln!("failed: {e}");
+                            output::warn(format!("{} v{version} — failed: {e}", dep.name));
                             failed += 1;
                         }
                     }
                 }
                 CrateOutcome::Err(e) => {
-                    eprintln!("failed: {e}");
+                    output::warn(format!("{} — failed: {e}", dep.name));
                     failed += 1;
                 }
                 CrateOutcome::Timeout => {
-                    eprintln!("timeout after {}s", timeout.as_secs());
+                    output::warn(format!(
+                        "{} — timeout after {}s",
+                        dep.name,
+                        timeout.as_secs()
+                    ));
                     failed += 1;
                 }
             }
         } else {
             // For other languages, we can only ingest local paths
             // TODO: add PyPI, npm registry support
-            eprintln!(
-                "  {} (skip — no registry support for {kind:?} yet)",
+            output::step(format!(
+                "{} (skip — no registry support for {kind:?} yet)",
                 dep.name
-            );
+            ));
             skipped += 1;
         }
     }
 
-    eprintln!(
-        "\nDeps: {success} ingested, {excluded} excluded, {skipped} skipped, {failed} failed"
-    );
+    output::step(format!(
+        "Deps: {success} ingested, {excluded} excluded, {skipped} skipped, {failed} failed"
+    ));
 }
 
 /// Most frequent per-file language among extracted nodes; `"unknown"` if empty.
@@ -616,8 +638,12 @@ fn cmd_add(
     // than being pinned to a bogus "unknown" that fails as an unsupported lang.
     let hint = source.detected_language();
     let language = hint.unwrap_or("unknown").to_string();
+    output::detail(format!(
+        "language hint: {}",
+        hint.unwrap_or("(auto-detect)")
+    ));
 
-    eprintln!("Extracting graph from {}...", source.name);
+    output::step(format!("Extracting graph from {}...", source.name));
 
     // Use tree-sitter graph extraction
     let (file_graph, source_kind, origin, fingerprint) = match &source.kind {
@@ -648,14 +674,14 @@ fn cmd_add(
         SourceKind::Url(_) => anyhow::bail!("URL sources not yet supported for graph extraction"),
     };
 
-    eprintln!(
+    output::ok(format!(
         "Extracted {} symbols, {} edges",
         file_graph.nodes.len(),
         file_graph.edges.len()
-    );
+    ));
 
     if file_graph.nodes.is_empty() {
-        eprintln!("No symbols found.");
+        output::warn("No symbols found");
         return Ok(());
     }
 
@@ -677,12 +703,12 @@ fn cmd_add(
         fingerprint.as_deref(),
     )?;
 
-    eprintln!(
+    output::done(format!(
         "Indexed {} symbols from {} into {}",
         file_graph.nodes.len(),
         source.name,
         store_path.display()
-    );
+    ));
 
     Ok(())
 }
@@ -716,6 +742,7 @@ fn cmd_query(
     }
 
     let store = GraphStore::open(&store_path)?;
+    output::detail(format!("index: {} (top {top})", store_path.display()));
     let result = if also.is_empty() {
         store.search_scoped(query, top, source)?
     } else {
@@ -723,12 +750,18 @@ fn cmd_query(
         queries.extend(also.iter().cloned());
         store.search_multi(&queries, top, source)?
     };
+    output::detail(format!(
+        "{} matched, {} ranked",
+        result.matched_ids.len(),
+        result.nodes.len()
+    ));
 
     // Non-JSON formats print a human message and stop; JSON must still emit a
     // well-formed envelope (empty arrays) so programmatic consumers don't choke
     // on zero results.
     if result.nodes.is_empty() && format != QueryFormat::Json {
-        eprintln!("No results found.");
+        output::warn("No results found");
+        output::hint("rephrase, or pass --also \"<terms>\" to fuse a reformulation");
         return Ok(());
     }
 
@@ -736,7 +769,11 @@ fn cmd_query(
     // changed since indexing, so an agent doesn't trust stale locations.
     let stale = stale_sources_for_result(&store, &result);
     if format != QueryFormat::Json && !stale.is_empty() {
-        eprintln!("{}", format_stale_warning(&stale));
+        output::warn(format!(
+            "index stale since indexing: {}",
+            stale_detail(&stale)
+        ));
+        output::hint("run `roux add <path>` to refresh");
     }
 
     match format {
@@ -1082,9 +1119,9 @@ pub(crate) fn stale_sources_for_result(
     out
 }
 
-/// One-line human warning for stale sources — CLI stderr in non-JSON formats
-/// and the MCP compact block.
-pub(crate) fn format_stale_warning(stale: &[(String, crate::graph::store::FileDiff)]) -> String {
+/// The per-source stale detail (`'name' (N modified, ...)` joined by `; `),
+/// shared by the CLI warning and the MCP compact block.
+fn stale_detail(stale: &[(String, crate::graph::store::FileDiff)]) -> String {
     let parts: Vec<String> = stale
         .iter()
         .map(|(name, d)| {
@@ -1101,9 +1138,15 @@ pub(crate) fn format_stale_warning(stale: &[(String, crate::graph::store::FileDi
             format!("'{name}' ({})", bits.join(", "))
         })
         .collect();
+    parts.join("; ")
+}
+
+/// One-line human warning for stale sources — the MCP compact block. The CLI
+/// emits its own `warn`/`hint` pair via [`stale_detail`].
+pub(crate) fn format_stale_warning(stale: &[(String, crate::graph::store::FileDiff)]) -> String {
     format!(
         "⚠ index stale since indexing: {} — run `roux add <path>` to refresh",
-        parts.join("; ")
+        stale_detail(stale)
     )
 }
 
@@ -1175,7 +1218,8 @@ fn cmd_list(
     }
 
     if rows.is_empty() {
-        eprintln!("No indexed sources.");
+        output::warn("No indexed sources");
+        output::hint("run `roux init` or `roux add` to build one");
         return Ok(());
     }
 
@@ -1231,7 +1275,7 @@ fn cmd_serve(
         resolved
     };
 
-    eprintln!("roux MCP server: serving {}", store_path.display());
+    output::step(format!("roux MCP server: serving {}", store_path.display()));
     crate::mcp::run_stdio(store_path)
 }
 
@@ -1250,15 +1294,19 @@ fn cmd_export(config: &Config, output: &std::path::Path, gzip: bool, global: boo
         );
     }
 
-    eprintln!("Exporting {} → {}", source_db.display(), output.display());
+    output::step(format!(
+        "Exporting {} → {}",
+        source_db.display(),
+        output.display()
+    ));
     let written = crate::artifact::export(&source_db, output, gzip)?;
     let size = std::fs::metadata(&written).map(|m| m.len()).unwrap_or(0);
-    eprintln!(
+    output::done(format!(
         "Wrote {} ({:.1} MiB){}",
         written.display(),
         size as f64 / 1024.0 / 1024.0,
         if gzip { ", gzipped" } else { "" }
-    );
+    ));
     Ok(())
 }
 
@@ -1364,7 +1412,8 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
         if let Some(f) = source_filter {
             anyhow::bail!("source '{f}' not found in {}", store_path.display());
         }
-        eprintln!("No sources indexed.");
+        output::warn("No sources indexed");
+        output::hint("run `roux init` or `roux add` to build one");
         return Ok(());
     }
 
@@ -1376,28 +1425,31 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
         match plan {
             SyncPlan::Fresh => {
                 fresh += 1;
-                eprintln!("  {:<24} {:<6} fresh", src.name, src.source_kind);
+                output::step(format!("  {:<24} {:<6} fresh", src.name, src.source_kind));
             }
             SyncPlan::Stale { reason, .. } => {
                 stale += 1;
-                eprintln!(
+                output::step(format!(
                     "  {:<24} {:<6} stale  — {reason}",
                     src.name, src.source_kind
-                );
+                ));
             }
             SyncPlan::Unknown(why) => {
                 unknown += 1;
-                eprintln!("  {:<24} {:<6} ?      ({why})", src.name, src.source_kind);
+                output::step(format!(
+                    "  {:<24} {:<6} ?      ({why})",
+                    src.name, src.source_kind
+                ));
             }
         }
     }
-    eprintln!("\n{fresh} fresh, {stale} stale, {unknown} unknown");
+    output::step(format!("{fresh} fresh, {stale} stale, {unknown} unknown"));
 
     if stale == 0 {
         return Ok(());
     }
     if dry_run {
-        eprintln!("(dry-run — skipping re-ingest)");
+        output::step("dry-run — skipping re-ingest");
         return Ok(());
     }
 
@@ -1405,7 +1457,7 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
     let timeout = std::time::Duration::from_secs(DEFAULT_CRATE_TIMEOUT_SECS);
     let mut updated = 0;
     let mut failed = 0;
-    eprintln!("\nSyncing {stale} source(s)...");
+    output::step(format!("Syncing {stale} source(s)"));
     for (src, plan) in &plans {
         let SyncPlan::Stale { action, .. } = plan else {
             continue;
@@ -1413,7 +1465,6 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
         match action {
             SyncAction::Crate { new_version } => {
                 let crate_name = src.origin.as_deref().unwrap_or(&src.name);
-                eprint!("  {crate_name} v{new_version} ... ");
                 match extract_crate_with_timeout(crate_name, new_version, timeout) {
                     CrateOutcome::Ok { version, graph } => {
                         let count = graph.nodes.len();
@@ -1428,31 +1479,30 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
                                 )
                             })
                         {
-                            eprintln!("failed: {e}");
+                            output::warn(format!("{crate_name} v{version} — failed: {e}"));
                             failed += 1;
                         } else {
-                            eprintln!("{count} symbols");
+                            output::ok(format!("{crate_name} v{version} — {count} symbols"));
                             updated += 1;
                         }
                     }
                     CrateOutcome::Err(e) => {
-                        eprintln!("failed: {e}");
+                        output::warn(format!("{crate_name} — failed: {e}"));
                         failed += 1;
                     }
                     CrateOutcome::Timeout => {
-                        eprintln!("timeout");
+                        output::warn(format!("{crate_name} — timeout"));
                         failed += 1;
                     }
                 }
             }
             SyncAction::Path => {
                 let Some(origin) = src.origin.as_deref() else {
-                    eprintln!("  {} (path)  skip — origin missing", src.name);
+                    output::warn(format!("{} (path) — skip, origin missing", src.name));
                     failed += 1;
                     continue;
                 };
                 let path = std::path::Path::new(origin);
-                eprint!("  {} (path) ... ", src.name);
                 match graph::extract::extract_dir(
                     path,
                     &src.name,
@@ -1478,29 +1528,32 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
                                 )
                             }) {
                             Ok(()) => {
-                                eprintln!("{} symbols", fg.nodes.len());
+                                output::ok(format!(
+                                    "{} (path) — {} symbols",
+                                    src.name,
+                                    fg.nodes.len()
+                                ));
                                 updated += 1;
                             }
                             Err(e) => {
-                                eprintln!("failed: {e}");
+                                output::warn(format!("{} (path) — failed: {e}", src.name));
                                 failed += 1;
                             }
                         }
                     }
                     Err(e) => {
-                        eprintln!("failed: {e}");
+                        output::warn(format!("{} (path) — failed: {e}", src.name));
                         failed += 1;
                     }
                 }
             }
             SyncAction::File => {
                 let Some(origin) = src.origin.as_deref() else {
-                    eprintln!("  {} (file)  skip — origin missing", src.name);
+                    output::warn(format!("{} (file) — skip, origin missing", src.name));
                     failed += 1;
                     continue;
                 };
                 let path = std::path::Path::new(origin);
-                eprint!("  {} (file) ... ", src.name);
                 match graph::extract::extract_file(
                     path,
                     &src.name,
@@ -1526,17 +1579,21 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
                                 )
                             }) {
                             Ok(()) => {
-                                eprintln!("{} symbols", fg.nodes.len());
+                                output::ok(format!(
+                                    "{} (file) — {} symbols",
+                                    src.name,
+                                    fg.nodes.len()
+                                ));
                                 updated += 1;
                             }
                             Err(e) => {
-                                eprintln!("failed: {e}");
+                                output::warn(format!("{} (file) — failed: {e}", src.name));
                                 failed += 1;
                             }
                         }
                     }
                     Err(e) => {
-                        eprintln!("failed: {e}");
+                        output::warn(format!("{} (file) — failed: {e}", src.name));
                         failed += 1;
                     }
                 }
@@ -1544,7 +1601,13 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
         }
     }
 
-    eprintln!("\nDone: {updated} updated, {failed} failed");
+    if failed == 0 {
+        output::done(format!("sync complete — {updated} updated"));
+    } else {
+        output::warn(format!(
+            "sync complete — {updated} updated, {failed} failed"
+        ));
+    }
     Ok(())
 }
 
@@ -1597,13 +1660,13 @@ fn cmd_update(
         considered += 1;
 
         let Some(origin) = src.origin.as_deref() else {
-            eprintln!("  {:<24} skip — origin missing", src.name);
+            output::warn(format!("{} — skipped, origin missing", src.name));
             skipped += 1;
             continue;
         };
         let path = std::path::Path::new(origin);
         if !path.exists() {
-            eprintln!("  {:<24} skip — origin gone ({origin})", src.name);
+            output::warn(format!("{} — skipped, origin gone ({origin})", src.name));
             skipped += 1;
             continue;
         }
@@ -1619,7 +1682,7 @@ fn cmd_update(
 
         match outcome {
             Ok(UpdateOutcome::UpToDate) => {
-                eprintln!("  {:<24} up to date", src.name);
+                output::step(format!("{} — up to date", src.name));
                 fresh += 1;
             }
             Ok(UpdateOutcome::Updated { files, stats }) => {
@@ -1634,22 +1697,22 @@ fn cmd_update(
                     })
                     .unwrap_or_default();
                 if let Some(s) = stats {
-                    eprintln!(
-                        "  {:<24} updated{filepart} — nodes +{} ~{} -{}, edges +{} -{}",
+                    output::ok(format!(
+                        "{} — updated{filepart}, nodes +{} ~{} -{}, edges +{} -{}",
                         src.name,
                         s.nodes_added,
                         s.nodes_modified,
                         s.nodes_removed,
                         s.edges_added,
                         s.edges_removed
-                    );
+                    ));
                 } else {
-                    eprintln!("  {:<24} would update{filepart}", src.name);
+                    output::step(format!("{} — would update{filepart}", src.name));
                 }
                 updated += 1;
             }
             Err(e) => {
-                eprintln!("  {:<24} failed — {e}", src.name);
+                output::warn(format!("{} — failed: {e}", src.name));
                 failed += 1;
             }
         }
@@ -1662,12 +1725,21 @@ fn cmd_update(
                 store_path.display()
             );
         }
-        eprintln!("No path or file sources to update.");
+        output::warn("No path or file sources to update");
+        output::hint("run `roux add <path>` to index a local source first");
         return Ok(());
     }
 
     let verb = if dry_run { "would update" } else { "updated" };
-    eprintln!("\n{updated} {verb}, {fresh} up to date, {skipped} skipped, {failed} failed");
+    if failed == 0 {
+        output::done(format!(
+            "{updated} {verb}, {fresh} up to date, {skipped} skipped"
+        ));
+    } else {
+        output::warn(format!(
+            "{updated} {verb}, {fresh} up to date, {skipped} skipped, {failed} failed"
+        ));
+    }
     Ok(())
 }
 
@@ -1764,7 +1836,7 @@ fn cmd_remove(config: &Config, source_name: &str) -> Result<()> {
 
     let store = GraphStore::open(&store_path)?;
     store.remove_source(source_name)?;
-    eprintln!("Removed {source_name} from index");
+    output::done(format!("Removed {source_name} from index"));
     Ok(())
 }
 
@@ -1772,6 +1844,27 @@ fn cmd_remove(config: &Config, source_name: &str) -> Result<()> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn quiet_flag_is_global_before_and_after_subcommand() {
+        // A global flag must parse in either position so both `roux --quiet list`
+        // and `roux list --quiet` work.
+        let before = Cli::try_parse_from(["roux", "--quiet", "list"]).unwrap();
+        assert!(before.quiet);
+        let after = Cli::try_parse_from(["roux", "list", "--quiet"]).unwrap();
+        assert!(after.quiet);
+    }
+
+    #[test]
+    fn verbose_flag_parses() {
+        let cli = Cli::try_parse_from(["roux", "list", "--verbose"]).unwrap();
+        assert!(cli.verbose);
+        assert!(!cli.quiet);
+    }
+
+    #[test]
+    fn quiet_and_verbose_conflict() {
+        assert!(Cli::try_parse_from(["roux", "--quiet", "--verbose", "list"]).is_err());
+    }
     #[test]
     fn staleness_guard_detects_file_changes() {
         use crate::graph::extract;
