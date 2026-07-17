@@ -192,6 +192,23 @@ pub fn extract_file(
     })
 }
 
+/// A source-root-relative path rendered with `/` separators on every OS, so the
+/// graph IDs and manifest entries a file produces are byte-identical on Windows
+/// and Unix. Falls back to the full path's normal components if `path` is not
+/// under `base`.
+fn rel_path_str(path: &Path, base: &Path) -> String {
+    use std::path::Component;
+    path.strip_prefix(base)
+        .unwrap_or(path)
+        .components()
+        .filter_map(|c| match c {
+            Component::Normal(s) => Some(s.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Re-extract only the files whose content changed since `prior`, keep every
 /// unchanged file's nodes and edges verbatim, then run the global finalize pass
 /// over the combined set. Finalize re-resolves references across the FULL
@@ -365,11 +382,7 @@ fn list_source_files_inner(
             Ok(c) => c,
             Err(_) => continue,
         };
-        let rel_path = path
-            .strip_prefix(base)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .to_string();
+        let rel_path = rel_path_str(&path, base);
         out.push(FileMeta {
             path: rel_path,
             content_hash: blake3::hash(content.as_bytes()).to_hex().to_string(),
@@ -565,11 +578,7 @@ fn walk_dir(
             continue;
         }
 
-        let rel_path = path
-            .strip_prefix(base)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .to_string();
+        let rel_path = rel_path_str(&path, base);
 
         extract_indexed_file(
             &path,
@@ -2777,6 +2786,15 @@ fn extract_signature_text(node: &TsNode, code: &[u8]) -> Option<String> {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn rel_path_str_normalizes_to_forward_slashes() {
+        // A nested path always renders with `/`, so graph IDs are identical
+        // across operating systems.
+        let base = Path::new("proj");
+        let file = Path::new("proj/src/graph/store.rs");
+        assert_eq!(rel_path_str(file, base), "src/graph/store.rs");
+    }
 
     #[test]
     fn detect_language_only_claims_parseable_languages() {

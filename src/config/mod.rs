@@ -45,12 +45,20 @@ impl Default for IndexConfig {
 impl Config {
     pub fn load() -> Result<Self> {
         let path = Self::config_path();
-        if path.exists() {
+        let mut config = if path.exists() {
             let contents = std::fs::read_to_string(&path)?;
-            Ok(toml::from_str(&contents)?)
+            toml::from_str(&contents)?
         } else {
-            Ok(Self::default())
+            Self::default()
+        };
+        // `ROUX_GLOBAL_PATH` overrides the global store location on every OS,
+        // taking precedence over the config file. It redirects the index for
+        // unusual setups and lets tests isolate the global store cross-platform
+        // (the `dirs` data dir cannot be redirected by env on Windows).
+        if let Some(p) = std::env::var_os("ROUX_GLOBAL_PATH") {
+            config.index.global_path = PathBuf::from(p);
         }
+        Ok(config)
     }
 
     pub fn config_path() -> PathBuf {
@@ -66,11 +74,11 @@ impl Config {
 
     pub fn resolve_store_path(&self, scope: StoreScope) -> PathBuf {
         match scope {
-            StoreScope::Local => PathBuf::from(".roux/db.sqlite"),
+            StoreScope::Local => PathBuf::from(".roux").join("db.sqlite"),
             StoreScope::Global => self.index.global_path.clone(),
             StoreScope::Auto => {
                 if self.index.prefer_local {
-                    let local_path = PathBuf::from(".roux/db.sqlite");
+                    let local_path = PathBuf::from(".roux").join("db.sqlite");
                     if local_path.exists() {
                         return local_path;
                     }
@@ -136,7 +144,7 @@ mod tests {
     fn test_resolve_store_path_local() {
         let config = Config::default();
         let path = config.resolve_store_path(StoreScope::Local);
-        assert_eq!(path, PathBuf::from(".roux/db.sqlite"));
+        assert_eq!(path, PathBuf::from(".roux").join("db.sqlite"));
     }
 
     #[test]
