@@ -56,6 +56,7 @@ pub struct RouxServer {
 
 #[tool_router]
 impl RouxServer {
+    /// Build the MCP server backed by the roux index at `store_path`.
     pub fn new(store_path: PathBuf) -> Self {
         Self { store_path }
     }

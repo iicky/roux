@@ -3,7 +3,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 use crate::config::{Config, StoreScope};
@@ -40,6 +40,15 @@ enum ListFormat {
     /// Human-readable table (default).
     Text,
     /// Machine-readable JSON.
+    Json,
+}
+
+/// Output format for `roux audit`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum AuditFormat {
+    /// Human-readable findings, worst-first (default).
+    Text,
+    /// Machine-readable JSON envelope.
     Json,
 }
 
@@ -189,6 +198,30 @@ enum Command {
         #[arg(long)]
         global: bool,
     },
+    /// Audit public symbols for agent-legibility and recommend refactors
+    Audit {
+        /// Path to audit (defaults to the current directory)
+        #[arg(value_name = "PATH", default_value = ".")]
+        path: std::path::PathBuf,
+        /// Output format: text (default) or json
+        #[arg(long, value_enum, default_value_t = AuditFormat::Text)]
+        format: AuditFormat,
+        /// Only report findings at or above this severity
+        #[arg(long, default_value_t = 1)]
+        min_severity: u8,
+        /// TOML file mapping "qualified::name" to a list of intent queries
+        #[arg(long, value_name = "FILE")]
+        queries: Option<std::path::PathBuf>,
+        /// Save the current findings as the baseline (at --baseline), then exit
+        #[arg(long)]
+        write_baseline: bool,
+        /// Compare against the baseline and exit non-zero on any new/worse finding
+        #[arg(long, conflicts_with = "write_baseline")]
+        check: bool,
+        /// Baseline file for --check / --write-baseline
+        #[arg(long, value_name = "FILE", default_value = ".roux/audit-baseline.json")]
+        baseline: std::path::PathBuf,
+    },
     /// Generate a shell completion script for your shell
     Completions {
         /// Shell to generate completions for (bash, zsh, fish, powershell, elvish)
@@ -206,6 +239,8 @@ impl Cli {
         <Self as Parser>::try_parse_from(iter)
     }
 
+    /// Run the parsed command: initialise output, load configuration, and
+    /// dispatch to the matching subcommand handler.
     pub fn run(&self) -> Result<()> {
         let level = if self.quiet {
             output::Level::Quiet
@@ -287,6 +322,23 @@ impl Cli {
                 gzip,
                 global,
             } => cmd_export(&config, output, *gzip, *global),
+            Command::Audit {
+                path,
+                format,
+                min_severity,
+                queries,
+                check,
+                write_baseline,
+                baseline,
+            } => cmd_audit(
+                path,
+                *format,
+                *min_severity,
+                queries.as_deref(),
+                *check,
+                *write_baseline,
+                baseline,
+            ),
             Command::Completions { .. } => {
                 unreachable!("completions handled before config load")
             }
@@ -298,6 +350,161 @@ impl Cli {
 fn cmd_completions(shell: clap_complete::Shell) -> Result<()> {
     let mut cmd = <Cli as CommandFactory>::command();
     clap_complete::generate(shell, &mut cmd, "roux", &mut std::io::stdout());
+    Ok(())
+}
+
+/// Load authored intent queries: a TOML table mapping a symbol's qualified name
+/// to a list of natural-language queries.
+fn load_audit_queries(
+    path: &std::path::Path,
+) -> Result<std::collections::HashMap<String, Vec<String>>> {
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("reading audit queries at {}", path.display()))?;
+    toml::from_str(&text).with_context(|| format!("parsing audit queries at {}", path.display()))
+}
+
+/// Audit a source tree for agent-legibility: for each public symbol, probe how
+/// findable it is and report the cheapest refactor for the ones that miss. The
+/// tree is extracted fresh (not read from an existing index) so the graph carries
+/// complete edges — incoming call edges a source-scoped store view would drop.
+fn cmd_audit(
+    path: &std::path::Path,
+    format: AuditFormat,
+    min_severity: u8,
+    queries: Option<&std::path::Path>,
+    check: bool,
+    write_baseline: bool,
+    baseline: &std::path::Path,
+) -> Result<()> {
+    let authored = match queries {
+        Some(p) => Some(load_audit_queries(p)?),
+        None => None,
+    };
+
+    let graph = {
+        let _spin = output::spinner(format!("Auditing {}...", path.display()));
+        graph::extract::extract_dir(path, "audit", None)?
+    };
+    if graph.nodes.is_empty() {
+        output::warn(format!(
+            "no indexable source found under {}",
+            path.display()
+        ));
+        return Ok(());
+    }
+
+    let store = GraphStore::open_in_memory()?;
+    store.upsert_source("audit", "dev", "mixed", &graph.nodes, &graph.edges)?;
+    let report = crate::audit::audit(&graph, &store, authored.as_ref())?;
+
+    let audited = report.len();
+    let findings: Vec<&crate::audit::SymbolLegibility> = report
+        .iter()
+        .filter(|s| s.is_finding() && s.severity >= min_severity)
+        .collect();
+
+    // Gate/baseline map: qualified name -> severity for each current finding.
+    let current: std::collections::BTreeMap<String, u8> = findings
+        .iter()
+        .map(|s| (s.qualified_name.clone(), s.severity))
+        .collect();
+
+    if write_baseline {
+        if let Some(parent) = baseline.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        std::fs::write(baseline, serde_json::to_string_pretty(&current)?)
+            .with_context(|| format!("writing baseline to {}", baseline.display()))?;
+        output::done(format!(
+            "wrote baseline: {} finding(s) across {audited} public symbols -> {}",
+            current.len(),
+            baseline.display()
+        ));
+        return Ok(());
+    }
+
+    if check {
+        if !baseline.exists() {
+            anyhow::bail!(
+                "no baseline at {}; run `roux audit --write-baseline` first",
+                baseline.display()
+            );
+        }
+        let text = std::fs::read_to_string(baseline)
+            .with_context(|| format!("reading baseline {}", baseline.display()))?;
+        let prior: std::collections::BTreeMap<String, u8> = serde_json::from_str(&text)
+            .with_context(|| format!("parsing baseline {}", baseline.display()))?;
+        let mut regressions = Vec::new();
+        for (sym, sev) in &current {
+            match prior.get(sym) {
+                None => regressions.push(format!("{sym}: new finding (severity {sev})")),
+                Some(&p) if *sev > p => regressions.push(format!("{sym}: severity {p} -> {sev}")),
+                _ => {}
+            }
+        }
+        if regressions.is_empty() {
+            output::done(format!(
+                "no agent-legibility regressions vs baseline ({} tracked)",
+                prior.len()
+            ));
+            return Ok(());
+        }
+        for r in &regressions {
+            output::error(r);
+        }
+        anyhow::bail!(
+            "{} agent-legibility regression(s) vs {}",
+            regressions.len(),
+            baseline.display()
+        );
+    }
+
+    match format {
+        AuditFormat::Json => {
+            let items: Vec<serde_json::Value> = findings
+                .iter()
+                .map(|s| {
+                    serde_json::json!({
+                        "symbol": s.qualified_name,
+                        "file": s.file_path,
+                        "line": s.start_line,
+                        "cause": s.cause.label(),
+                        "severity": s.severity,
+                        "reasons": s.reasons,
+                        "fix": s.cause.fix(),
+                    })
+                })
+                .collect();
+            let envelope = serde_json::json!({ "audited": audited, "findings": items });
+            println!("{}", serde_json::to_string_pretty(&envelope)?);
+        }
+        AuditFormat::Text => {
+            for s in &findings {
+                println!(
+                    "[{} · sev {}] {} ({}:{})",
+                    s.cause.label(),
+                    s.severity,
+                    s.qualified_name,
+                    s.file_path,
+                    s.start_line
+                );
+                for r in &s.reasons {
+                    println!("    - {r}");
+                }
+                println!("    -> {}", s.cause.fix());
+            }
+            if findings.is_empty() {
+                output::done(format!(
+                    "no legibility findings across {audited} public symbols"
+                ));
+            } else {
+                output::warn(format!(
+                    "{} finding(s) across {audited} public symbols",
+                    findings.len()
+                ));
+            }
+        }
+    }
     Ok(())
 }
 

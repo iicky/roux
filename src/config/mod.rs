@@ -43,6 +43,8 @@ impl Default for IndexConfig {
 }
 
 impl Config {
+    /// Load the roux configuration from disk, applying the `ROUX_GLOBAL_PATH`
+    /// environment override over the config file.
     pub fn load() -> Result<Self> {
         let path = Self::config_path();
         let mut config = if path.exists() {

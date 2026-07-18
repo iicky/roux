@@ -15,6 +15,8 @@ pub struct GraphStore {
 }
 
 impl GraphStore {
+    /// Open (or create) the SQLite index at `path`, running schema migration to
+    /// the current version.
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)

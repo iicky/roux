@@ -111,6 +111,7 @@ roux query "custom deserializer" --source serde
 | `roux remove <source>` | Remove a source and all its chunks |
 | `roux serve` | Run as an MCP server over stdio for agent integration |
 | `roux export --output <path>` | Export the local index to a portable artifact (`--gzip` to compress) |
+| `roux audit` | Audit public symbols for agent-legibility and recommend refactors (`--check` to gate CI) |
 
 Useful `query` flags:
 
@@ -163,6 +164,32 @@ The block is deterministic and prompt-cacheable, so it is written once and read
 cheaply on every subsequent turn. See [docs/token-economics.md] for the
 (directional, single-repo) cost analysis behind this pattern — treat it as a
 supported workflow, not a headline savings claim.
+
+## Audit agent-legibility
+
+Code an agent can't retrieve might as well not exist. `roux audit` turns roux's
+own retrieval on your public API: for each symbol it probes how findable you are,
+then recommends the cheapest fix for the ones that miss.
+
+```sh
+roux audit                    # audit the current tree
+roux audit src --format json  # machine-readable findings
+```
+
+Every miss is classified by cause, worst-first:
+
+| Cause | What it means | Fix |
+|---|---|---|
+| **collision** | Buried even for a query built from its own name — same-named siblings out-compete it | Rename or add a distinctive term (docs alone won't help) |
+| **vocab gap** | Findable by name, but an intent query phrased *without* that name misses it — no doc bridges concept to code | Add one honest doc line naming what it does |
+| **isolation** | No callers/callees/children in the graph — reachable only by exact lexical match | Wire it into the call graph, or document it |
+
+The doc-bridge is the cheap win: on this repo, a single doc line moved
+`stem_variants` from #5 to #1 for an intent query that never mentions "stem".
+Supply your own intent phrasings with `--queries <file.toml>` — a TOML table
+whose (quoted) keys are qualified names, e.g.
+`"roux_cli::graph::store::stem_variants" = ["match plural word endings"]` — and
+gate CI on findability with `roux audit --write-baseline` / `roux audit --check`.
 
 ## Benchmarks
 
