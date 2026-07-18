@@ -159,3 +159,38 @@ fn query_text_zero_match_prints_no_results_message() {
         "expected 'No results found' on stderr, got {stderr:?}"
     );
 }
+
+#[test]
+fn query_unknown_source_errors_with_available_list() {
+    let tmp = tempfile::tempdir().unwrap();
+    seed_local_index(tmp.path());
+
+    // A typo'd --source must fail loudly with an actionable message listing the
+    // available sources, not silently return zero results. Mirrors the MCP
+    // server's up-front validation.
+    let (ok, stdout, stderr) = run(
+        tmp.path(),
+        &["query", "anything", "--local", "--source", "nope"],
+    );
+    assert!(
+        !ok,
+        "unknown --source must exit non-zero; stdout={stdout:?} stderr={stderr:?}"
+    );
+    assert!(
+        stderr.contains("unknown source") && stderr.contains("[t]"),
+        "expected an 'unknown source' error listing available `[t]`, got {stderr:?}"
+    );
+
+    // The --also (multi-query) path must reject it too — this is the path the
+    // old code left unvalidated.
+    let (ok2, _, stderr2) = run(
+        tmp.path(),
+        &[
+            "query", "anything", "--local", "--source", "nope", "--also", "other",
+        ],
+    );
+    assert!(
+        !ok2 && stderr2.contains("unknown source"),
+        "the --also path must also reject an unknown source, got ok={ok2} stderr={stderr2:?}"
+    );
+}

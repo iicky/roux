@@ -822,7 +822,7 @@ impl GraphStore {
         })
     }
 
-    pub fn fetch_nodes(&self, ids: &[String]) -> Result<Vec<Node>> {
+    fn fetch_nodes(&self, ids: &[String]) -> Result<Vec<Node>> {
         if ids.is_empty() {
             return Ok(vec![]);
         }
@@ -921,9 +921,10 @@ impl GraphStore {
         Ok(all_edges)
     }
 
-    /// Load every node in the index (for a global re-resolution pass). Ordered
-    /// deterministically so repeated resolutions break ambiguous-name ties the
-    /// same way every run.
+    /// Load every node in the index, ordered deterministically by
+    /// `(file_path, start_line, id)`. Test-only helper backing the canonical
+    /// dumps in the delta-equivalence suite.
+    #[cfg(test)]
     fn all_nodes(&self) -> Result<Vec<Node>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, kind, name, qualified_name, source_name, language,
@@ -937,9 +938,11 @@ impl GraphStore {
         Ok(nodes)
     }
 
-    /// Load every edge WITH its raw ref_name — including retained unresolved
-    /// edges (sentinel to_id). Unlike fetch_edges (query-scoped, ref-name-free),
-    /// this is the input to a re-resolution pass.
+    /// Load every edge WITH its raw `ref_name`, including retained unresolved
+    /// edges (sentinel `to_id`). Unlike `fetch_edges` (query-scoped,
+    /// ref-name-free), this keeps full edge identity. Test-only helper backing
+    /// the canonical dumps in the delta-equivalence suite.
+    #[cfg(test)]
     fn all_edges_with_refs(&self) -> Result<Vec<Edge>> {
         let mut stmt = self
             .conn
@@ -955,77 +958,6 @@ impl GraphStore {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(edges)
-    }
-
-    /// Re-run reference resolution over all stored edges/nodes. Each edge persists
-    /// its raw ref_name, so resolution is re-runnable after an incremental update
-    /// changes the node set: edges into renamed/moved symbols re-point, and
-    /// previously-unresolved edges connect to newly-added targets. Returns the
-    /// number of edges whose to_id changed.
-    pub fn reresolve(&self) -> Result<usize> {
-        let nodes = self.all_nodes()?;
-        let mut edges = self.all_edges_with_refs()?;
-        let before: Vec<String> = edges.iter().map(|e| e.to_id.clone()).collect();
-        super::extract::resolve_references(&mut edges, &nodes);
-        let changed = edges
-            .iter()
-            .zip(&before)
-            .filter(|(e, b)| e.to_id != **b)
-            .count();
-        let tx = self.conn.unchecked_transaction()?;
-        tx.execute("DELETE FROM edges", [])?;
-        {
-            let mut stmt = tx.prepare_cached(
-                "INSERT OR IGNORE INTO edges (from_id, to_id, kind, ref_name) VALUES (?1, ?2, ?3, ?4)",
-            )?;
-            for e in &edges {
-                stmt.execute(params![e.from_id, e.to_id, e.kind, e.ref_name])?;
-            }
-        }
-        tx.commit()?;
-        Ok(changed)
-    }
-
-    /// Compare stored content hashes against new nodes to find what changed.
-    /// Returns (added, modified, removed) node IDs.
-    pub fn diff_source(
-        &self,
-        source_name: &str,
-        new_nodes: &[super::Node],
-    ) -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
-        // Get stored hashes
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, content_hash FROM nodes WHERE source_name = ?1")?;
-        let stored: HashMap<String, Option<String>> = stmt
-            .query_map(params![source_name], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
-            })?
-            .collect::<rusqlite::Result<HashMap<_, _>>>()?;
-
-        let mut added = Vec::new();
-        let mut modified = Vec::new();
-        let new_ids: std::collections::HashSet<&str> =
-            new_nodes.iter().map(|n| n.id.as_str()).collect();
-
-        for node in new_nodes {
-            match stored.get(&node.id) {
-                None => added.push(node.id.clone()),
-                Some(old_hash) => {
-                    if old_hash.as_deref() != node.content_hash.as_deref() {
-                        modified.push(node.id.clone());
-                    }
-                }
-            }
-        }
-
-        let removed: Vec<String> = stored
-            .keys()
-            .filter(|id| !new_ids.contains(id.as_str()))
-            .cloned()
-            .collect();
-
-        Ok((added, modified, removed))
     }
 
     /// Replace the per-file manifest for a source. Called alongside
@@ -1200,27 +1132,6 @@ impl GraphStore {
         Ok(())
     }
 
-    pub fn set_metadata(&self, key: &str, value: &str) -> Result<()> {
-        self.conn.execute(
-            "INSERT OR REPLACE INTO metadata (key, value) VALUES (?1, ?2)",
-            params![key, value],
-        )?;
-        Ok(())
-    }
-
-    pub fn get_metadata(&self, key: &str) -> Result<Option<String>> {
-        let result = self.conn.query_row(
-            "SELECT value FROM metadata WHERE key = ?1",
-            params![key],
-            |row| row.get(0),
-        );
-        match result {
-            Ok(v) => Ok(Some(v)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
-
     pub fn list_sources(&self) -> Result<Vec<SourceRecord>> {
         let mut stmt = self.conn.prepare(
             "SELECT s.name, s.version, s.language, s.ingested_at,
@@ -1254,8 +1165,8 @@ impl GraphStore {
 fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 /// Delete every fts_nodes row whose id is in `ids`.
@@ -1408,59 +1319,6 @@ pub struct SourceRecord {
     pub origin: Option<String>,
     pub fingerprint: Option<String>,
     pub node_count: usize,
-}
-
-/// Extract only the meaningful symbol names from a generated description.
-/// Strips template words (function, calls, in, class, etc.) and keeps symbol names.
-fn extract_description_keywords(desc: &str) -> String {
-    const DESC_STOPWORDS: &[&str] = &[
-        "function",
-        "method",
-        "class",
-        "struct",
-        "enum",
-        "trait",
-        "impl",
-        "module",
-        "interface",
-        "const",
-        "type",
-        "file",
-        "in",
-        "calls",
-        "called",
-        "by",
-        "uses",
-        "implements",
-        "extends",
-        "decorated",
-        "with",
-        "tested",
-        "and",
-        "the",
-        "a",
-        "an",
-        "of",
-        "for",
-        "to",
-        "from",
-        "is",
-        "are",
-    ];
-
-    desc.split([',', ' '])
-        .map(|w| w.trim())
-        .filter(|w| {
-            !w.is_empty()
-                && w.len() > 2
-                && !DESC_STOPWORDS.contains(w)
-                && !w.ends_with(".rs")
-                && !w.ends_with(".py")
-                && !w.ends_with(".js")
-                && !w.ends_with(".ts")
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 /// Cheap morphological stem variants so NL phrasing matches indexed identifiers:
@@ -2221,41 +2079,6 @@ mod tests {
     }
 
     #[test]
-    fn test_diff_source() {
-        let store = GraphStore::open_in_memory().unwrap();
-
-        let mut n1 = make_node("foo", "function", "test::foo");
-        n1.content_hash = Some("hash_a".to_string());
-        let mut n2 = make_node("bar", "function", "test::bar");
-        n2.content_hash = Some("hash_b".to_string());
-
-        store
-            .upsert_source("test", "dev", "rust", &[n1, n2], &[])
-            .unwrap();
-
-        // New extraction: foo unchanged, bar modified, baz added
-        let mut new_n1 = make_node("foo", "function", "test::foo");
-        new_n1.content_hash = Some("hash_a".to_string());
-        let mut new_n2 = make_node("bar", "function", "test::bar");
-        new_n2.content_hash = Some("hash_b_changed".to_string());
-        let new_n3 = make_node("baz", "function", "test::baz");
-
-        let (added, modified, removed) = store
-            .diff_source("test", &[new_n1, new_n2, new_n3])
-            .unwrap();
-
-        assert_eq!(added.len(), 1, "baz should be added");
-        assert_eq!(modified.len(), 1, "bar should be modified");
-        assert!(removed.is_empty(), "nothing removed");
-
-        // Re-extract without n1 — it should show as removed
-        let mut only_n2 = make_node("bar", "function", "test::bar");
-        only_n2.content_hash = Some("hash_b".to_string());
-        let (_, _, removed2) = store.diff_source("test", &[only_n2]).unwrap();
-        assert_eq!(removed2.len(), 1, "foo should be removed");
-    }
-
-    #[test]
     fn test_hub_expansion_is_capped() {
         // A hub symbol called by hundreds of functions must not drag its entire
         // neighborhood into the working set. Expansion skips *through* nodes
@@ -2333,8 +2156,9 @@ mod tests {
     #[test]
     fn resolve_references_retains_unresolved_with_ref_name() {
         // An edge whose target name never resolves must be RETAINED (not
-        // dropped) with the raw token captured into ref_name, so a later
-        // reresolve() pass can pick it up if the target ever appears.
+        // dropped) with the raw token captured into ref_name, so an incremental
+        // re-extraction (source_graph + reextract_incremental) can re-resolve it
+        // if the target ever appears.
         let caller = make_node("caller", "function", "lib::caller");
         let nodes = vec![caller.clone()];
         let mut edges = vec![Edge {
@@ -2383,66 +2207,6 @@ mod tests {
         assert_eq!(
             edges[0].to_id, target.id,
             "re-running resolution must be idempotent"
-        );
-    }
-
-    #[test]
-    fn reresolve_reconnects_previously_unresolved_edge() {
-        // End-to-end: an edge stored unresolved (target absent) stays
-        // unresolved across a reresolve() pass; once the target is ingested,
-        // a second reresolve() reconnects the SAME stored edge to it.
-        let store = GraphStore::open_in_memory().unwrap();
-        let caller = make_node("caller", "function", "lib::caller");
-        let target = make_node("target", "function", "lib::target");
-        let edge = Edge {
-            from_id: caller.id.clone(),
-            to_id: "__unresolved::target".to_string(),
-            kind: "calls".to_string(),
-            ref_name: Some("target".to_string()),
-        };
-
-        // Target absent: edge is stored unresolved.
-        store
-            .upsert_source(
-                "lib",
-                "1.0",
-                "rust",
-                std::slice::from_ref(&caller),
-                std::slice::from_ref(&edge),
-            )
-            .unwrap();
-
-        let changed = store.reresolve().unwrap();
-        assert_eq!(changed, 0, "nothing to connect to yet");
-        let stored = store.all_edges_with_refs().unwrap();
-        assert_eq!(stored.len(), 1, "unresolved edge must still be stored");
-        assert!(
-            stored[0].to_id.starts_with("__unresolved::"),
-            "got {}",
-            stored[0].to_id
-        );
-        assert_eq!(stored[0].ref_name.as_deref(), Some("target"));
-
-        // Target now present: re-ingest with the same edge, then reresolve.
-        store
-            .upsert_source(
-                "lib",
-                "1.0",
-                "rust",
-                &[caller.clone(), target.clone()],
-                std::slice::from_ref(&edge),
-            )
-            .unwrap();
-        let changed = store.reresolve().unwrap();
-        assert!(
-            changed >= 1,
-            "expected at least one edge to reconnect, got {changed}"
-        );
-        let stored = store.all_edges_with_refs().unwrap();
-        assert_eq!(stored.len(), 1);
-        assert_eq!(
-            stored[0].to_id, target.id,
-            "edge should now point at the newly-present target"
         );
     }
 
@@ -2594,7 +2358,7 @@ mod tests {
         )
         .unwrap();
 
-        let prior = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+        let prior = extract_dir(dir.path(), "s", Some("rust")).unwrap();
         let alpha_before = prior
             .nodes
             .iter()
@@ -2614,7 +2378,7 @@ mod tests {
         )
         .unwrap();
 
-        let new = reextract_incremental(dir.path(), "s", "0", Some("rust"), &prior).unwrap();
+        let new = reextract_incremental(dir.path(), "s", Some("rust"), &prior).unwrap();
         let alpha_after = new
             .nodes
             .iter()
@@ -2673,7 +2437,7 @@ mod tests {
         .unwrap();
         std::fs::write(dir.path().join("src/b/mod.rs"), "pub fn target() {}\n").unwrap();
 
-        let prior = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+        let prior = extract_dir(dir.path(), "s", Some("rust")).unwrap();
 
         let db_dir = tempfile::tempdir().unwrap();
         let delta_store = GraphStore::open(&db_dir.path().join("graph.db")).unwrap();
@@ -2687,7 +2451,7 @@ mod tests {
         )
         .unwrap();
 
-        let new = reextract_incremental(dir.path(), "s", "0", Some("rust"), &prior).unwrap();
+        let new = reextract_incremental(dir.path(), "s", Some("rust"), &prior).unwrap();
         delta_store
             .apply_source_delta("s", "0", "rust", &new.nodes, &new.edges)
             .unwrap();
@@ -2734,7 +2498,7 @@ mod tests {
         )
         .unwrap();
 
-        let prior = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+        let prior = extract_dir(dir.path(), "s", Some("rust")).unwrap();
         assert!(
             prior
                 .edges
@@ -2756,7 +2520,7 @@ mod tests {
         )
         .unwrap();
 
-        let new = reextract_incremental(dir.path(), "s", "0", Some("rust"), &prior).unwrap();
+        let new = reextract_incremental(dir.path(), "s", Some("rust"), &prior).unwrap();
         delta_store
             .apply_source_delta("s", "0", "rust", &new.nodes, &new.edges)
             .unwrap();
@@ -2796,7 +2560,7 @@ mod tests {
         .unwrap();
         std::fs::write(dir.path().join("src/keep_b/mod.rs"), "pub fn gadget() {}\n").unwrap();
 
-        let prior = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+        let prior = extract_dir(dir.path(), "s", Some("rust")).unwrap();
         let gadget_id = prior
             .nodes
             .iter()
@@ -2828,7 +2592,7 @@ mod tests {
         std::fs::remove_file(dir.path().join("src/keep_b/mod.rs")).unwrap();
         std::fs::remove_dir(dir.path().join("src/keep_b")).unwrap();
 
-        let new = reextract_incremental(dir.path(), "s", "0", Some("rust"), &prior).unwrap();
+        let new = reextract_incremental(dir.path(), "s", Some("rust"), &prior).unwrap();
         delta_store
             .apply_source_delta("s", "0", "rust", &new.nodes, &new.edges)
             .unwrap();
@@ -2901,8 +2665,8 @@ mod tests {
         )
         .unwrap();
 
-        let prior1 = extract_dir(dir1.path(), "s1", "0", Some("rust")).unwrap();
-        let g2 = extract_dir(dir2.path(), "s2", "0", Some("rust")).unwrap();
+        let prior1 = extract_dir(dir1.path(), "s1", Some("rust")).unwrap();
+        let g2 = extract_dir(dir2.path(), "s2", Some("rust")).unwrap();
 
         let db_dir = tempfile::tempdir().unwrap();
         let store = GraphStore::open(&db_dir.path().join("graph.db")).unwrap();
@@ -2927,7 +2691,7 @@ mod tests {
             "pub fn one() { let _changed = 1; }\n",
         )
         .unwrap();
-        let new1 = reextract_incremental(dir1.path(), "s1", "0", Some("rust"), &prior1).unwrap();
+        let new1 = reextract_incremental(dir1.path(), "s1", Some("rust"), &prior1).unwrap();
         store
             .apply_source_delta("s1", "0", "rust", &new1.nodes, &new1.edges)
             .unwrap();
@@ -2963,8 +2727,8 @@ mod tests {
         let dir2 = tempfile::tempdir().unwrap();
         std::fs::write(dir2.path().join("lib.rs"), "pub fn two() {}\n").unwrap();
 
-        let g1 = extract_dir(dir1.path(), "s1", "0", Some("rust")).unwrap();
-        let g2 = extract_dir(dir2.path(), "s2", "0", Some("rust")).unwrap();
+        let g1 = extract_dir(dir1.path(), "s1", Some("rust")).unwrap();
+        let g2 = extract_dir(dir2.path(), "s2", Some("rust")).unwrap();
 
         let db_dir = tempfile::tempdir().unwrap();
         let store = GraphStore::open(&db_dir.path().join("graph.db")).unwrap();
@@ -3050,7 +2814,7 @@ mod tests {
         .unwrap();
         std::fs::write(dir.path().join("src/f/mod.rs"), "pub fn to_delete() {}\n").unwrap();
 
-        let full1 = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+        let full1 = extract_dir(dir.path(), "s", Some("rust")).unwrap();
         assert!(
             full1
                 .edges
@@ -3084,7 +2848,7 @@ mod tests {
         // Reconstruct the prior FROM THE DB -- not from the in-memory `full1`
         // -- so the test actually exercises `source_graph`'s DB-order load.
         let prior = store_a.source_graph("s").unwrap();
-        let new = reextract_incremental(dir.path(), "s", "0", Some("rust"), &prior).unwrap();
+        let new = reextract_incremental(dir.path(), "s", Some("rust"), &prior).unwrap();
         store_a
             .apply_source_delta("s", "0", "rust", &new.nodes, &new.edges)
             .unwrap();
@@ -3092,7 +2856,7 @@ mod tests {
 
         // Reference: an independent full rebuild of the current tree into a
         // fresh store.
-        let full2 = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+        let full2 = extract_dir(dir.path(), "s", Some("rust")).unwrap();
         let db_dir_b = tempfile::tempdir().unwrap();
         let store_b = GraphStore::open(&db_dir_b.path().join("graph.db")).unwrap();
         store_b
@@ -3148,7 +2912,7 @@ mod tests {
         .unwrap();
         std::fs::write(dir.path().join("src/b/mod.rs"), "pub fn helper() {}\n").unwrap();
 
-        let full = extract_dir(dir.path(), "s", "0", Some("rust")).unwrap();
+        let full = extract_dir(dir.path(), "s", Some("rust")).unwrap();
         let db_dir = tempfile::tempdir().unwrap();
         let store = GraphStore::open(&db_dir.path().join("graph.db")).unwrap();
         store
@@ -3159,7 +2923,7 @@ mod tests {
         // No filesystem edits at all: reconstruct the prior from the DB and
         // re-extract against the untouched tree.
         let prior = store.source_graph("s").unwrap();
-        let new = reextract_incremental(dir.path(), "s", "0", Some("rust"), &prior).unwrap();
+        let new = reextract_incremental(dir.path(), "s", Some("rust"), &prior).unwrap();
         let stats = store
             .apply_source_delta("s", "0", "rust", &new.nodes, &new.edges)
             .unwrap();

@@ -83,7 +83,6 @@ fn dedup_edges(edges: &mut Vec<Edge>) {
 pub fn extract_dir(
     dir: &Path,
     source_name: &str,
-    source_version: &str,
     language_hint: Option<&str>,
 ) -> Result<FileGraph> {
     let mut all_nodes = Vec::new();
@@ -94,7 +93,6 @@ pub fn extract_dir(
         dir,
         dir,
         source_name,
-        source_version,
         language_hint,
         &mut all_nodes,
         &mut all_edges,
@@ -121,7 +119,6 @@ pub fn extract_dir(
 pub fn extract_file(
     path: &Path,
     source_name: &str,
-    source_version: &str,
     language_hint: Option<&str>,
 ) -> Result<FileGraph> {
     let lang = language_hint
@@ -172,7 +169,6 @@ pub fn extract_file(
         lang,
         &rel_path,
         source_name,
-        source_version,
         &mut nodes,
         &mut edges,
         Some(&file_id),
@@ -225,7 +221,6 @@ fn rel_path_str(path: &Path, base: &Path) -> String {
 pub fn reextract_incremental(
     dir: &Path,
     source_name: &str,
-    source_version: &str,
     language_hint: Option<&str>,
     prior: &FileGraph,
 ) -> Result<FileGraph> {
@@ -303,7 +298,6 @@ pub fn reextract_incremental(
                 &dir.join(&f.path),
                 &f.path,
                 source_name,
-                source_version,
                 language_hint,
                 &mut nodes,
                 &mut edges,
@@ -503,7 +497,6 @@ fn walk_dir(
     dir: &Path,
     base: &Path,
     source_name: &str,
-    source_version: &str,
     language_hint: Option<&str>,
     nodes: &mut Vec<Node>,
     edges: &mut Vec<Edge>,
@@ -560,7 +553,6 @@ fn walk_dir(
                 &path,
                 base,
                 source_name,
-                source_version,
                 language_hint,
                 nodes,
                 edges,
@@ -584,7 +576,6 @@ fn walk_dir(
             &path,
             &rel_path,
             source_name,
-            source_version,
             language_hint,
             nodes,
             edges,
@@ -604,7 +595,6 @@ fn extract_indexed_file(
     path: &Path,
     rel_path: &str,
     source_name: &str,
-    source_version: &str,
     language_hint: Option<&str>,
     nodes: &mut Vec<Node>,
     edges: &mut Vec<Edge>,
@@ -682,7 +672,6 @@ fn extract_indexed_file(
         lang,
         rel_path,
         source_name,
-        source_version,
         nodes,
         edges,
         Some(&file_id),
@@ -733,7 +722,6 @@ fn extract_from_source(
     lang: &str,
     file_path: &str,
     source_name: &str,
-    source_version: &str,
     nodes: &mut Vec<Node>,
     edges: &mut Vec<Edge>,
     file_parent_id: Option<&str>,
@@ -843,7 +831,9 @@ fn extract_from_source(
             let ts_node = root.descendant_for_byte_range(sym.start_byte, sym.end_byte);
 
             // Content hash from symbol source text
-            let source_text = &code_bytes[sym.start_byte..sym.end_byte.min(code_bytes.len())];
+            let start = sym.start_byte.min(code_bytes.len());
+            let end = sym.end_byte.min(code_bytes.len()).max(start);
+            let source_text = &code_bytes[start..end];
             let content_hash = blake3::hash(source_text).to_hex().to_string();
 
             // Enrich with AST-derived metadata
@@ -969,7 +959,6 @@ fn extract_from_source(
             lang,
             file_path,
             source_name,
-            source_version,
             nodes,
             edges,
             file_parent_id,
@@ -1431,7 +1420,9 @@ fn extract_route_registrations(
                 .split(&pattern)
                 .nth(1)
                 .and_then(|r| r.split(['\'', '"']).nth(1));
-            if let Some(path) = route {
+            if let Some(path) = route
+                && path.starts_with('/')
+            {
                 edges.push(Edge {
                     from_id: sym_id.to_string(),
                     to_id: format!("__route::{path}"),
@@ -1477,11 +1468,37 @@ fn infer_test_edges(nodes: &[Node], edges: &mut Vec<Edge>) {
 }
 
 fn is_test_node(node: &Node) -> bool {
-    node.name.starts_with("test_")
-        || node.name.starts_with("Test")
-        || node.name.starts_with("test")
-        || node.file_path.contains("test")
-        || node.file_path.contains("spec")
+    // A symbol is test code if its name follows a test convention (the same set
+    // `extract_tested_name` maps: `test_foo`, `TestFoo`, `testFoo`) or it lives
+    // in a file/dir that is a test by convention. Path matching is by component
+    // and filename pattern, NOT a raw substring — otherwise `latest.rs`,
+    // `attestation/`, or `contest.py` are all misread as tests.
+    extract_tested_name(&node.name).is_some() || is_test_path(&node.file_path)
+}
+
+/// True when `file_path` is a test file or directory by naming convention
+/// across the supported ecosystems: a `tests`/`test`/`spec`/`specs`/`__tests__`
+/// path component, or a filename like `test_*`, `*_test.*`, `*.test.*`,
+/// `*.spec.*`, or `conftest.py`.
+fn is_test_path(file_path: &str) -> bool {
+    let path = std::path::Path::new(file_path);
+    if path.components().any(|c| {
+        matches!(
+            c.as_os_str().to_str(),
+            Some("tests" | "test" | "spec" | "specs" | "__tests__")
+        )
+    }) {
+        return true;
+    }
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    let stem = name.split('.').next().unwrap_or(name);
+    name == "conftest.py"
+        || stem.starts_with("test_")
+        || stem.ends_with("_test")
+        || name.contains(".test.")
+        || name.contains(".spec.")
 }
 
 fn extract_tested_name(test_name: &str) -> Option<String> {
@@ -1891,7 +1908,6 @@ fn extract_node(
     lang: &str,
     file_path: &str,
     source_name: &str,
-    source_version: &str,
     nodes: &mut Vec<Node>,
     edges: &mut Vec<Edge>,
     parent_id: Option<&str>,
@@ -1971,7 +1987,6 @@ fn extract_node(
                 lang,
                 file_path,
                 source_name,
-                source_version,
                 nodes,
                 edges,
                 child_parent,
@@ -1988,7 +2003,6 @@ fn extract_node(
                 lang,
                 file_path,
                 source_name,
-                source_version,
                 nodes,
                 edges,
                 parent_id,
@@ -2886,7 +2900,6 @@ mod tests {
             "rust",
             "test.rs",
             "test",
-            "1.0.0",
             &mut nodes,
             &mut edges,
             None,
@@ -2909,7 +2922,6 @@ mod tests {
             "python",
             "test.py",
             "test",
-            "1.0.0",
             &mut nodes,
             &mut edges,
             None,
@@ -2932,7 +2944,6 @@ mod tests {
             "javascript",
             "test.js",
             "test",
-            "1.0.0",
             &mut nodes,
             &mut edges,
             None,
@@ -2955,7 +2966,6 @@ mod tests {
             "cpp",
             "test.cpp",
             "test",
-            "1.0.0",
             &mut nodes,
             &mut edges,
             None,
@@ -3145,7 +3155,7 @@ class MyModel:
         )
         .unwrap();
 
-        let g = extract_dir(dir.path(), "mylib", "1.0.0", Some("rust")).unwrap();
+        let g = extract_dir(dir.path(), "mylib", Some("rust")).unwrap();
         let file_nodes: Vec<_> = g.nodes.iter().filter(|n| n.kind == "file").collect();
         assert_eq!(file_nodes.len(), 1, "should have one file node");
         assert_eq!(file_nodes[0].name, "lib.rs");
@@ -3352,7 +3362,7 @@ def _private():
         .unwrap();
         std::fs::write(dir.path().join("lib.rs"), "pub fn add() {}\n").unwrap();
 
-        let g = extract_dir(dir.path(), "mylib", "1.0.0", Some("rust")).unwrap();
+        let g = extract_dir(dir.path(), "mylib", Some("rust")).unwrap();
 
         // Should have doc_section nodes
         let doc_sections: Vec<_> = g.nodes.iter().filter(|n| n.kind == "doc_section").collect();
@@ -3386,7 +3396,7 @@ def _private():
             "pub fn helper() { beta(); }\npub fn beta() {}\n",
         )
         .unwrap();
-        let g = extract_dir(dir.path(), "demo", "dev", Some("rust")).unwrap();
+        let g = extract_dir(dir.path(), "demo", Some("rust")).unwrap();
 
         let helpers: Vec<&Node> = g
             .nodes
@@ -3442,7 +3452,7 @@ def _private():
              int add(int a, int b, int c) { return a + b + c; }\n",
         )
         .unwrap();
-        let g = extract_dir(dir.path(), "demo", "dev", Some("cpp")).unwrap();
+        let g = extract_dir(dir.path(), "demo", Some("cpp")).unwrap();
 
         let adds: Vec<&Node> = g.nodes.iter().filter(|n| n.name == "add").collect();
         assert_eq!(adds.len(), 3, "three overloads should yield three nodes");
@@ -3462,7 +3472,7 @@ def _private():
              int compute(int x) {\n    return x * 2;\n}\n",
         )
         .unwrap();
-        let g = extract_dir(dir.path(), "demo", "dev", Some("cpp")).unwrap();
+        let g = extract_dir(dir.path(), "demo", Some("cpp")).unwrap();
 
         let computes: Vec<&Node> = g.nodes.iter().filter(|n| n.name == "compute").collect();
         assert_eq!(
@@ -3488,7 +3498,7 @@ def _private():
         std::fs::create_dir_all(dir.path().join("target")).unwrap();
         std::fs::write(dir.path().join("target/junk.rs"), "pub fn z() {}\n").unwrap();
 
-        let manifest = extract_dir(dir.path(), "demo", "dev", None).unwrap().files;
+        let manifest = extract_dir(dir.path(), "demo", None).unwrap().files;
         let listed = list_source_files(dir.path(), None).unwrap();
 
         let as_set = |v: &[FileMeta]| {
@@ -3550,7 +3560,7 @@ def expensive():
         )
         .unwrap();
 
-        let g = extract_dir(dir.path(), "mylib", "1.0.0", Some("rust")).unwrap();
+        let g = extract_dir(dir.path(), "mylib", Some("rust")).unwrap();
         let test_edges: Vec<_> = g.edges.iter().filter(|e| e.kind == "tests").collect();
         assert!(
             !test_edges.is_empty(),
@@ -3567,7 +3577,7 @@ def expensive():
         )
         .unwrap();
 
-        let g = extract_dir(dir.path(), "mylib", "1.0.0", Some("rust")).unwrap();
+        let g = extract_dir(dir.path(), "mylib", Some("rust")).unwrap();
         let exports: Vec<_> = g.edges.iter().filter(|e| e.kind == "exports").collect();
         assert!(
             !exports.is_empty(),
@@ -3593,7 +3603,7 @@ def expensive():
         )
         .unwrap();
 
-        let g = extract_dir(dir.path(), "inf", "0", Some("rust")).unwrap();
+        let g = extract_dir(dir.path(), "inf", Some("rust")).unwrap();
         let id_to_name: std::collections::HashMap<&str, &str> = g
             .nodes
             .iter()
@@ -3634,7 +3644,7 @@ def expensive():
         std::fs::write(dir.path().join("b_mod.rs"), "pub fn helper() {}\n").unwrap();
         std::fs::write(dir.path().join("caller.rs"), "pub fn test_helper() {}\n").unwrap();
 
-        let g = extract_dir(dir.path(), "inf", "0", Some("rust")).unwrap();
+        let g = extract_dir(dir.path(), "inf", Some("rust")).unwrap();
 
         let test_helper = g
             .nodes
@@ -3673,7 +3683,7 @@ def expensive():
         )
         .unwrap();
 
-        let g = extract_dir(dir.path(), "inf", "0", Some("python")).unwrap();
+        let g = extract_dir(dir.path(), "inf", Some("python")).unwrap();
 
         let base = g
             .nodes
@@ -3731,7 +3741,7 @@ def expensive():
         )
         .unwrap();
 
-        let g = extract_dir(dir.path(), "inf", "0", Some("rust")).unwrap();
+        let g = extract_dir(dir.path(), "inf", Some("rust")).unwrap();
         let test_orphan = g
             .nodes
             .iter()
@@ -3790,7 +3800,7 @@ def expensive():
         std::fs::write(dir.path().join("src/b/mod.rs"), "pub fn target() {}\n").unwrap();
         std::fs::write(dir.path().join("README.md"), "# Demo\n").unwrap();
 
-        let prior = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+        let prior = extract_dir(dir.path(), "eq", Some("rust")).unwrap();
 
         std::fs::write(
             dir.path().join("src/b/mod.rs"),
@@ -3798,9 +3808,8 @@ def expensive():
         )
         .unwrap();
 
-        let incremental =
-            reextract_incremental(dir.path(), "eq", "0", Some("rust"), &prior).unwrap();
-        let full = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+        let incremental = reextract_incremental(dir.path(), "eq", Some("rust"), &prior).unwrap();
+        let full = extract_dir(dir.path(), "eq", Some("rust")).unwrap();
 
         assert_eq!(sorted_graph(&incremental), sorted_graph(&full));
 
@@ -3837,7 +3846,7 @@ def expensive():
         .unwrap();
         std::fs::write(dir.path().join("README.md"), "# Demo\n").unwrap();
 
-        let prior = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+        let prior = extract_dir(dir.path(), "eq", Some("rust")).unwrap();
         let invoke = prior
             .nodes
             .iter()
@@ -3859,9 +3868,8 @@ def expensive():
         )
         .unwrap();
 
-        let incremental =
-            reextract_incremental(dir.path(), "eq", "0", Some("rust"), &prior).unwrap();
-        let full = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+        let incremental = reextract_incremental(dir.path(), "eq", Some("rust"), &prior).unwrap();
+        let full = extract_dir(dir.path(), "eq", Some("rust")).unwrap();
 
         assert_eq!(sorted_graph(&incremental), sorted_graph(&full));
 
@@ -3908,7 +3916,7 @@ def expensive():
         .unwrap();
         std::fs::write(dir.path().join("README.md"), "# Demo\n").unwrap();
 
-        let prior = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+        let prior = extract_dir(dir.path(), "eq", Some("rust")).unwrap();
 
         std::fs::write(
             dir.path().join("src/aaa_changed/mod.rs"),
@@ -3916,9 +3924,8 @@ def expensive():
         )
         .unwrap();
 
-        let incremental =
-            reextract_incremental(dir.path(), "eq", "0", Some("rust"), &prior).unwrap();
-        let full = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+        let incremental = reextract_incremental(dir.path(), "eq", Some("rust"), &prior).unwrap();
+        let full = extract_dir(dir.path(), "eq", Some("rust")).unwrap();
 
         assert_eq!(sorted_graph(&incremental), sorted_graph(&full));
     }
@@ -3939,7 +3946,7 @@ def expensive():
         )
         .unwrap();
 
-        let prior = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+        let prior = extract_dir(dir.path(), "eq", Some("rust")).unwrap();
 
         std::fs::write(
             dir.path().join("README.md"),
@@ -3947,9 +3954,8 @@ def expensive():
         )
         .unwrap();
 
-        let incremental =
-            reextract_incremental(dir.path(), "eq", "0", Some("rust"), &prior).unwrap();
-        let full = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+        let incremental = reextract_incremental(dir.path(), "eq", Some("rust"), &prior).unwrap();
+        let full = extract_dir(dir.path(), "eq", Some("rust")).unwrap();
 
         assert_eq!(sorted_graph(&incremental), sorted_graph(&full));
 
@@ -3985,7 +3991,7 @@ def expensive():
         std::fs::write(dir.path().join("src/keep_b/mod.rs"), "pub fn doomed() {}\n").unwrap();
         std::fs::write(dir.path().join("README.md"), "# Demo\n").unwrap();
 
-        let prior = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+        let prior = extract_dir(dir.path(), "eq", Some("rust")).unwrap();
         assert!(
             prior
                 .edges
@@ -3999,9 +4005,8 @@ def expensive():
         std::fs::remove_file(dir.path().join("src/keep_b/mod.rs")).unwrap();
         std::fs::remove_dir(dir.path().join("src/keep_b")).unwrap();
 
-        let incremental =
-            reextract_incremental(dir.path(), "eq", "0", Some("rust"), &prior).unwrap();
-        let full = extract_dir(dir.path(), "eq", "0", Some("rust")).unwrap();
+        let incremental = reextract_incremental(dir.path(), "eq", Some("rust"), &prior).unwrap();
+        let full = extract_dir(dir.path(), "eq", Some("rust")).unwrap();
 
         assert_eq!(sorted_graph(&incremental), sorted_graph(&full));
 
@@ -4086,6 +4091,118 @@ def expensive():
                 .iter()
                 .any(|e| e.from_id == caller_id && e.kind == "calls"),
             "the valid caller -> callee edge must survive: {edges:?}"
+        );
+    }
+
+    #[test]
+    fn is_test_path_matches_conventions_not_substrings() {
+        // Real test files/dirs by convention are recognized.
+        for p in [
+            "tests/foo.rs",
+            "src/__tests__/x.js",
+            "spec/y.rb",
+            "test_orders.py",
+            "orders_test.go",
+            "app.test.ts",
+            "app.spec.js",
+            "conftest.py",
+        ] {
+            assert!(is_test_path(p), "{p} should be a test path");
+        }
+        // Production paths whose names merely CONTAIN "test"/"spec" as a
+        // substring must NOT be misread as tests (the old `.contains` bug).
+        for p in [
+            "src/latest.rs",
+            "src/attestation/verify.rs",
+            "src/contest.py",
+            "lib/fastest.go",
+            "respec/config.ts",
+        ] {
+            assert!(!is_test_path(p), "{p} must NOT be a test path");
+        }
+    }
+
+    #[test]
+    fn is_test_node_combines_name_and_path() {
+        let in_file = |name: &str, path: &str| {
+            let mut n = tnode(name, "function", &format!("lib::{name}"));
+            n.file_path = path.to_string();
+            n
+        };
+        // Test by name convention, in a non-test file.
+        assert!(is_test_node(&in_file("test_orders", "src/orders.rs")));
+        assert!(is_test_node(&in_file("TestOrders", "src/orders.go")));
+        // Test by path convention, with an ordinary name.
+        assert!(is_test_node(&in_file("compute", "tests/orders.rs")));
+        // Neither: a production symbol in a `latest` file, and a `testable_*`
+        // name that is not a test convention.
+        assert!(!is_test_node(&in_file("compute", "src/latest.rs")));
+        assert!(!is_test_node(&in_file("testable_config", "src/config.rs")));
+    }
+
+    #[test]
+    fn route_edges_require_slash_paths() {
+        // A router call with a real "/"-prefixed path emits a routes edge; a
+        // same-named method on a non-router with a non-path arg does not.
+        let g = extract_js(
+            "function setup() {\n  app.get(\"/users\", handler);\n  logger.get(\"cache_key\");\n}\n",
+        );
+        let routes: Vec<&Edge> = g.edges.iter().filter(|e| e.kind == "routes").collect();
+        assert!(
+            routes.iter().any(|e| e.to_id == "__route::/users"),
+            "expected a route edge for /users, got {routes:?}"
+        );
+        assert!(
+            !routes.iter().any(|e| e.to_id.contains("cache_key")),
+            "logger.get(\"cache_key\") must not produce a route edge: {routes:?}"
+        );
+    }
+
+    #[test]
+    fn import_edges_are_extracted() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("lib.rs"),
+            "use std::collections::HashMap;\npub fn f() -> HashMap<u8, u8> { HashMap::new() }\n",
+        )
+        .unwrap();
+        let g = extract_dir(dir.path(), "demo", Some("rust")).unwrap();
+        assert!(
+            g.edges.iter().any(|e| e.kind == "imports"),
+            "expected an imports edge from the `use` statement: {:?}",
+            g.edges
+        );
+    }
+
+    #[test]
+    fn raise_edges_are_extracted() {
+        let g = extract_python("def f():\n    raise ValueError(\"bad\")\n");
+        assert!(
+            g.edges
+                .iter()
+                .any(|e| e.kind == "raises" && e.to_id.contains("ValueError")),
+            "expected a raises edge naming ValueError: {:?}",
+            g.edges
+        );
+    }
+
+    #[test]
+    fn bash_functions_are_extracted() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("script.sh"),
+            "#!/usr/bin/env bash\ngreet() {\n  echo hi\n}\nfunction farewell {\n  echo bye\n}\n",
+        )
+        .unwrap();
+        let g = extract_dir(dir.path(), "sh", Some("bash")).unwrap();
+        let names: Vec<&str> = g.nodes.iter().map(|n| n.name.as_str()).collect();
+        assert!(
+            names.contains(&"greet"),
+            "expected greet fn node: {names:?}"
+        );
+        assert!(
+            names.contains(&"farewell"),
+            "expected farewell fn node: {names:?}"
         );
     }
 }

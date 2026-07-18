@@ -26,7 +26,7 @@ fn extract_deep_on_stack(stack_bytes: usize, depth: usize) -> bool {
 
     thread::Builder::new()
         .stack_size(stack_bytes)
-        .spawn(move || extract_dir(&path, "deep", "0.0.0", Some("rust")).is_ok())
+        .spawn(move || extract_dir(&path, "deep", Some("rust")).is_ok())
         .unwrap()
         .join()
         .expect("extraction thread must not abort")

@@ -337,7 +337,7 @@ fn run_persona(persona: &Persona) -> Option<PersonaResult> {
     let store = GraphStore::open_in_memory().unwrap();
 
     let t0 = Instant::now();
-    let graph = extract::extract_dir(path, persona.name, "dev", Some(persona.language)).unwrap();
+    let graph = extract::extract_dir(path, persona.name, Some(persona.language)).unwrap();
     let extract_ms = t0.elapsed().as_millis();
 
     let node_count = graph.nodes.len();

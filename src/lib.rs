@@ -24,7 +24,7 @@
 //! - [`artifact`], [`lockfile`], and [`fingerprint`] — index export, dependency
 //!   tracking, and change detection.
 
-#![allow(dead_code, clippy::too_many_arguments, clippy::only_used_in_recursion)]
+#![allow(clippy::too_many_arguments, clippy::only_used_in_recursion)]
 
 pub mod artifact;
 pub mod cli;

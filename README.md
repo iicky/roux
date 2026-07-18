@@ -2,6 +2,9 @@
 
 **the base your coding agents build on**
 
+[![CI](https://github.com/iicky/roux/actions/workflows/ci.yaml/badge.svg)](https://github.com/iicky/roux/actions/workflows/ci.yaml)
+[![codecov](https://codecov.io/gh/iicky/roux/graph/badge.svg)](https://codecov.io/gh/iicky/roux)
+
 `roux` is a single-binary, CPU-only code retrieval tool for AI coding agents. It
 builds a graph of your code and its dependencies with [tree-sitter], indexes it
 with full-text (BM25) search, and ranks results with Personalized PageRank over

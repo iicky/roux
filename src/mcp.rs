@@ -8,7 +8,7 @@ use anyhow::Result;
 use percent_encoding::percent_decode_str;
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
-    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    handler::server::wrapper::Parameters,
     model::{
         Annotated, CallToolResult, Content, Implementation, ListResourceTemplatesResult,
         PaginatedRequestParams, RawResourceTemplate, ReadResourceRequestParams, ReadResourceResult,
@@ -52,16 +52,12 @@ pub struct QueryArgs {
 #[derive(Clone)]
 pub struct RouxServer {
     store_path: PathBuf,
-    tool_router: ToolRouter<RouxServer>,
 }
 
 #[tool_router]
 impl RouxServer {
     pub fn new(store_path: PathBuf) -> Self {
-        Self {
-            store_path,
-            tool_router: Self::tool_router(),
-        }
+        Self { store_path }
     }
 
     fn open_store(&self) -> Result<GraphStore, McpError> {
@@ -186,9 +182,9 @@ impl ServerHandler for RouxServer {
                 "One-shot code-context preprocessor: reads a compact ranked skeleton \
                  (qualified name, file:line, signature, one-line doc) of the symbols most \
                  relevant to {query}. Read once up front and keep in context instead of \
-                 calling roux_query per turn — the block is prompt-cacheable and holds \
-                 agent input tokens below a no-tool baseline. {query} is a natural-language \
-                 or keyword search string, URL-encoded."
+                 calling roux_query per turn — the block is deterministic and \
+                 prompt-cacheable, so it is read once and reused cheaply on later \
+                 turns. {query} is a natural-language or keyword search string, URL-encoded."
                     .to_string(),
             ),
             mime_type: Some("text/plain".to_string()),

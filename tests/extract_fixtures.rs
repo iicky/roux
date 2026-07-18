@@ -45,7 +45,7 @@ fn id_to_name(nodes: &[Node]) -> std::collections::HashMap<&str, &str> {
 
 #[test]
 fn rust_basic_extracts_module_structure() {
-    let g = extract_dir(&fixture("rust/basic"), "tiny-graph", "0.1.0", Some("rust"))
+    let g = extract_dir(&fixture("rust/basic"), "tiny-graph", Some("rust"))
         .expect("extract should succeed on valid fixture");
 
     let all = names(&g.nodes);
@@ -81,7 +81,7 @@ fn rust_basic_extracts_module_structure() {
 
 #[test]
 fn rust_basic_extracts_trait_and_impl_edges() {
-    let g = extract_dir(&fixture("rust/basic"), "tiny-graph", "0.1.0", Some("rust"))
+    let g = extract_dir(&fixture("rust/basic"), "tiny-graph", Some("rust"))
         .expect("extract should succeed");
 
     let implements = edges_of_kind(&g.edges, "implements");
@@ -102,7 +102,7 @@ fn rust_basic_extracts_trait_and_impl_edges() {
 
 #[test]
 fn rust_basic_extracts_call_edges() {
-    let g = extract_dir(&fixture("rust/basic"), "tiny-graph", "0.1.0", Some("rust"))
+    let g = extract_dir(&fixture("rust/basic"), "tiny-graph", Some("rust"))
         .expect("extract should succeed");
 
     let calls = edges_of_kind(&g.edges, "calls");
@@ -121,7 +121,6 @@ fn rust_adversarial_does_not_panic() {
     let g = extract_dir(
         &fixture("rust/adversarial"),
         "rust-adversarial",
-        "0.1.0",
         Some("rust"),
     )
     .expect("extract should not error on a directory of malformed files");
@@ -148,7 +147,6 @@ fn rust_adversarial_unicode_identifiers_extracted() {
     let g = extract_dir(
         &fixture("rust/adversarial"),
         "rust-adversarial",
-        "0.1.0",
         Some("rust"),
     )
     .expect("extract should succeed");
@@ -170,7 +168,6 @@ fn rust_adversarial_crlf_and_bom_handled() {
     let g = extract_dir(
         &fixture("rust/adversarial"),
         "rust-adversarial",
-        "0.1.0",
         Some("rust"),
     )
     .expect("extract should succeed");
@@ -192,7 +189,6 @@ fn rust_adversarial_huge_line_does_not_explode() {
     let g = extract_dir(
         &fixture("rust/adversarial"),
         "rust-adversarial",
-        "0.1.0",
         Some("rust"),
     )
     .expect("extract should succeed");
@@ -208,13 +204,8 @@ fn rust_adversarial_huge_line_does_not_explode() {
 
 #[test]
 fn python_basic_extracts_classes_and_inheritance() {
-    let g = extract_dir(
-        &fixture("python/basic"),
-        "tiny-py-pkg",
-        "0.1.0",
-        Some("python"),
-    )
-    .expect("extract should succeed");
+    let g = extract_dir(&fixture("python/basic"), "tiny-py-pkg", Some("python"))
+        .expect("extract should succeed");
 
     let all = names(&g.nodes);
 
@@ -236,13 +227,8 @@ fn python_basic_extracts_classes_and_inheritance() {
 
 #[test]
 fn python_basic_extracts_inherits_edge() {
-    let g = extract_dir(
-        &fixture("python/basic"),
-        "tiny-py-pkg",
-        "0.1.0",
-        Some("python"),
-    )
-    .expect("extract should succeed");
+    let g = extract_dir(&fixture("python/basic"), "tiny-py-pkg", Some("python"))
+        .expect("extract should succeed");
 
     let inherits = edges_of_kind(&g.edges, "inherits");
     let id_name = id_to_name(&g.nodes);
@@ -267,7 +253,6 @@ fn python_adversarial_does_not_panic() {
     let g = extract_dir(
         &fixture("python/adversarial"),
         "py-adversarial",
-        "0.1.0",
         Some("python"),
     )
     .expect("extract should not error on adversarial dir");
@@ -292,7 +277,6 @@ fn python_adversarial_unicode_identifiers_extracted() {
     let g = extract_dir(
         &fixture("python/adversarial"),
         "py-adversarial",
-        "0.1.0",
         Some("python"),
     )
     .expect("extract should succeed");
@@ -312,7 +296,6 @@ fn python_adversarial_crlf_and_bom_handled() {
     let g = extract_dir(
         &fixture("python/adversarial"),
         "py-adversarial",
-        "0.1.0",
         Some("python"),
     )
     .expect("extract should succeed");
@@ -332,13 +315,8 @@ fn python_adversarial_crlf_and_bom_handled() {
 
 #[test]
 fn typescript_basic_extracts_classes_interfaces_types() {
-    let g = extract_dir(
-        &fixture("typescript/basic"),
-        "tiny-ts",
-        "0.1.0",
-        Some("typescript"),
-    )
-    .expect("extract should succeed");
+    let g = extract_dir(&fixture("typescript/basic"), "tiny-ts", Some("typescript"))
+        .expect("extract should succeed");
 
     let all = names(&g.nodes);
 
@@ -375,7 +353,6 @@ fn typescript_adversarial_does_not_panic() {
     let g = extract_dir(
         &fixture("typescript/adversarial"),
         "ts-adversarial",
-        "0.1.0",
         Some("typescript"),
     )
     .expect("extract should not error");
@@ -403,8 +380,8 @@ fn typescript_adversarial_does_not_panic() {
 
 #[test]
 fn go_basic_extracts_structs_interfaces_methods() {
-    let g = extract_dir(&fixture("go/basic"), "tiny-go", "0.1.0", Some("go"))
-        .expect("extract should succeed");
+    let g =
+        extract_dir(&fixture("go/basic"), "tiny-go", Some("go")).expect("extract should succeed");
 
     let all = names(&g.nodes);
 
@@ -422,13 +399,8 @@ fn go_basic_extracts_structs_interfaces_methods() {
 
 #[test]
 fn go_adversarial_does_not_panic() {
-    let g = extract_dir(
-        &fixture("go/adversarial"),
-        "go-adversarial",
-        "0.1.0",
-        Some("go"),
-    )
-    .expect("extract should not error");
+    let g = extract_dir(&fixture("go/adversarial"), "go-adversarial", Some("go"))
+        .expect("extract should not error");
 
     let files = names_of_kind(&g.nodes, "file");
     for expected in ["malformed.go", "empty.go", "bom.go", "crlf.go"] {
@@ -453,7 +425,7 @@ fn go_adversarial_does_not_panic() {
 
 #[test]
 fn cpp_basic_extracts_classes_methods_namespace() {
-    let g = extract_dir(&fixture("cpp/basic"), "tiny-cpp", "0.1.0", Some("cpp"))
+    let g = extract_dir(&fixture("cpp/basic"), "tiny-cpp", Some("cpp"))
         .expect("extract should succeed");
 
     let all = names(&g.nodes);
@@ -474,7 +446,7 @@ fn cpp_basic_extracts_classes_methods_namespace() {
 
 #[test]
 fn cpp_basic_extracts_inherits_edge() {
-    let g = extract_dir(&fixture("cpp/basic"), "tiny-cpp", "0.1.0", Some("cpp"))
+    let g = extract_dir(&fixture("cpp/basic"), "tiny-cpp", Some("cpp"))
         .expect("extract should succeed");
 
     let inherits = edges_of_kind(&g.edges, "inherits");
@@ -495,13 +467,8 @@ fn cpp_basic_extracts_inherits_edge() {
 
 #[test]
 fn cpp_adversarial_does_not_panic() {
-    let g = extract_dir(
-        &fixture("cpp/adversarial"),
-        "cpp-adversarial",
-        "0.1.0",
-        Some("cpp"),
-    )
-    .expect("extract should not error");
+    let g = extract_dir(&fixture("cpp/adversarial"), "cpp-adversarial", Some("cpp"))
+        .expect("extract should not error");
 
     let files = names_of_kind(&g.nodes, "file");
     for expected in ["malformed.cpp", "empty.cpp", "bom.cpp", "crlf.cpp"] {
@@ -521,8 +488,8 @@ fn cpp_adversarial_does_not_panic() {
 #[test]
 fn markdown_basic_extracts_doc_sections() {
     // Markdown doesn't need a language hint; walk_dir handles .md specially.
-    let g = extract_dir(&fixture("markdown/basic"), "tiny-md", "0.1.0", None)
-        .expect("extract should succeed");
+    let g =
+        extract_dir(&fixture("markdown/basic"), "tiny-md", None).expect("extract should succeed");
 
     let all = names(&g.nodes);
     let files = names_of_kind(&g.nodes, "file");
@@ -544,13 +511,8 @@ fn markdown_basic_extracts_doc_sections() {
 
 #[test]
 fn markdown_adversarial_does_not_panic() {
-    let g = extract_dir(
-        &fixture("markdown/adversarial"),
-        "md-adversarial",
-        "0.1.0",
-        None,
-    )
-    .expect("extract should not error on adversarial markdown");
+    let g = extract_dir(&fixture("markdown/adversarial"), "md-adversarial", None)
+        .expect("extract should not error on adversarial markdown");
 
     let files = names_of_kind(&g.nodes, "file");
     for expected in ["uneven_headings.md", "unclosed_codeblock.md", "empty.md"] {

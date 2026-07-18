@@ -333,7 +333,7 @@ pub fn search_result_to_json(result: &crate::graph::store::SearchResult) -> serd
 }
 
 /// JSON shape for `roux list`, produced by the CLI list handler.
-pub fn list_rows_to_json(
+fn list_rows_to_json(
     rows: &[(crate::graph::store::SourceRecord, Status, String)],
 ) -> serde_json::Value {
     let arr: Vec<serde_json::Value> = rows
@@ -441,7 +441,7 @@ fn index_project(
         .unwrap_or("project");
     let file_graph = {
         let _spin = output::spinner(format!("Indexing local source as '{project_name}'..."));
-        graph::extract::extract_dir(dir, project_name, "dev", None)?
+        graph::extract::extract_dir(dir, project_name, None)?
     };
     if file_graph.nodes.is_empty() {
         output::warn("No indexable source found");
@@ -467,15 +467,6 @@ fn index_project(
             file_graph.nodes.len(),
             file_graph.edges.len()
         ));
-    }
-
-    // 3. Lockfile hash for staleness detection — only when a manifest exists.
-    if let Some(project) = &project
-        && let Ok(content) = std::fs::read(&project.lockfile)
-    {
-        let hash = blake3::hash(&content).to_hex().to_string();
-        store.set_metadata("lockfile_hash", &hash)?;
-        store.set_metadata("lockfile_path", &project.lockfile.to_string_lossy())?;
     }
 
     Ok(())
@@ -597,18 +588,20 @@ fn extract_crate_with_timeout(name: &str, version: &str, timeout: Duration) -> C
     // Extraction recurses over the syntax tree as deep as the source nests, so
     // this worker needs the same large stack `main` reserves — the default
     // ~2 MB thread stack overflows on deeply nested dependency ASTs.
-    thread::Builder::new()
+    let spawn_result = thread::Builder::new()
         .stack_size(crate::settings::get().worker_stack_bytes)
         .spawn(move || {
             let result = (|| -> Result<(String, FileGraph)> {
                 let (dir, resolved) =
                     crate::source::crate_download::download_crate(&name, &version)?;
-                let graph = graph::extract::extract_dir(&dir, &name, &resolved, Some("rust"))?;
+                let graph = graph::extract::extract_dir(&dir, &name, Some("rust"))?;
                 Ok((resolved, graph))
             })();
             let _ = tx.send(result);
-        })
-        .expect("failed to spawn extraction worker");
+        });
+    if let Err(e) = spawn_result {
+        return CrateOutcome::Err(anyhow::anyhow!("failed to spawn extraction worker: {e}"));
+    }
     match rx.recv_timeout(timeout) {
         Ok(Ok((version, graph))) => CrateOutcome::Ok { version, graph },
         Ok(Err(e)) => CrateOutcome::Err(e),
@@ -725,12 +718,12 @@ fn add_one(
 
     let (file_graph, source_kind, origin, fingerprint) = match &source.kind {
         SourceKind::LocalPath(path) => {
-            let fg = graph::extract::extract_dir(path, &source.name, &source_version, hint)?;
+            let fg = graph::extract::extract_dir(path, &source.name, hint)?;
             let fp = crate::fingerprint::fingerprint_dir(path).ok();
             (fg, "path", path.to_str().map(String::from), fp)
         }
         SourceKind::File(path) => {
-            let fg = graph::extract::extract_file(path, &source.name, &source_version, hint)?;
+            let fg = graph::extract::extract_file(path, &source.name, hint)?;
             let fp = crate::fingerprint::fingerprint_file(path).ok();
             (fg, "file", path.to_str().map(String::from), fp)
         }
@@ -739,8 +732,7 @@ fn add_one(
             let (dir, resolved_version) =
                 crate::source::crate_download::download_crate(crate_name, version_str)?;
             source_version = resolved_version.clone();
-            let fg =
-                graph::extract::extract_dir(&dir, &source.name, &source_version, Some("rust"))?;
+            let fg = graph::extract::extract_dir(&dir, &source.name, Some("rust"))?;
             (
                 fg,
                 "crate",
@@ -772,6 +764,24 @@ fn add_one(
     Ok(file_graph.nodes.len())
 }
 
+/// Open an existing index at `path`, or bail with an actionable message when it
+/// is absent. `hint` is appended after the path (a "Run `roux …`" nudge, or "").
+/// `is_artifact` runs the portable-artifact compatibility check first — the
+/// `--db` path, where a schema mismatch needs a distinct, upgrade-oriented error.
+fn open_existing_store(
+    path: &std::path::Path,
+    is_artifact: bool,
+    hint: &str,
+) -> Result<GraphStore> {
+    if !path.exists() {
+        anyhow::bail!("no index found at {}{hint}", path.display());
+    }
+    if is_artifact {
+        crate::artifact::check_artifact_compatibility(path)?;
+    }
+    GraphStore::open(path)
+}
+
 fn cmd_query(
     config: &Config,
     query: &str,
@@ -789,18 +799,22 @@ fn cmd_query(
         config.resolve_store_path(StoreScope::from_flags(local, global))
     };
 
-    if !store_path.exists() {
-        anyhow::bail!(
-            "no index found at {}. Run `roux init` or `roux add` first.",
-            store_path.display()
-        );
+    let store = open_existing_store(
+        &store_path,
+        db.is_some(),
+        ". Run `roux init` or `roux add` first.",
+    )?;
+    // Validate --source up front so an unknown name gives an actionable error
+    // listing what's available, in both the scoped and multi-query paths
+    // (mirrors the MCP server). Without this, the --also path silently returns
+    // zero results for a typo'd source.
+    if let Some(src) = source {
+        let known = store.list_sources()?;
+        if !known.iter().any(|s| s.name == src) {
+            let names: Vec<&str> = known.iter().map(|s| s.name.as_str()).collect();
+            anyhow::bail!("unknown source {src:?}; available: [{}]", names.join(", "));
+        }
     }
-
-    if db.is_some() {
-        crate::artifact::check_artifact_compatibility(&store_path)?;
-    }
-
-    let store = GraphStore::open(&store_path)?;
     output::detail(format!("index: {} (top {top})", store_path.display()));
     let result = if also.is_empty() {
         store.search_scoped(query, top, source)?
@@ -849,10 +863,8 @@ fn cmd_query(
             // Compact, deterministic, prompt-prefix-ready block for use as a
             // one-shot context preprocessor: inject roux's ranked hits
             // into an agent's prompt prefix instead of exposing a live tool.
-            // Measured to cut a capable agent's input tokens ~20-40% with no
-            // accuracy loss. Fields kept minimal on purpose (no edges/scores/
-            // bodies — all measured neutral-to-harmful); the block is stable
-            // run-to-run so it caches in the prompt prefix.
+            // Fields kept minimal on purpose (no edges/scores/bodies); the
+            // block is stable run-to-run so it caches cleanly in the prompt prefix.
             print!("{}", render_skeleton(&result));
         }
         QueryFormat::Compact => {
@@ -1063,7 +1075,7 @@ fn compact_neighbor_names<'a>(
 
 /// Staleness verdict for an indexed source.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Status {
+pub(crate) enum Status {
     /// Indexed content still matches the origin.
     Fresh,
     /// Origin has drifted — re-index needed. Carries a short reason.
@@ -1090,7 +1102,7 @@ impl Status {
 
 /// Check staleness using only local filesystem signals. Crate/URL sources
 /// return Unknown — their upstream-staleness check lives in `roux sync`.
-pub fn check_source_status(record: &crate::graph::store::SourceRecord) -> Status {
+fn check_source_status(record: &crate::graph::store::SourceRecord) -> Status {
     match record.source_kind.as_str() {
         "path" => {
             let Some(origin) = record.origin.as_deref() else {
@@ -1241,11 +1253,7 @@ fn cmd_list(
     let mut rows: Vec<(crate::graph::store::SourceRecord, Status, String)> = Vec::new();
 
     if let Some(path) = db {
-        if !path.exists() {
-            anyhow::bail!("no index found at {}", path.display());
-        }
-        crate::artifact::check_artifact_compatibility(path)?;
-        let store = GraphStore::open(path)?;
+        let store = open_existing_store(path, true, "")?;
         for src in store.list_sources()? {
             let status = check_source_status(&src);
             let display_name = src.name.clone();
@@ -1427,14 +1435,7 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
     let project = crate::lockfile::detect_project(&cwd);
 
     let store_path = config.resolve_store_path(StoreScope::Auto);
-    if !store_path.exists() {
-        anyhow::bail!(
-            "no index found at {}. Run `roux init` or `roux add` first.",
-            store_path.display()
-        );
-    }
-
-    let store = GraphStore::open(&store_path)?;
+    let store = open_existing_store(&store_path, false, ". Run `roux init` or `roux add` first.")?;
     let sources = store.list_sources()?;
 
     // Map crate name → expected version from the lockfile (if any). The
@@ -1565,12 +1566,7 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
                     continue;
                 };
                 let path = std::path::Path::new(origin);
-                match graph::extract::extract_dir(
-                    path,
-                    &src.name,
-                    &src.version,
-                    Some(&src.language),
-                ) {
+                match graph::extract::extract_dir(path, &src.name, Some(&src.language)) {
                     Ok(fg) => {
                         let fp = crate::fingerprint::fingerprint_dir(path).ok();
                         match store
@@ -1616,12 +1612,7 @@ fn cmd_sync(config: &Config, source_filter: Option<&str>, dry_run: bool) -> Resu
                     continue;
                 };
                 let path = std::path::Path::new(origin);
-                match graph::extract::extract_file(
-                    path,
-                    &src.name,
-                    &src.version,
-                    Some(&src.language),
-                ) {
+                match graph::extract::extract_file(path, &src.name, Some(&src.language)) {
                     Ok(fg) => {
                         let fp = crate::fingerprint::fingerprint_file(path).ok();
                         match store
@@ -1697,13 +1688,7 @@ fn cmd_update(
     dry_run: bool,
 ) -> Result<()> {
     let store_path = config.resolve_store_path(StoreScope::from_flags(local, global));
-    if !store_path.exists() {
-        anyhow::bail!(
-            "no index found at {}. Run `roux init` or `roux add` first.",
-            store_path.display()
-        );
-    }
-    let store = GraphStore::open(&store_path)?;
+    let store = open_existing_store(&store_path, false, ". Run `roux init` or `roux add` first.")?;
     let sources = store.list_sources()?;
 
     let mut considered = 0usize;
@@ -1834,7 +1819,7 @@ fn update_path_source(
         });
     }
     let prior = store.source_graph(&src.name)?;
-    let new = graph::extract::reextract_incremental(path, &src.name, &src.version, hint, &prior)?;
+    let new = graph::extract::reextract_incremental(path, &src.name, hint, &prior)?;
     let stats = store.apply_source_delta(
         &src.name,
         &src.version,
@@ -1870,7 +1855,7 @@ fn update_file_source(
             },
         });
     }
-    let new = graph::extract::extract_file(path, &src.name, &src.version, hint)?;
+    let new = graph::extract::extract_file(path, &src.name, hint)?;
     let stats = store.apply_source_delta(
         &src.name,
         &src.version,
@@ -1892,11 +1877,7 @@ fn update_file_source(
 
 fn cmd_remove(config: &Config, source_name: &str) -> Result<()> {
     let store_path = config.resolve_store_path(StoreScope::Auto);
-    if !store_path.exists() {
-        anyhow::bail!("no index found at {}", store_path.display());
-    }
-
-    let store = GraphStore::open(&store_path)?;
+    let store = open_existing_store(&store_path, false, "")?;
     store.remove_source(source_name)?;
     output::done(format!("Removed {source_name} from index"));
     Ok(())
@@ -1941,7 +1922,7 @@ mod tests {
         std::fs::write(src.path().join("src/util.rs"), "pub fn helper() {}\n").unwrap();
 
         let store = GraphStore::open(&dbdir.path().join("index.sqlite")).unwrap();
-        let g = extract::extract_dir(src.path(), "demo", "dev", Some("rust")).unwrap();
+        let g = extract::extract_dir(src.path(), "demo", Some("rust")).unwrap();
         store
             .upsert_source("demo", "dev", "rust", &g.nodes, &g.edges)
             .unwrap();
@@ -1987,7 +1968,7 @@ mod tests {
         std::fs::write(src.path().join("config.txt"), "some = setting\n").unwrap();
 
         let store = GraphStore::open(&dbdir.path().join("index.sqlite")).unwrap();
-        let fg = extract::extract_dir(src.path(), "mixed", "0", Some("rust")).unwrap();
+        let fg = extract::extract_dir(src.path(), "mixed", Some("rust")).unwrap();
         assert!(
             fg.files.iter().any(|f| f.path == "config.txt"),
             "sanity: rust hint must force-parse config.txt into the manifest"

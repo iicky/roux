@@ -421,7 +421,7 @@ fn artifact_check_missing_file_errors() {
 #[test]
 fn extract_dir_empty_directory_yields_no_symbols() {
     let tmp = tempfile::tempdir().unwrap();
-    let g = roux_cli::graph::extract::extract_dir(tmp.path(), "empty", "0", Some("rust")).unwrap();
+    let g = roux_cli::graph::extract::extract_dir(tmp.path(), "empty", Some("rust")).unwrap();
     assert!(g.nodes.is_empty(), "empty dir should produce no symbols");
 }
 
@@ -431,7 +431,7 @@ fn extract_dir_only_unsupported_files_yields_no_code_symbols() {
     fs::write(tmp.path().join("notes.bin"), [0u8, 1, 2, 255]).unwrap();
     fs::write(tmp.path().join("data.unknownext"), "nothing parseable").unwrap();
     // Must not panic on binary/unknown content; produces no code symbols.
-    let g = roux_cli::graph::extract::extract_dir(tmp.path(), "weird", "0", None).unwrap();
+    let g = roux_cli::graph::extract::extract_dir(tmp.path(), "weird", None).unwrap();
     assert!(
         g.nodes
             .iter()

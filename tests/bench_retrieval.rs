@@ -183,8 +183,7 @@ fn bench_self_retrieval() {
 
     // Index roux's own source
     let store = GraphStore::open_in_memory().unwrap();
-    let graph =
-        extract::extract_dir(std::path::Path::new("src"), "roux", "dev", Some("rust")).unwrap();
+    let graph = extract::extract_dir(std::path::Path::new("src"), "roux", Some("rust")).unwrap();
 
     assert!(
         graph.nodes.len() > 50,
@@ -342,8 +341,7 @@ fn bench_performance() {
 
     // Index roux source
     let t0 = Instant::now();
-    let graph =
-        extract::extract_dir(std::path::Path::new("src"), "roux", "dev", Some("rust")).unwrap();
+    let graph = extract::extract_dir(std::path::Path::new("src"), "roux", Some("rust")).unwrap();
     let extract_ms = t0.elapsed().as_millis();
 
     let store = GraphStore::open_in_memory().unwrap();
@@ -407,8 +405,7 @@ fn bench_rrf_ab_test() {
     use roux_cli::graph::store::GraphStore;
 
     let store = GraphStore::open_in_memory().unwrap();
-    let graph =
-        extract::extract_dir(std::path::Path::new("src"), "roux", "dev", Some("rust")).unwrap();
+    let graph = extract::extract_dir(std::path::Path::new("src"), "roux", Some("rust")).unwrap();
     store
         .upsert_source("roux", "dev", "rust", &graph.nodes, &graph.edges)
         .unwrap();
@@ -478,7 +475,6 @@ fn diag_express_misses() {
     let graph = extract::extract_dir(
         std::path::Path::new("/tmp/roux-sources/express"),
         "express",
-        "dev",
         Some("javascript"),
     )
     .unwrap();
@@ -712,8 +708,7 @@ fn bench_adversarial_self() {
     use roux_cli::graph::store::GraphStore;
 
     let store = GraphStore::open_in_memory().unwrap();
-    let graph =
-        extract::extract_dir(std::path::Path::new("src"), "roux", "dev", Some("rust")).unwrap();
+    let graph = extract::extract_dir(std::path::Path::new("src"), "roux", Some("rust")).unwrap();
     store
         .upsert_source("roux", "dev", "rust", &graph.nodes, &graph.edges)
         .unwrap();
@@ -766,7 +761,7 @@ fn bench_adversarial_multi() {
             continue;
         }
         let store = GraphStore::open_in_memory().unwrap();
-        let graph = extract::extract_dir(p, name, "dev", Some(lang)).unwrap();
+        let graph = extract::extract_dir(p, name, Some(lang)).unwrap();
         store
             .upsert_source(name, "dev", lang, &graph.nodes, &graph.edges)
             .unwrap();
@@ -1025,7 +1020,7 @@ fn bench_multi_repo() {
 
         let store = GraphStore::open_in_memory().unwrap();
         let t0 = Instant::now();
-        let graph = extract::extract_dir(path, repo.name, "dev", Some(repo.language)).unwrap();
+        let graph = extract::extract_dir(path, repo.name, Some(repo.language)).unwrap();
         let extract_ms = t0.elapsed().as_millis();
 
         let node_count = graph.nodes.len();
