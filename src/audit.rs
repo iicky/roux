@@ -1,9 +1,11 @@
 //! Agent-legibility audit: turn retrieval misses into refactor recommendations.
 //!
 //! For each public symbol, measure how findable it is to roux's own retrieval
-//! and classify the cheapest fix when it is hard to surface. Three failure
+//! and classify the cheapest fix when it is hard to surface. Four failure
 //! modes, each with a distinct remedy:
 //!
+//! - [`Cause::Unnameable`] — the name has no queryable tokens (1–2 characters),
+//!   so it can't be found by name at all. The fix is a longer, descriptive name.
 //! - [`Cause::Collision`] — the symbol is buried even for a query built from its
 //!   own name, because same-named siblings out-compete it. Adding docs does not
 //!   help; the fix is a rename or a distinctive term.
@@ -43,6 +45,8 @@ const GENERIC_NAMES: &[&str] = &[
 pub enum Cause {
     /// Findable and well-connected — no action needed.
     Ok,
+    /// Name has no queryable tokens (1–2 chars) → give it a descriptive name.
+    Unnameable,
     /// Buried even for its own name by same-named siblings → rename/disambiguate.
     Collision,
     /// Distinctive name but no concept→code bridge → add a doc line.
@@ -56,6 +60,7 @@ impl Cause {
     pub fn label(self) -> &'static str {
         match self {
             Cause::Ok => "ok",
+            Cause::Unnameable => "unnameable",
             Cause::Collision => "collision",
             Cause::VocabGap => "vocab_gap",
             Cause::Isolation => "isolation",
@@ -66,6 +71,9 @@ impl Cause {
     pub fn fix(self) -> &'static str {
         match self {
             Cause::Ok => "",
+            Cause::Unnameable => {
+                "rename to a longer, descriptive identifier — a 1-2 character name has no tokens to search for"
+            }
             Cause::Collision => {
                 "rename or add a distinctive term — same-named siblings out-compete it (docs alone won't fix)"
             }
@@ -83,6 +91,8 @@ pub struct Signals {
     pub has_doc: bool,
     pub isolated: bool,
     pub generic_name: bool,
+    /// Whether the name yields any queryable token (false for 1–2 char names).
+    pub nameable: bool,
     /// Rank (1-based) of the symbol for a query built from its own name; `None`
     /// means it fell outside the probe window entirely.
     pub self_name_rank: Option<usize>,
@@ -115,16 +125,28 @@ impl SymbolLegibility {
 /// human-readable reasons. Pure and deterministic — the corpus-sensitive part
 /// (running the probes) lives in [`audit`].
 ///
-/// Priority is worst-first: a name collision (unfindable even by its own name)
-/// outranks a vocab gap (findable by name, not by concept), which outranks
-/// isolation. A collision is never "fixed" by adding docs, so it is classified
-/// as [`Cause::Collision`] even when the symbol is also undocumented.
+/// Priority is worst-first: `Unnameable` (no queryable tokens) and `Collision`
+/// (buried even for its own name) both mean "unfindable by name" and outrank a
+/// `VocabGap` (findable by name, not by concept), which outranks `Isolation`.
+/// A collision is never "fixed" by docs alone.
 pub fn classify(s: &Signals) -> (Cause, u8, Vec<String>) {
-    let collided = s.self_name_rank.is_none_or(|r| r > BURIED_RANK);
-    let vocab_miss = !collided && s.intent_probed && s.intent_rank.is_none_or(|r| r > BURIED_RANK);
+    let intent_findable = s.intent_probed && s.intent_rank.is_some_and(|r| r <= BURIED_RANK);
+    // A name with no queryable tokens (1–2 chars) can't be found by name at all;
+    // only a real (human) doc that makes it concept-findable can rescue it. An
+    // auto-generated description doesn't count — it tends to echo the name.
+    let unnameable = !(s.nameable || (s.has_doc && intent_findable));
+    // Has tokens, but buried even for them: same-named siblings out-compete it.
+    let collided = s.nameable && s.self_name_rank.is_none_or(|r| r > BURIED_RANK);
+    // Distinctive & findable by name, but an intent query that avoids the name misses.
+    let vocab_miss =
+        s.nameable && !collided && s.intent_probed && s.intent_rank.is_none_or(|r| r > BURIED_RANK);
 
     let mut reasons = Vec::new();
     let mut severity: u8 = 0;
+    if unnameable {
+        severity += 2;
+        reasons.push("name has no queryable tokens (too short to search for)".into());
+    }
     if collided {
         match s.self_name_rank {
             None => {
@@ -160,9 +182,11 @@ pub fn classify(s: &Signals) -> (Cause, u8, Vec<String>) {
         reasons.push("generic name".into());
     }
 
-    // A symbol is only a finding when it is genuinely hard to surface —
-    // undocumented-but-findable is fine.
-    let cause = if collided {
+    // Dominant cause, worst-first. A symbol is only a finding when it is
+    // genuinely hard to surface — undocumented-but-findable is fine.
+    let cause = if unnameable {
+        Cause::Unnameable
+    } else if collided {
         Cause::Collision
     } else if vocab_miss {
         Cause::VocabGap
@@ -273,6 +297,7 @@ pub fn audit(
             self_name_rank,
             intent_probed,
             intent_rank,
+            nameable: !self_query.is_empty(),
         };
         let (cause, severity, reasons) = classify(&signals);
 
@@ -317,6 +342,7 @@ mod tests {
             self_name_rank,
             intent_probed,
             intent_rank,
+            nameable: true,
         }
     }
 
@@ -370,6 +396,41 @@ mod tests {
         // No doc, but ranks well for both name and intent, connected: fine.
         let (cause, _, _) = classify(&sig(false, false, false, Some(1), true, Some(2)));
         assert_eq!(cause, Cause::Ok);
+    }
+
+    #[test]
+    fn tokenless_short_name_is_unnameable_not_collision() {
+        // A 1-2 char name (e.g. `Id`, `A`) tokenizes to nothing, so it can't be
+        // queried by name at all. With no concept bridge either, that is its own
+        // cause (rename), not a "collision".
+        let s = Signals {
+            has_doc: false,
+            isolated: false,
+            generic_name: false,
+            self_name_rank: None,
+            intent_probed: false,
+            intent_rank: None,
+            nameable: false,
+        };
+        let (cause, _, reasons) = classify(&s);
+        assert_eq!(cause, Cause::Unnameable);
+        assert!(cause.fix().contains("descriptive") || cause.fix().contains("rename"));
+        assert!(reasons.iter().any(|r| r.contains("queryable tokens")));
+    }
+
+    #[test]
+    fn tokenless_name_saved_by_a_doc_bridge_is_ok() {
+        // Same short name, but a doc-derived intent query finds it → not a finding.
+        let s = Signals {
+            has_doc: true,
+            isolated: false,
+            generic_name: false,
+            self_name_rank: None,
+            intent_probed: true,
+            intent_rank: Some(1),
+            nameable: false,
+        };
+        assert_eq!(classify(&s).0, Cause::Ok);
     }
 
     // --- intent derivation ---

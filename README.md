@@ -180,6 +180,7 @@ Every miss is classified by cause, worst-first:
 
 | Cause | What it means | Fix |
 |---|---|---|
+| **unnameable** | The name has no queryable tokens (1–2 chars) and no doc bridges it — nothing to search for | Rename to a longer, descriptive identifier |
 | **collision** | Buried even for a query built from its own name — same-named siblings out-compete it | Rename or add a distinctive term (docs alone won't help) |
 | **vocab gap** | Findable by name, but an intent query phrased *without* that name misses it — no doc bridges concept to code | Add one honest doc line naming what it does |
 | **isolation** | No callers/callees/children in the graph — reachable only by exact lexical match | Wire it into the call graph, or document it |
