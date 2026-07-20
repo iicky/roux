@@ -3,12 +3,13 @@ name = "roux-cli"
 version = "0.0.1"
 edition = "2024"
 rust-version = "1.88.0"
-description = "Graph-native code retrieval — the base layer for agentic reasoning."
+description = "the base your coding agents build on"
+readme = "README.md"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/iicky/roux"
 keywords = ["code-search", "graph", "tree-sitter", "rag", "ai"]
 categories = ["command-line-utilities", "development-tools"]
-exclude = ["CLAUDE.md", "AGENTS.md", "SPEC.md", ".beads/"]
+exclude = ["CLAUDE.md", "AGENTS.md", "SPEC.md"]
 
 [[bin]]
 name = "roux"
@@ -17,6 +18,10 @@ path = "src/main.rs"
 [dependencies]
 # CLI
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+
+# Terminal status output (brand color + status prefixes)
+colored = "3"
 
 # Serialization & config
 serde = { version = "1", features = ["derive"] }
@@ -61,8 +66,15 @@ candle-transformers = "0.10"
 tokenizers = "0.22"
 hf-hub = "0.5"
 
+# MCP server (used by `roux serve`). Defaults pull macros + server; transport-io adds stdio.
+rmcp = { version = "1", features = ["transport-io"] }
+tokio = { version = "1", features = ["rt", "macros", "io-std", "sync"] }
+# Decode the query segment of `roux://skeleton/{query}` resource URIs.
+percent-encoding = "2"
+
 [dev-dependencies]
 tempfile = "3"
+serde_json = "1"
 
 [features]
 default = []

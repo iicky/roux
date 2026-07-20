@@ -1,0 +1,2739 @@
+{
+  "_comment": "HUMAN-REVIEWED frozen held-out set (pandas) \u2014 anti-Goodhart. Harvested by bench/harvest_persona_queries.py, frozen/reviewed by bench/freeze_heldout.py. S/L by distinctive query<->gold(qualified_name) token overlap (source-prefix stripped, stoplist-filtered): S = no distinctive overlap (vocab/semantic gap \u2014 the real test); L = distinctive overlap (control). gold = qualified_name substrings; any in top-K = hit. Reviewed: generic-constructor gold removed (harvester + freeze), maintainer-process queries and weak-gold mis-pins pruned (see freeze_provenance.review). FROZEN: never tune against it; report SEPARATELY from the CI gate.",
+  "source_name": "pandas",
+  "index_path": "/Users/mickey/Repos/iicky/roux/bench/snapshots/pandas.sqlite",
+  "pinned_ref": "v2.2.3",
+  "freeze_provenance": {
+    "frozen": "2026-07-07",
+    "roux_commit": "f63eda5",
+    "auto_frozen": false,
+    "human_reviewed": true,
+    "from_draft": "bench/gold_pandas.draft.json",
+    "harvester": "bench/harvest_persona_queries.py",
+    "triage": "S/L by distinctive query<->gold token overlap (source-prefix stripped, stoplist-filtered)",
+    "review": {
+      "reviewer": "gold-tightening pass",
+      "generic_gold": "dunders/from_low_args/per-persona skip_syms dropped at pin time + freeze safety-net",
+      "off_topic_rule": "CI/TST/STYLE/test/CLN prefixes, doctest/pylint/flake8/mypy, typo, sweeping-doc edits, bare-path titles",
+      "weak_gold_manual": [
+        "pandas-34593",
+        "pandas-35491"
+      ],
+      "retain_recent_cap": 100,
+      "backlog_in_draft": 94,
+      "dropped_counts": {
+        "off_topic": 7,
+        "weak_gold": 2
+      },
+      "dropped": [
+        {
+          "id": "pandas-49656",
+          "reason": "off_topic",
+          "query": "STYLE enable pylint's redefined-outer-name"
+        },
+        {
+          "id": "pandas-43755",
+          "reason": "off_topic",
+          "query": "Typo(s?) in pandas.DataFrame.isin"
+        },
+        {
+          "id": "pandas-42671",
+          "reason": "off_topic",
+          "query": "TST: Fix doctest in EngFormatter"
+        },
+        {
+          "id": "pandas-35491",
+          "reason": "weak_gold",
+          "query": "Add note to DataFrame.compare about only able to compare identically-labeled Dat"
+        },
+        {
+          "id": "pandas-34867",
+          "reason": "off_topic",
+          "query": "pandas/pandas/core/window/ewm.py"
+        },
+        {
+          "id": "pandas-34593",
+          "reason": "weak_gold",
+          "query": "Can't figure out how to get exponential working"
+        },
+        {
+          "id": "pandas-32289",
+          "reason": "off_topic",
+          "query": "CI Failing - Linux py37_np_dev - test_constructor_list_frames"
+        },
+        {
+          "id": "pandas-27861",
+          "reason": "off_topic",
+          "query": "Standardize use of \"Iterate\" and \"Iterator\" in the documentation for DataFrame a"
+        },
+        {
+          "id": "pandas-26982",
+          "reason": "off_topic",
+          "query": "Fix docstring quotes in pandas.tseries"
+        }
+      ]
+    }
+  },
+  "distribution": {
+    "S": 23,
+    "L": 68
+  },
+  "queries": [
+    {
+      "id": "pandas-19289",
+      "bucket": "S",
+      "query": "Unstack performance regression",
+      "gold": [
+        "pandas::MultiIndex::remove_unused_levels"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 19289,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/19289",
+        "labels": [
+          "Performance"
+        ],
+        "fix_commit": "e1e1e54720d9",
+        "changed_files": [
+          "pandas/core/indexes/multi.py"
+        ],
+        "gold_candidates": [
+          "remove_unused_levels"
+        ]
+      }
+    },
+    {
+      "id": "pandas-19646",
+      "bucket": "L",
+      "query": "Actual dtypes of pd.DataFrame(None, [...], dtype=int)",
+      "gold": [
+        "pandas::NDFrame::_where",
+        "pandas::Series::_init_dict"
+      ],
+      "lexical_overlap": [
+        "frame"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 19646,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/19646",
+        "labels": [
+          "Reshaping",
+          "Dtype Conversions",
+          "Compat"
+        ],
+        "fix_commit": "4efb39f01f58",
+        "changed_files": [
+          "pandas/core/frame.py",
+          "pandas/core/generic.py",
+          "pandas/core/internals.py",
+          "pandas/core/series.py"
+        ],
+        "gold_candidates": [
+          "_init_dict",
+          "_where"
+        ]
+      }
+    },
+    {
+      "id": "pandas-19715",
+      "bucket": "L",
+      "query": "Conform Series.to_csv to DataFrame.to_csv",
+      "gold": [
+        "pandas::NDFrame::last_valid_index",
+        "pandas::NDFrame::to_csv"
+      ],
+      "lexical_overlap": [
+        "csv",
+        "frame"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 19715,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/19715",
+        "labels": [
+          "IO CSV",
+          "Compat"
+        ],
+        "fix_commit": "eb0ac5437f9f",
+        "changed_files": [
+          "pandas/core/frame.py",
+          "pandas/core/generic.py",
+          "pandas/core/series.py"
+        ],
+        "gold_candidates": [
+          "last_valid_index",
+          "to_csv"
+        ]
+      }
+    },
+    {
+      "id": "pandas-20308",
+      "bucket": "L",
+      "query": "TypeError when calling unique on empty MultiIndex",
+      "gold": [
+        "pandas::MultiIndex::_shallow_copy"
+      ],
+      "lexical_overlap": [
+        "index",
+        "multi"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 20308,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/20308",
+        "labels": [
+          "Bug",
+          "MultiIndex"
+        ],
+        "fix_commit": "a77ac2bb9fc4",
+        "changed_files": [
+          "pandas/core/indexes/multi.py"
+        ],
+        "gold_candidates": [
+          "_shallow_copy"
+        ]
+      }
+    },
+    {
+      "id": "pandas-20411",
+      "bucket": "L",
+      "query": "ExtensionArray.__fillna__ should not use lib.is_scalar",
+      "gold": [
+        "pandas::ExtensionArray::fillna"
+      ],
+      "lexical_overlap": [
+        "array",
+        "extension",
+        "fillna"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 20411,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/20411",
+        "labels": [
+          "Missing-data",
+          "ExtensionArray"
+        ],
+        "fix_commit": "217174b83a50",
+        "changed_files": [
+          "pandas/core/arrays/base.py",
+          "pandas/util/testing.py"
+        ],
+        "gold_candidates": [
+          "fillna"
+        ]
+      }
+    },
+    {
+      "id": "pandas-20554",
+      "bucket": "S",
+      "query": "DEPR: remove resample compatibility",
+      "gold": [
+        "pandas::Resampler",
+        "pandas::Resampler::_from_selection",
+        "pandas::Resampler::pipe",
+        "pandas::Resampler::size"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 20554,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/20554",
+        "labels": [
+          "Resample",
+          "Deprecate"
+        ],
+        "fix_commit": "64564e80a753",
+        "changed_files": [
+          "pandas/core/resample.py"
+        ],
+        "gold_candidates": [
+          "Resampler",
+          "_from_selection",
+          "pipe",
+          "size"
+        ]
+      }
+    },
+    {
+      "id": "pandas-20570",
+      "bucket": "L",
+      "query": ".unique() drops names on MultiIndex",
+      "gold": [
+        "pandas::MultiIndex::_shallow_copy"
+      ],
+      "lexical_overlap": [
+        "index",
+        "multi"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 20570,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/20570",
+        "labels": [
+          "Bug",
+          "MultiIndex"
+        ],
+        "fix_commit": "a77ac2bb9fc4",
+        "changed_files": [
+          "pandas/core/indexes/multi.py"
+        ],
+        "gold_candidates": [
+          "_shallow_copy"
+        ]
+      }
+    },
+    {
+      "id": "pandas-20748",
+      "bucket": "L",
+      "query": ".loc[iterator] treats missing keys differently than .loc[list]",
+      "gold": [
+        "pandas::_LocIndexer",
+        "pandas::_LocIndexer::_convert_to_indexer",
+        "pandas::_LocIndexer::_getitem_axis",
+        "pandas::_LocIndexer::_getitem_iterable",
+        "pandas::_LocIndexer::_multi_take"
+      ],
+      "lexical_overlap": [
+        "loc"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 20748,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/20748",
+        "labels": [
+          "Indexing",
+          "API Design"
+        ],
+        "fix_commit": "901fc641e7bc",
+        "changed_files": [
+          "pandas/core/indexes/base.py",
+          "pandas/core/indexing.py",
+          "pandas/core/sparse/frame.py"
+        ],
+        "gold_candidates": [
+          "_LocIndexer",
+          "_convert_to_indexer",
+          "_getitem_axis",
+          "_getitem_iterable",
+          "_iLocIndexer",
+          "_multi_take",
+          "_validate_integer",
+          "_validate_key"
+        ]
+      }
+    },
+    {
+      "id": "pandas-20753",
+      "bucket": "S",
+      "query": "Inconsistent behaviour of .ix between list and scalar key with (missing) ints",
+      "gold": [
+        "pandas::_LocIndexer",
+        "pandas::_LocIndexer::_convert_to_indexer",
+        "pandas::_LocIndexer::_getitem_axis",
+        "pandas::_LocIndexer::_getitem_iterable",
+        "pandas::_LocIndexer::_multi_take"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 3,
+      "provenance": {
+        "issue": 20753,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/20753",
+        "labels": [
+          "Bug",
+          "Indexing"
+        ],
+        "fix_commit": "901fc641e7bc",
+        "changed_files": [
+          "pandas/core/indexes/base.py",
+          "pandas/core/indexing.py",
+          "pandas/core/sparse/frame.py"
+        ],
+        "gold_candidates": [
+          "_LocIndexer",
+          "_convert_to_indexer",
+          "_getitem_axis",
+          "_getitem_iterable",
+          "_iLocIndexer",
+          "_multi_take",
+          "_validate_integer",
+          "_validate_key"
+        ]
+      }
+    },
+    {
+      "id": "pandas-20925",
+      "bucket": "L",
+      "query": "Series.reset_index(level_name, drop=True) accepts invalid name when index is flat",
+      "gold": [
+        "pandas::Series::reset_index"
+      ],
+      "lexical_overlap": [
+        "index",
+        "reset",
+        "series"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 20925,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/20925",
+        "labels": [
+          "Indexing",
+          "Error Reporting"
+        ],
+        "fix_commit": "e033c0616158",
+        "changed_files": [
+          "pandas/core/series.py"
+        ],
+        "gold_candidates": [
+          "reset_index"
+        ]
+      }
+    },
+    {
+      "id": "pandas-20930",
+      "bucket": "L",
+      "query": "Index.get_loc Cannot Accept List-like Tolerance",
+      "gold": [
+        "pandas::Index::_convert_can_do_setop"
+      ],
+      "lexical_overlap": [
+        "index"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 20930,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/20930",
+        "labels": [
+          "Docs",
+          "Index"
+        ],
+        "fix_commit": "cb5b75b0916e",
+        "changed_files": [
+          "pandas/core/indexes/base.py"
+        ],
+        "gold_candidates": [
+          "_convert_can_do_setop"
+        ]
+      }
+    },
+    {
+      "id": "pandas-21041",
+      "bucket": "L",
+      "query": "Trouble writing to_stata with a GzipFile",
+      "gold": [
+        "pandas::DataFrame::to_stata",
+        "pandas::StataReader::value_labels",
+        "pandas::StataWriter",
+        "pandas::StataWriter117",
+        "pandas::StataWriter117::_write_data"
+      ],
+      "lexical_overlap": [
+        "stata"
+      ],
+      "roux_rank_at_freeze": 2,
+      "provenance": {
+        "issue": 21041,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/21041",
+        "labels": [
+          "IO Stata"
+        ],
+        "fix_commit": "f91e28c3fdd4",
+        "changed_files": [
+          "pandas/core/frame.py",
+          "pandas/io/stata.py"
+        ],
+        "gold_candidates": [
+          "StataWriter",
+          "StataWriter117",
+          "_close",
+          "_write_data",
+          "to_stata",
+          "value_labels",
+          "write_file"
+        ]
+      }
+    },
+    {
+      "id": "pandas-21258",
+      "bucket": "L",
+      "query": "Automatically adjust HTML table text color when using `style.background_gradient()",
+      "gold": [
+        "pandas::Styler::background_gradient",
+        "pandas::_background_gradient",
+        "pandas::relative_luminance"
+      ],
+      "lexical_overlap": [
+        "background",
+        "gradient"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 21258,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/21258",
+        "labels": [
+          "Output-Formatting",
+          "IO HTML",
+          "Code Style"
+        ],
+        "fix_commit": "c388dde137c6",
+        "changed_files": [
+          "pandas/io/formats/style.py"
+        ],
+        "gold_candidates": [
+          "_background_gradient",
+          "background_gradient",
+          "relative_luminance"
+        ]
+      }
+    },
+    {
+      "id": "pandas-21374",
+      "bucket": "S",
+      "query": "pd.eval() discards imaginary part in division \"/\"",
+      "gold": [
+        "pandas::BaseExprVisitor",
+        "pandas::BaseExprVisitor::visit_BinOp",
+        "pandas::_not_in",
+        "pandas::isnumeric"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 6,
+      "provenance": {
+        "issue": 21374,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/21374",
+        "labels": [
+          "Bug",
+          "Complex",
+          "expressions"
+        ],
+        "fix_commit": "2127b4207abd",
+        "changed_files": [
+          "pandas/_testing/__init__.py",
+          "pandas/core/computation/expr.py",
+          "pandas/core/computation/ops.py"
+        ],
+        "gold_candidates": [
+          "BaseExprVisitor",
+          "_not_in",
+          "isnumeric",
+          "visit_BinOp"
+        ]
+      }
+    },
+    {
+      "id": "pandas-21448",
+      "bucket": "L",
+      "query": "Index.get_indexer_non_unique misbehaves when passed a CategoricalIndex",
+      "gold": [
+        "pandas::Index::get_indexer_non_unique"
+      ],
+      "lexical_overlap": [
+        "index",
+        "indexer",
+        "non",
+        "unique"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 21448,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/21448",
+        "labels": [
+          "Indexing",
+          "Categorical"
+        ],
+        "fix_commit": "576d5c6b76e0",
+        "changed_files": [
+          "pandas/core/indexes/base.py",
+          "pandas/core/indexes/category.py"
+        ],
+        "gold_candidates": [
+          "get_indexer_non_unique"
+        ]
+      }
+    },
+    {
+      "id": "pandas-21494",
+      "bucket": "L",
+      "query": "Passing empty label list to df.drop() errors when index is non-unique",
+      "gold": [
+        "pandas::Index::drop",
+        "pandas::MultiIndex::drop",
+        "pandas::NDFrame::_drop_axis"
+      ],
+      "lexical_overlap": [
+        "drop",
+        "index"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 21494,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/21494",
+        "labels": [
+          "Indexing",
+          "Regression"
+        ],
+        "fix_commit": "f4fba9e90f6a",
+        "changed_files": [
+          "pandas/core/generic.py",
+          "pandas/core/indexes/base.py",
+          "pandas/core/indexes/multi.py"
+        ],
+        "gold_candidates": [
+          "_drop_axis",
+          "drop"
+        ]
+      }
+    },
+    {
+      "id": "pandas-21522",
+      "bucket": "L",
+      "query": "MultiIndex.is_unique is unbearably slow",
+      "gold": [
+        "pandas::MultiIndex::is_monotonic_decreasing"
+      ],
+      "lexical_overlap": [
+        "index",
+        "multi"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 21522,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/21522",
+        "labels": [
+          "Performance",
+          "MultiIndex"
+        ],
+        "fix_commit": "ea54d390ac69",
+        "changed_files": [
+          "pandas/core/indexes/multi.py"
+        ],
+        "gold_candidates": [
+          "is_monotonic_decreasing"
+        ]
+      }
+    },
+    {
+      "id": "pandas-21593",
+      "bucket": "S",
+      "query": ".ix[int_number] falls back to positional indexing with MultiIndex with integers on first level",
+      "gold": [
+        "pandas::_LocIndexer::_get_label",
+        "pandas::_LocIndexer::_validate_key",
+        "pandas::_LocationIndexer::_validate_key",
+        "pandas::_iLocIndexer::_validate_key"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 21593,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/21593",
+        "labels": [
+          "Indexing",
+          "Error Reporting",
+          "Deprecate"
+        ],
+        "fix_commit": "51d548dbe6de",
+        "changed_files": [
+          "pandas/core/indexing.py"
+        ],
+        "gold_candidates": [
+          "_get_label",
+          "_validate_key"
+        ]
+      }
+    },
+    {
+      "id": "pandas-21627",
+      "bucket": "L",
+      "query": "Update `to_gbq` and `read_gbq` signatures for Pandas-GBQ version 0.5.0",
+      "gold": [
+        "pandas::DataFrame::to_dict",
+        "pandas::DataFrame::to_gbq",
+        "pandas::read_gbq",
+        "pandas::to_gbq"
+      ],
+      "lexical_overlap": [
+        "gbq",
+        "read"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 21627,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/21627",
+        "labels": [
+          "Enhancement"
+        ],
+        "fix_commit": "2a7e1f297316",
+        "changed_files": [
+          "pandas/core/frame.py",
+          "pandas/io/gbq.py"
+        ],
+        "gold_candidates": [
+          "read_gbq",
+          "to_dict",
+          "to_gbq"
+        ]
+      }
+    },
+    {
+      "id": "pandas-21639",
+      "bucket": "L",
+      "query": "DEPS/DEPR: Allow import of feather through pyarrow",
+      "gold": [
+        "pandas::read_feather",
+        "pandas::to_feather"
+      ],
+      "lexical_overlap": [
+        "feather"
+      ],
+      "roux_rank_at_freeze": 2,
+      "provenance": {
+        "issue": 21639,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/21639",
+        "labels": [
+          "Deprecate"
+        ],
+        "fix_commit": "6b9318c132f5",
+        "changed_files": [
+          "pandas/io/feather_format.py"
+        ],
+        "gold_candidates": [
+          "read_feather",
+          "to_feather"
+        ]
+      }
+    },
+    {
+      "id": "pandas-22221",
+      "bucket": "L",
+      "query": "mi.drop(x).get_loc_level(x) returns empty slice (rather than raising KeyError)",
+      "gold": [
+        "pandas::MultiIndex::_maybe_to_slice",
+        "pandas::MultiIndex::convert_indexer"
+      ],
+      "lexical_overlap": [
+        "slice"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 22221,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/22221",
+        "labels": [
+          "Indexing",
+          "Regression",
+          "MultiIndex",
+          "Needs Discussion"
+        ],
+        "fix_commit": "fb6116f35c29",
+        "changed_files": [
+          "pandas/core/indexes/multi.py"
+        ],
+        "gold_candidates": [
+          "_maybe_to_slice",
+          "convert_indexer"
+        ]
+      }
+    },
+    {
+      "id": "pandas-22373",
+      "bucket": "L",
+      "query": "version 0.23: RangeIndex argument order changed, docs stale",
+      "gold": [
+        "pandas::RangeIndex"
+      ],
+      "lexical_overlap": [
+        "index",
+        "range"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 22373,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/22373",
+        "labels": [
+          "Docs"
+        ],
+        "fix_commit": "c296a93625ff",
+        "changed_files": [
+          "pandas/core/indexes/range.py"
+        ],
+        "gold_candidates": [
+          "RangeIndex"
+        ]
+      }
+    },
+    {
+      "id": "pandas-22477",
+      "bucket": "L",
+      "query": "dtype=str in 0.23.0 converts NaN to 'n'",
+      "gold": [
+        "pandas::construct_1d_arraylike_from_scalar",
+        "pandas::is_datetime64_dtype"
+      ],
+      "lexical_overlap": [
+        "dtype"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 22477,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/22477",
+        "labels": [
+          "Regression"
+        ],
+        "fix_commit": "f0b2ff3c0397",
+        "changed_files": [
+          "pandas/core/dtypes/cast.py",
+          "pandas/core/dtypes/common.py"
+        ],
+        "gold_candidates": [
+          "construct_1d_arraylike_from_scalar",
+          "is_datetime64_dtype"
+        ]
+      }
+    },
+    {
+      "id": "pandas-22702",
+      "bucket": "S",
+      "query": "ValueError in Categorical Constructor with empty data and boolean categories",
+      "gold": [
+        "pandas::_get_codes_for_values"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 22702,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/22702",
+        "labels": [
+          "Bug",
+          "Dtype Conversions",
+          "Categorical"
+        ],
+        "fix_commit": "117d0b1011c0",
+        "changed_files": [
+          "pandas/core/arrays/categorical.py"
+        ],
+        "gold_candidates": [
+          "_get_codes_for_values"
+        ]
+      }
+    },
+    {
+      "id": "pandas-22803",
+      "bucket": "L",
+      "query": "Indexing into a series with multi-index containing periods raises an exception",
+      "gold": [
+        "pandas::PeriodIndex::get_loc"
+      ],
+      "lexical_overlap": [
+        "index"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 22803,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/22803",
+        "labels": [
+          "Bug",
+          "Indexing",
+          "Period"
+        ],
+        "fix_commit": "a76bf63da8ba",
+        "changed_files": [
+          "pandas/core/indexes/period.py"
+        ],
+        "gold_candidates": [
+          "get_loc"
+        ]
+      }
+    },
+    {
+      "id": "pandas-23053",
+      "bucket": "L",
+      "query": "pandas/io/feather_format.py should call use_threads instead of nthreads to prevent breakage in pyarrow 0.11.0",
+      "gold": [
+        "pandas::read_feather",
+        "pandas::to_feather"
+      ],
+      "lexical_overlap": [
+        "feather"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 23053,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/23053",
+        "labels": [
+          "IO Data",
+          "Compat"
+        ],
+        "fix_commit": "6b9318c132f5",
+        "changed_files": [
+          "pandas/io/feather_format.py"
+        ],
+        "gold_candidates": [
+          "read_feather",
+          "to_feather"
+        ]
+      }
+    },
+    {
+      "id": "pandas-23066",
+      "bucket": "L",
+      "query": "hash_pandas_object on ExtensionArray-backed Series fails with TypeError",
+      "gold": [
+        "pandas::ExtensionArray::_values_for_factorize",
+        "pandas::hash_array"
+      ],
+      "lexical_overlap": [
+        "array",
+        "extension",
+        "hash"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 23066,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/23066",
+        "labels": [
+          "Dtype Conversions",
+          "Algos",
+          "ExtensionArray"
+        ],
+        "fix_commit": "400125246bc8",
+        "changed_files": [
+          "pandas/core/arrays/base.py",
+          "pandas/core/util/hashing.py"
+        ],
+        "gold_candidates": [
+          "_values_for_factorize",
+          "hash_array"
+        ]
+      }
+    },
+    {
+      "id": "pandas-23081",
+      "bucket": "L",
+      "query": "Datetime/Timedelta/Period Index min, argmin, max, argmax have `axis` kwarg",
+      "gold": [
+        "pandas::validate_minmax_axis",
+        "pandas::validate_resampler_func"
+      ],
+      "lexical_overlap": [
+        "axis"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 23081,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/23081",
+        "labels": [
+          "Datetime",
+          "Needs Discussion"
+        ],
+        "fix_commit": "6bc79c950643",
+        "changed_files": [
+          "pandas/compat/numpy/function.py",
+          "pandas/core/indexes/datetimelike.py"
+        ],
+        "gold_candidates": [
+          "validate_minmax_axis",
+          "validate_resampler_func"
+        ]
+      }
+    },
+    {
+      "id": "pandas-23283",
+      "bucket": "L",
+      "query": "Write partitioned Parquet file using to_parquet",
+      "gold": [
+        "pandas::BaseImpl::write",
+        "pandas::DataFrame::to_parquet",
+        "pandas::FastParquetImpl::write",
+        "pandas::PyArrowImpl::write",
+        "pandas::to_parquet"
+      ],
+      "lexical_overlap": [
+        "parquet",
+        "write"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 23283,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/23283",
+        "labels": [
+          "IO Parquet"
+        ],
+        "fix_commit": "8ed92efc65b5",
+        "changed_files": [
+          "pandas/core/frame.py",
+          "pandas/io/parquet.py",
+          "pandas/util/testing.py"
+        ],
+        "gold_candidates": [
+          "to_parquet",
+          "write"
+        ]
+      }
+    },
+    {
+      "id": "pandas-23438",
+      "bucket": "S",
+      "query": "Converting series of dates to Periods",
+      "gold": [
+        "pandas::dt64arr_to_periodarr"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 23438,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/23438",
+        "labels": [
+          "Datetime",
+          "Period"
+        ],
+        "fix_commit": "e0e948dd71c2",
+        "changed_files": [
+          "pandas/core/arrays/period.py"
+        ],
+        "gold_candidates": [
+          "dt64arr_to_periodarr"
+        ]
+      }
+    },
+    {
+      "id": "pandas-23572",
+      "bucket": "L",
+      "query": "df.to_stata fails when a column of type object contains only None",
+      "gold": [
+        "pandas::_dtype_to_default_stata_fmt"
+      ],
+      "lexical_overlap": [
+        "stata"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 23572,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/23572",
+        "labels": [
+          "Error Reporting",
+          "IO Stata"
+        ],
+        "fix_commit": "e9aee5b5e921",
+        "changed_files": [
+          "pandas/io/stata.py"
+        ],
+        "gold_candidates": [
+          "_dtype_to_default_stata_fmt"
+        ]
+      }
+    },
+    {
+      "id": "pandas-23633",
+      "bucket": "L",
+      "query": "StataWriter for version 117 fails on None in a string column long enough to be a Stata StrL",
+      "gold": [
+        "pandas::StataStrLWriter::generate_table"
+      ],
+      "lexical_overlap": [
+        "stata",
+        "str",
+        "writer"
+      ],
+      "roux_rank_at_freeze": 10,
+      "provenance": {
+        "issue": 23633,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/23633",
+        "labels": [
+          "IO Data",
+          "IO Stata"
+        ],
+        "fix_commit": "fcb840349caa",
+        "changed_files": [
+          "pandas/io/stata.py"
+        ],
+        "gold_candidates": [
+          "generate_table"
+        ]
+      }
+    },
+    {
+      "id": "pandas-23934",
+      "bucket": "L",
+      "query": "show_versions fails on master with latest lxml",
+      "gold": [
+        "pandas::show_versions"
+      ],
+      "lexical_overlap": [
+        "show",
+        "versions"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 23934,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/23934",
+        "labels": [
+          "CI"
+        ],
+        "fix_commit": "d9a037ec4ad0",
+        "changed_files": [
+          "pandas/util/_print_versions.py"
+        ],
+        "gold_candidates": [
+          "show_versions"
+        ]
+      }
+    },
+    {
+      "id": "pandas-24110",
+      "bucket": "L",
+      "query": "date_range() with closed=left and sub-second granularity returns wrong number of elements",
+      "gold": [
+        "pandas::DatetimeArray::_generate_range",
+        "pandas::_generate_range"
+      ],
+      "lexical_overlap": [
+        "range"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 24110,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/24110",
+        "labels": [
+          "Bug",
+          "Datetime"
+        ],
+        "fix_commit": "77278ba81584",
+        "changed_files": [
+          "pandas/core/arrays/datetimes.py"
+        ],
+        "gold_candidates": [
+          "_generate_range"
+        ]
+      }
+    },
+    {
+      "id": "pandas-24268",
+      "bucket": "L",
+      "query": "Series.nlargest sorts index with duplicates",
+      "gold": [
+        "pandas::Series::nlargest",
+        "pandas::Series::nsmallest"
+      ],
+      "lexical_overlap": [
+        "nlargest",
+        "series"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 24268,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/24268",
+        "labels": [
+          "Docs"
+        ],
+        "fix_commit": "076b5a85bcbe",
+        "changed_files": [
+          "pandas/core/series.py"
+        ],
+        "gold_candidates": [
+          "nlargest",
+          "nsmallest"
+        ]
+      }
+    },
+    {
+      "id": "pandas-24845",
+      "bucket": "L",
+      "query": "Concatenating unordered CategoricalIndex overrides indices",
+      "gold": [
+        "pandas::CategoricalIndex::_concat"
+      ],
+      "lexical_overlap": [
+        "categorical",
+        "index"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 24845,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/24845",
+        "labels": [
+          "Bug",
+          "Reshaping",
+          "Categorical"
+        ],
+        "fix_commit": "c7b470c3e13f",
+        "changed_files": [
+          "pandas/core/indexes/category.py"
+        ],
+        "gold_candidates": [
+          "_concat"
+        ]
+      }
+    },
+    {
+      "id": "pandas-24897",
+      "bucket": "L",
+      "query": "REGR: merge is failing with right_index=True and how='right'",
+      "gold": [
+        "pandas::DataFrame::set_index"
+      ],
+      "lexical_overlap": [
+        "index"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 24897,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/24897",
+        "labels": [
+          "Regression"
+        ],
+        "fix_commit": "1fc38f6d78b9",
+        "changed_files": [
+          "pandas/core/frame.py"
+        ],
+        "gold_candidates": [
+          "set_index"
+        ]
+      }
+    },
+    {
+      "id": "pandas-25580",
+      "bucket": "S",
+      "query": "Int64 series resampling",
+      "gold": [
+        "pandas::IndexOpsMixin::size"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 25580,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/25580",
+        "labels": [
+          "Bug",
+          "Resample",
+          "ExtensionArray"
+        ],
+        "fix_commit": "63755498d82e",
+        "changed_files": [
+          "pandas/core/base.py"
+        ],
+        "gold_candidates": [
+          "size"
+        ]
+      }
+    },
+    {
+      "id": "pandas-25726",
+      "bucket": "L",
+      "query": "Unexpected results for diagonal entries when using generic callable in corr",
+      "gold": [
+        "pandas::DataFrame::corr",
+        "pandas::Series::corr"
+      ],
+      "lexical_overlap": [
+        "corr"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 25726,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/25726",
+        "labels": [
+          "Numeric Operations",
+          "Algos"
+        ],
+        "fix_commit": "a703313ba64c",
+        "changed_files": [
+          "pandas/core/frame.py",
+          "pandas/core/series.py"
+        ],
+        "gold_candidates": [
+          "corr"
+        ]
+      }
+    },
+    {
+      "id": "pandas-25772",
+      "bucket": "L",
+      "query": "can't read large stata file",
+      "gold": [
+        "pandas::StataReader::_do_convert_categoricals"
+      ],
+      "lexical_overlap": [
+        "stata"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 25772,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/25772",
+        "labels": [
+          "IO Stata"
+        ],
+        "fix_commit": "35156dc98662",
+        "changed_files": [
+          "pandas/io/stata.py"
+        ],
+        "gold_candidates": [
+          "_do_convert_categoricals"
+        ]
+      }
+    },
+    {
+      "id": "pandas-25960",
+      "bucket": "L",
+      "query": "UnicodeDecodeError for Stata file",
+      "gold": [
+        "pandas::StataReader::_decode",
+        "pandas::StataReader::_get_data_label",
+        "pandas::StataReader::_get_fmtlist",
+        "pandas::StataReader::_get_lbllist",
+        "pandas::StataReader::_get_time_stamp"
+      ],
+      "lexical_overlap": [
+        "decode",
+        "stata"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 25960,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/25960",
+        "labels": [
+          "IO Stata"
+        ],
+        "fix_commit": "435e2b58c827",
+        "changed_files": [
+          "pandas/io/stata.py"
+        ],
+        "gold_candidates": [
+          "_decode",
+          "_get_data_label",
+          "_get_fmtlist",
+          "_get_lbllist",
+          "_get_time_stamp",
+          "_get_variable_labels",
+          "_get_varlist",
+          "_read_old_header",
+          "_read_value_labels",
+          "read"
+        ]
+      }
+    },
+    {
+      "id": "pandas-26186",
+      "bucket": "L",
+      "query": "Inconsitent index for plot",
+      "gold": [
+        "pandas::AreaPlot::_post_plot_logic",
+        "pandas::BarPlot::_make_plot",
+        "pandas::BarPlot::_post_plot_logic",
+        "pandas::HexBinPlot::_make_plot",
+        "pandas::LinePlot::_make_plot"
+      ],
+      "lexical_overlap": [
+        "plot"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 26186,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/26186",
+        "labels": [
+          "Bug",
+          "Visualization"
+        ],
+        "fix_commit": "fb379d826649",
+        "changed_files": [
+          "pandas/plotting/_matplotlib/core.py"
+        ],
+        "gold_candidates": [
+          "_make_plot",
+          "_post_plot_logic"
+        ]
+      }
+    },
+    {
+      "id": "pandas-27148",
+      "bucket": "S",
+      "query": "Indexing single level with list of missing labels raises if (and only if) it has length 1",
+      "gold": [
+        "pandas::_LocIndexer::_getitem_axis",
+        "pandas::_LocationIndexer::_getitem_axis",
+        "pandas::_iLocIndexer::_getitem_axis"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 27148,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/27148",
+        "labels": [
+          "Indexing",
+          "MultiIndex"
+        ],
+        "fix_commit": "fd2146ff36cc",
+        "changed_files": [
+          "pandas/core/indexing.py"
+        ],
+        "gold_candidates": [
+          "_getitem_axis"
+        ]
+      }
+    },
+    {
+      "id": "pandas-27464",
+      "bucket": "L",
+      "query": "Bug in DataFrame.rfloordiv when alignment for different columns and index",
+      "gold": [
+        "pandas::DataFrame::_arith_op"
+      ],
+      "lexical_overlap": [
+        "frame"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 27464,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/27464",
+        "labels": [
+          "Regression",
+          "Numeric Operations"
+        ],
+        "fix_commit": "62ab439b168d",
+        "changed_files": [
+          "pandas/core/frame.py"
+        ],
+        "gold_candidates": [
+          "_arith_op"
+        ]
+      }
+    },
+    {
+      "id": "pandas-27516",
+      "bucket": "S",
+      "query": "Partial string indexing returns ndarray rather than Series",
+      "gold": [
+        "pandas::Index::_outer_indexer",
+        "pandas::PeriodIndex",
+        "pandas::_LocIndexer::_is_scalar_access",
+        "pandas::_LocationIndexer::_is_scalar_access",
+        "pandas::_iLocIndexer::_is_scalar_access"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 27516,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/27516",
+        "labels": [
+          "Datetime",
+          "Indexing",
+          "Regression"
+        ],
+        "fix_commit": "226398224d26",
+        "changed_files": [
+          "pandas/core/indexes/base.py",
+          "pandas/core/indexes/datetimes.py",
+          "pandas/core/indexes/period.py",
+          "pandas/core/indexing.py"
+        ],
+        "gold_candidates": [
+          "PeriodIndex",
+          "_is_scalar_access",
+          "_outer_indexer"
+        ]
+      }
+    },
+    {
+      "id": "pandas-27526",
+      "bucket": "S",
+      "query": "Groupby Array-Type Quantiles Broken in 0.25.0",
+      "gold": [
+        "pandas::GroupBy::post_processor",
+        "pandas::GroupBy::quantile"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 27526,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/27526",
+        "labels": [
+          "Regression",
+          "Numeric Operations"
+        ],
+        "fix_commit": "8f6118c6a154",
+        "changed_files": [
+          "pandas/core/groupby/groupby.py"
+        ],
+        "gold_candidates": [
+          "post_processor",
+          "quantile"
+        ]
+      }
+    },
+    {
+      "id": "pandas-27585",
+      "bucket": "L",
+      "query": "Index._engine creates cyclic reference",
+      "gold": [
+        "pandas::Index::_engine"
+      ],
+      "lexical_overlap": [
+        "engine",
+        "index"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 27585,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/27585",
+        "labels": [
+          "Index"
+        ],
+        "fix_commit": "8b6942f28762",
+        "changed_files": [
+          "pandas/core/indexes/base.py"
+        ],
+        "gold_candidates": [
+          "_engine"
+        ]
+      }
+    },
+    {
+      "id": "pandas-27904",
+      "bucket": "L",
+      "query": "groupby nunique() with dates vs datetimes in presence of NaTs",
+      "gold": [
+        "pandas::DataFrameGroupBy::nunique",
+        "pandas::SeriesGroupBy::nunique"
+      ],
+      "lexical_overlap": [
+        "nunique"
+      ],
+      "roux_rank_at_freeze": 2,
+      "provenance": {
+        "issue": 27904,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/27904",
+        "labels": [
+          "Groupby"
+        ],
+        "fix_commit": "820072a0f9bc",
+        "changed_files": [
+          "pandas/core/groupby/generic.py"
+        ],
+        "gold_candidates": [
+          "nunique"
+        ]
+      }
+    },
+    {
+      "id": "pandas-28005",
+      "bucket": "L",
+      "query": "Explode on identical index causes duplication",
+      "gold": [
+        "pandas::DataFrame::explode"
+      ],
+      "lexical_overlap": [
+        "explode"
+      ],
+      "roux_rank_at_freeze": 8,
+      "provenance": {
+        "issue": 28005,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/28005",
+        "labels": [
+          "API Design"
+        ],
+        "fix_commit": "372a9a03608f",
+        "changed_files": [
+          "pandas/core/frame.py"
+        ],
+        "gold_candidates": [
+          "explode"
+        ]
+      }
+    },
+    {
+      "id": "pandas-28098",
+      "bucket": "L",
+      "query": "merge_asof() tolerance cannot be datetime.timedelta",
+      "gold": [
+        "pandas::_MergeOperation::_get_merge_keys"
+      ],
+      "lexical_overlap": [
+        "merge"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 28098,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/28098",
+        "labels": [
+          "Reshaping",
+          "Timedelta"
+        ],
+        "fix_commit": "83eb75bf04e9",
+        "changed_files": [
+          "pandas/core/reshape/merge.py"
+        ],
+        "gold_candidates": [
+          "_get_merge_keys"
+        ]
+      }
+    },
+    {
+      "id": "pandas-28204",
+      "bucket": "S",
+      "query": "CSS selector for index cells",
+      "gold": [
+        "pandas::DataFrame::_repr_html_"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 28204,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/28204",
+        "labels": [
+          "Bug",
+          "IO HTML"
+        ],
+        "fix_commit": "fadb27138a97",
+        "changed_files": [
+          "pandas/core/frame.py"
+        ],
+        "gold_candidates": [
+          "_repr_html_"
+        ]
+      }
+    },
+    {
+      "id": "pandas-28283",
+      "bucket": "S",
+      "query": "Various methods don't call call __finalize__",
+      "gold": [
+        "pandas::DataFrame::idxmax",
+        "pandas::DataFrame::idxmin"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 28283,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/28283",
+        "labels": [
+          "Bug",
+          "metadata"
+        ],
+        "fix_commit": "b0a51feaad1d",
+        "changed_files": [
+          "pandas/core/frame.py"
+        ],
+        "gold_candidates": [
+          "idxmax",
+          "idxmin"
+        ]
+      }
+    },
+    {
+      "id": "pandas-28435",
+      "bucket": "L",
+      "query": "Series.between() can take arguments that are Series, not just scalars",
+      "gold": [
+        "pandas::Series::between"
+      ],
+      "lexical_overlap": [
+        "between",
+        "series"
+      ],
+      "roux_rank_at_freeze": 4,
+      "provenance": {
+        "issue": 28435,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/28435",
+        "labels": [
+          "Docs"
+        ],
+        "fix_commit": "5bb315b5ecdf",
+        "changed_files": [
+          "pandas/core/series.py"
+        ],
+        "gold_candidates": [
+          "between"
+        ]
+      }
+    },
+    {
+      "id": "pandas-29563",
+      "bucket": "S",
+      "query": "Sparse DataFrame with all-zeros column returns NA for fancy index",
+      "gold": [
+        "pandas::Block::fill_value"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 29563,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/29563",
+        "labels": [
+          "Bug",
+          "Sparse"
+        ],
+        "fix_commit": "a94b13aac2c9",
+        "changed_files": [
+          "pandas/core/internals/blocks.py"
+        ],
+        "gold_candidates": [
+          "fill_value"
+        ]
+      }
+    },
+    {
+      "id": "pandas-31544",
+      "bucket": "L",
+      "query": "Reading with read_stata in chunks messes up categories",
+      "gold": [
+        "pandas::StataReader::_do_convert_categoricals",
+        "pandas::StataReader::_do_select_columns"
+      ],
+      "lexical_overlap": [
+        "stata"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 31544,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/31544",
+        "labels": [
+          "Bug",
+          "Categorical",
+          "IO Stata"
+        ],
+        "fix_commit": "035e1fe8311c",
+        "changed_files": [
+          "pandas/io/stata.py"
+        ],
+        "gold_candidates": [
+          "_do_convert_categoricals",
+          "_do_select_columns"
+        ]
+      }
+    },
+    {
+      "id": "pandas-32624",
+      "bucket": "L",
+      "query": "BUG in _unstack_multiple",
+      "gold": [
+        "pandas::_unstack_multiple"
+      ],
+      "lexical_overlap": [
+        "multiple",
+        "unstack"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 32624,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/32624",
+        "labels": [
+          "Bug",
+          "Reshaping",
+          "MultiIndex"
+        ],
+        "fix_commit": "e7ee418fa7a5",
+        "changed_files": [
+          "pandas/core/reshape/reshape.py"
+        ],
+        "gold_candidates": [
+          "_unstack_multiple"
+        ]
+      }
+    },
+    {
+      "id": "pandas-33399",
+      "bucket": "L",
+      "query": "DatetimeTZDtype astype behavior with Series.astype",
+      "gold": [
+        "pandas::NDFrame::astype"
+      ],
+      "lexical_overlap": [
+        "astype"
+      ],
+      "roux_rank_at_freeze": 6,
+      "provenance": {
+        "issue": 33399,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/33399",
+        "labels": [
+          "Docs",
+          "Timezones"
+        ],
+        "fix_commit": "b3580c177627",
+        "changed_files": [
+          "pandas/core/generic.py"
+        ],
+        "gold_candidates": [
+          "astype"
+        ]
+      }
+    },
+    {
+      "id": "pandas-33924",
+      "bucket": "L",
+      "query": "Performance regression in DataFrame[bool_indexer]",
+      "gold": [
+        "pandas::check_bool_indexer"
+      ],
+      "lexical_overlap": [
+        "bool",
+        "indexer"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 33924,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/33924",
+        "labels": [
+          "Indexing",
+          "Performance",
+          "Regression"
+        ],
+        "fix_commit": "c6c273a75346",
+        "changed_files": [
+          "pandas/core/indexing.py"
+        ],
+        "gold_candidates": [
+          "check_bool_indexer"
+        ]
+      }
+    },
+    {
+      "id": "pandas-34288",
+      "bucket": "L",
+      "query": "improve pie chart example",
+      "gold": [
+        "pandas::PlotAccessor::pie"
+      ],
+      "lexical_overlap": [
+        "pie"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 34288,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/34288",
+        "labels": [
+          "Docs"
+        ],
+        "fix_commit": "5f19e3111c84",
+        "changed_files": [
+          "pandas/plotting/_core.py"
+        ],
+        "gold_candidates": [
+          "pie"
+        ]
+      }
+    },
+    {
+      "id": "pandas-34526",
+      "bucket": "L",
+      "query": "Select an all-zero sparse series by indexer results in NaN",
+      "gold": [
+        "pandas::SparseArray::_take_with_fill"
+      ],
+      "lexical_overlap": [
+        "sparse"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 34526,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/34526",
+        "labels": [
+          "Bug",
+          "Indexing",
+          "Sparse",
+          "Needs Tests"
+        ],
+        "fix_commit": "02a6acfd0674",
+        "changed_files": [
+          "pandas/core/arrays/sparse/array.py"
+        ],
+        "gold_candidates": [
+          "_take_with_fill"
+        ]
+      }
+    },
+    {
+      "id": "pandas-37280",
+      "bucket": "L",
+      "query": "regression: pandas.read_stata(filename, iterator=True) raises ValueError",
+      "gold": [
+        "pandas::StataReader::_do_convert_categoricals",
+        "pandas::StataReader::_get_dtypes",
+        "pandas::_cast_to_stata_types",
+        "pandas::_convert_datetime_to_stata_type"
+      ],
+      "lexical_overlap": [
+        "stata"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 37280,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/37280",
+        "labels": [
+          "Bug",
+          "Regression",
+          "IO Stata"
+        ],
+        "fix_commit": "901b1a7ee63a",
+        "changed_files": [
+          "pandas/io/stata.py"
+        ],
+        "gold_candidates": [
+          "_cast_to_stata_types",
+          "_convert_datetime_to_stata_type",
+          "_do_convert_categoricals",
+          "_get_dtypes"
+        ]
+      }
+    },
+    {
+      "id": "pandas-37705",
+      "bucket": "L",
+      "query": "read_html - file path cannot be pathlib.Path type",
+      "gold": [
+        "pandas::read_html"
+      ],
+      "lexical_overlap": [
+        "html",
+        "read"
+      ],
+      "roux_rank_at_freeze": 8,
+      "provenance": {
+        "issue": 37705,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/37705",
+        "labels": [
+          "Bug",
+          "IO HTML"
+        ],
+        "fix_commit": "ee1b75c5af60",
+        "changed_files": [
+          "pandas/io/html.py"
+        ],
+        "gold_candidates": [
+          "read_html"
+        ]
+      }
+    },
+    {
+      "id": "pandas-37782",
+      "bucket": "S",
+      "query": "json_normalize cannot parse metadata fields list type",
+      "gold": [
+        "pandas::_recursive_extract"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 37782,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/37782",
+        "labels": [
+          "Bug",
+          "IO JSON",
+          "Nested Data"
+        ],
+        "fix_commit": "f1126610ab8a",
+        "changed_files": [
+          "pandas/io/json/_normalize.py"
+        ],
+        "gold_candidates": [
+          "_recursive_extract"
+        ]
+      }
+    },
+    {
+      "id": "pandas-39313",
+      "bucket": "L",
+      "query": "add examples to DataFrame.insert()",
+      "gold": [
+        "pandas::DataFrame::insert"
+      ],
+      "lexical_overlap": [
+        "frame",
+        "insert"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 39313,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/39313",
+        "labels": [
+          "Docs"
+        ],
+        "fix_commit": "3dfbf4965b56",
+        "changed_files": [
+          "pandas/core/frame.py"
+        ],
+        "gold_candidates": [
+          "insert"
+        ]
+      }
+    },
+    {
+      "id": "pandas-39556",
+      "bucket": "L",
+      "query": "'infer_freq' does not work with tz != \"UTC\"",
+      "gold": [
+        "pandas::_FrequencyInferer::get_freq"
+      ],
+      "lexical_overlap": [
+        "freq"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 39556,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/39556",
+        "labels": [
+          "Datetime",
+          "Timezones"
+        ],
+        "fix_commit": "3289f8297544",
+        "changed_files": [
+          "pandas/tseries/frequencies.py"
+        ],
+        "gold_candidates": [
+          "get_freq"
+        ]
+      }
+    },
+    {
+      "id": "pandas-39701",
+      "bucket": "L",
+      "query": "pd.show_versions: json.decoder.JSONDecodeError",
+      "gold": [
+        "pandas::show_versions"
+      ],
+      "lexical_overlap": [
+        "show",
+        "versions"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 39701,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/39701",
+        "labels": [
+          "Bug",
+          "Dependencies"
+        ],
+        "fix_commit": "80fb7c6dbfcd",
+        "changed_files": [
+          "pandas/util/_print_versions.py"
+        ],
+        "gold_candidates": [
+          "show_versions"
+        ]
+      }
+    },
+    {
+      "id": "pandas-42550",
+      "bucket": "L",
+      "query": "ENH:  Series.name should return a string or None",
+      "gold": [
+        "pandas::Series"
+      ],
+      "lexical_overlap": [
+        "series"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 42550,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/42550",
+        "labels": [
+          "Docs",
+          "Series"
+        ],
+        "fix_commit": "68305c132c61",
+        "changed_files": [
+          "pandas/core/series.py"
+        ],
+        "gold_candidates": [
+          "Series"
+        ]
+      }
+    },
+    {
+      "id": "pandas-43267",
+      "bucket": "L",
+      "query": "crash in df.groupby.rolling.mean with forward window indexer",
+      "gold": [
+        "pandas::BaseIndexer::get_window_bounds",
+        "pandas::BaseWindow::_get_window_indexer",
+        "pandas::BaseWindow::calc",
+        "pandas::Expanding::_get_window_indexer",
+        "pandas::ExpandingGroupby::_get_window_indexer"
+      ],
+      "lexical_overlap": [
+        "groupby",
+        "indexer",
+        "window"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 43267,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/43267",
+        "labels": [
+          "Bug",
+          "Groupby",
+          "Regression",
+          "Window",
+          "Segfault"
+        ],
+        "fix_commit": "776329fdd7fe",
+        "changed_files": [
+          "pandas/core/indexers/objects.py",
+          "pandas/core/window/ewm.py",
+          "pandas/core/window/expanding.py",
+          "pandas/core/window/rolling.py"
+        ],
+        "gold_candidates": [
+          "_get_window_indexer",
+          "calc",
+          "corr_func",
+          "cov_func",
+          "get_window_bounds"
+        ]
+      }
+    },
+    {
+      "id": "pandas-44366",
+      "bucket": "S",
+      "query": "parse_dates=False while passing date_parser tries to use date parser",
+      "gold": [
+        "pandas::_read",
+        "pandas::read_csv"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 44366,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/44366",
+        "labels": [
+          "Bug",
+          "Datetime",
+          "IO CSV"
+        ],
+        "fix_commit": "96eb4c9491cd",
+        "changed_files": [
+          "pandas/io/parsers/readers.py"
+        ],
+        "gold_candidates": [
+          "_read",
+          "read_csv"
+        ]
+      }
+    },
+    {
+      "id": "pandas-45319",
+      "bucket": "S",
+      "query": "Calling to_datetime With errrors=\"coerce\" Still Raises After 50 Rows",
+      "gold": [
+        "pandas::_maybe_cache"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 45319,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/45319",
+        "labels": [
+          "Bug",
+          "Datetime",
+          "Timezones"
+        ],
+        "fix_commit": "60a2d56acde5",
+        "changed_files": [
+          "pandas/core/tools/datetimes.py"
+        ],
+        "gold_candidates": [
+          "_maybe_cache"
+        ]
+      }
+    },
+    {
+      "id": "pandas-45809",
+      "bucket": "L",
+      "query": "df.plot.scatter() with `norm` keyword fails with 'multiple values for keyword argument' TypeError",
+      "gold": [
+        "pandas::BarPlot::_make_plot",
+        "pandas::HexBinPlot::_make_plot",
+        "pandas::LinePlot::_make_plot",
+        "pandas::MPLPlot::_make_plot",
+        "pandas::PiePlot::_make_plot"
+      ],
+      "lexical_overlap": [
+        "plot"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 45809,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/45809",
+        "labels": [
+          "Bug",
+          "Visualization"
+        ],
+        "fix_commit": "1cad74e1ee3b",
+        "changed_files": [
+          "pandas/plotting/_matplotlib/core.py"
+        ],
+        "gold_candidates": [
+          "_make_plot"
+        ]
+      }
+    },
+    {
+      "id": "pandas-46135",
+      "bucket": "L",
+      "query": "rolling with axis=1, win_type=, and center=True raises ValueError",
+      "gold": [
+        "pandas::Window::_center_window"
+      ],
+      "lexical_overlap": [
+        "center"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 46135,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/46135",
+        "labels": [
+          "Bug",
+          "Window"
+        ],
+        "fix_commit": "44dcef439664",
+        "changed_files": [
+          "pandas/core/window/rolling.py"
+        ],
+        "gold_candidates": [
+          "_center_window"
+        ]
+      }
+    },
+    {
+      "id": "pandas-46240",
+      "bucket": "L",
+      "query": "read_stata ignores columns parameter and dtypes of empty dta files",
+      "gold": [
+        "pandas::StataReader::read",
+        "pandas::_cast_to_stata_types"
+      ],
+      "lexical_overlap": [
+        "read",
+        "stata"
+      ],
+      "roux_rank_at_freeze": 2,
+      "provenance": {
+        "issue": 46240,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/46240",
+        "labels": [
+          "Bug",
+          "IO Stata"
+        ],
+        "fix_commit": "d8046b5ceb4a",
+        "changed_files": [
+          "pandas/io/stata.py"
+        ],
+        "gold_candidates": [
+          "_cast_to_stata_types",
+          "read"
+        ]
+      }
+    },
+    {
+      "id": "pandas-46389",
+      "bucket": "S",
+      "query": "colon in URL gets cut off during call of to_html() when applying format(hyperlinks='html')",
+      "gold": [
+        "pandas::_render_href"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 46389,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/46389",
+        "labels": [
+          "Bug",
+          "Styler"
+        ],
+        "fix_commit": "f99ec8bf80ba",
+        "changed_files": [
+          "pandas/io/formats/style_render.py"
+        ],
+        "gold_candidates": [
+          "_render_href"
+        ]
+      }
+    },
+    {
+      "id": "pandas-47705",
+      "bucket": "S",
+      "query": "groupby.resample have inconsistent behavior when calling dataframe that's empty vs have entries",
+      "gold": [
+        "pandas::DatetimeIndexResampler::_wrap_result",
+        "pandas::Resampler::_wrap_result"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 47705,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/47705",
+        "labels": [
+          "Bug",
+          "Groupby",
+          "Resample"
+        ],
+        "fix_commit": "fba672389b74",
+        "changed_files": [
+          "pandas/core/resample.py"
+        ],
+        "gold_candidates": [
+          "_wrap_result"
+        ]
+      }
+    },
+    {
+      "id": "pandas-48911",
+      "bucket": "L",
+      "query": "IntervalIndex.from_arrays() and IntervalIndex.from_breaks() and IntervalIndex.from_tuples() missing description of name parameter",
+      "gold": [
+        "pandas::IntervalArray::_from_factorized",
+        "pandas::IntervalArray::from_arrays",
+        "pandas::IntervalArray::from_breaks",
+        "pandas::IntervalIndex::from_arrays",
+        "pandas::IntervalIndex::from_breaks"
+      ],
+      "lexical_overlap": [
+        "arrays",
+        "breaks",
+        "index",
+        "interval"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 48911,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/48911",
+        "labels": [
+          "Docs",
+          "Needs Triage"
+        ],
+        "fix_commit": "3872572512b4",
+        "changed_files": [
+          "pandas/core/arrays/interval.py",
+          "pandas/core/indexes/interval.py"
+        ],
+        "gold_candidates": [
+          "_from_factorized",
+          "from_arrays",
+          "from_breaks"
+        ]
+      }
+    },
+    {
+      "id": "pandas-48916",
+      "bucket": "S",
+      "query": "per docs, \"margins\" parameter returns row and column sums if True, but I think it returns the mean",
+      "gold": [
+        "pandas::DataFrame::pivot"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 48916,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/48916",
+        "labels": [
+          "Docs",
+          "Needs Triage"
+        ],
+        "fix_commit": "ee352b14cc57",
+        "changed_files": [
+          "pandas/core/frame.py"
+        ],
+        "gold_candidates": [
+          "pivot"
+        ]
+      }
+    },
+    {
+      "id": "pandas-49620",
+      "bucket": "L",
+      "query": "`Series.searchsorted(...)` fails with `Timestamp` `DataFrame`s",
+      "gold": [
+        "pandas::IndexOpsMixin::searchsorted"
+      ],
+      "lexical_overlap": [
+        "searchsorted"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 49620,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/49620",
+        "labels": [
+          "Bug",
+          "Needs Triage"
+        ],
+        "fix_commit": "c29736a3c2f2",
+        "changed_files": [
+          "pandas/core/base.py"
+        ],
+        "gold_candidates": [
+          "searchsorted"
+        ]
+      }
+    },
+    {
+      "id": "pandas-50840",
+      "bucket": "S",
+      "query": "df.groupby().resample()[[cols]] raise KeyError when resampling on index",
+      "gold": [
+        "pandas::Resampler::_gotitem",
+        "pandas::_GroupByMixin::_gotitem"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 50840,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/50840",
+        "labels": [
+          "Bug",
+          "Needs Triage"
+        ],
+        "fix_commit": "38ad5ce0c6c7",
+        "changed_files": [
+          "pandas/core/resample.py"
+        ],
+        "gold_candidates": [
+          "_gotitem"
+        ]
+      }
+    },
+    {
+      "id": "pandas-51839",
+      "bucket": "L",
+      "query": "Improve to_csv mode documentation",
+      "gold": [
+        "pandas::NDFrame::to_csv"
+      ],
+      "lexical_overlap": [
+        "csv"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 51839,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/51839",
+        "labels": [
+          "Docs"
+        ],
+        "fix_commit": "fb282b64331e",
+        "changed_files": [
+          "pandas/core/generic.py"
+        ],
+        "gold_candidates": [
+          "to_csv"
+        ]
+      }
+    },
+    {
+      "id": "pandas-52781",
+      "bucket": "L",
+      "query": "pd.read_hdf leaves files open if it raises an IndexError exception",
+      "gold": [
+        "pandas::read_hdf"
+      ],
+      "lexical_overlap": [
+        "hdf",
+        "read"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 52781,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/52781",
+        "labels": [
+          "Bug",
+          "Needs Triage"
+        ],
+        "fix_commit": "e0e138473999",
+        "changed_files": [
+          "pandas/io/pytables.py"
+        ],
+        "gold_candidates": [
+          "read_hdf"
+        ]
+      }
+    },
+    {
+      "id": "pandas-53533",
+      "bucket": "L",
+      "query": "iloc-indexing with callable has inconsistent semantics if the return type is a tuple",
+      "gold": [
+        "pandas::IndexingMixin::iloc",
+        "pandas::_LocIndexer::_convert_to_indexer",
+        "pandas::_LocationIndexer::_check_deprecated_callable_usage",
+        "pandas::_LocationIndexer::_convert_to_indexer",
+        "pandas::_iLocIndexer::_convert_to_indexer"
+      ],
+      "lexical_overlap": [
+        "callable",
+        "iloc",
+        "indexing"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 53533,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/53533",
+        "labels": [
+          "Bug",
+          "Indexing"
+        ],
+        "fix_commit": "0e2277b443ba",
+        "changed_files": [
+          "pandas/core/indexing.py"
+        ],
+        "gold_candidates": [
+          "_check_deprecated_callable_usage",
+          "_convert_to_indexer",
+          "iloc"
+        ]
+      }
+    },
+    {
+      "id": "pandas-53935",
+      "bucket": "L",
+      "query": "Categorical order lost after call to `remove_categories",
+      "gold": [
+        "pandas::Categorical::remove_categories"
+      ],
+      "lexical_overlap": [
+        "categorical",
+        "categories",
+        "remove"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 53935,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/53935",
+        "labels": [
+          "Bug",
+          "Categorical"
+        ],
+        "fix_commit": "41dfcccf0771",
+        "changed_files": [
+          "pandas/core/arrays/categorical.py"
+        ],
+        "gold_candidates": [
+          "remove_categories"
+        ]
+      }
+    },
+    {
+      "id": "pandas-53983",
+      "bucket": "S",
+      "query": "Partial slicing of unordered datetimeindex inconsistent between providing start and end points",
+      "gold": [
+        "pandas::DatetimeIndex::check_str_or_none"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 53983,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/53983",
+        "labels": [
+          "Bug",
+          "Needs Triage"
+        ],
+        "fix_commit": "0fff817aca15",
+        "changed_files": [
+          "pandas/core/indexes/datetimes.py"
+        ],
+        "gold_candidates": [
+          "check_str_or_none"
+        ]
+      }
+    },
+    {
+      "id": "pandas-54134",
+      "bucket": "L",
+      "query": "`copy.deepcopy()` doesn't deepcopy the metadata in `.attrs",
+      "gold": [
+        "pandas::NDFrame::attrs"
+      ],
+      "lexical_overlap": [
+        "attrs"
+      ],
+      "roux_rank_at_freeze": 3,
+      "provenance": {
+        "issue": 54134,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/54134",
+        "labels": [
+          "Bug",
+          "metadata"
+        ],
+        "fix_commit": "f3f0795d8076",
+        "changed_files": [
+          "pandas/core/generic.py"
+        ],
+        "gold_candidates": [
+          "attrs"
+        ]
+      }
+    },
+    {
+      "id": "pandas-54564",
+      "bucket": "L",
+      "query": "pd.read_excel with engine \"xlrd\" fails when a cell contains NaN/inf",
+      "gold": [
+        "pandas::XlrdReader::_parse_cell"
+      ],
+      "lexical_overlap": [
+        "cell",
+        "xlrd"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 54564,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/54564",
+        "labels": [
+          "Bug",
+          "Missing-data",
+          "IO SQL",
+          "IO Excel"
+        ],
+        "fix_commit": "0b58c62de5fc",
+        "changed_files": [
+          "pandas/io/excel/_xlrd.py"
+        ],
+        "gold_candidates": [
+          "_parse_cell"
+        ]
+      }
+    },
+    {
+      "id": "pandas-54942",
+      "bucket": "L",
+      "query": "str.startswith and str.endswith with tuple argument fail for \"string[pyarrow]\"",
+      "gold": [
+        "pandas::ArrowStringArray::_str_contains",
+        "pandas::ArrowStringArray::_str_endswith",
+        "pandas::ArrowStringArray::_str_startswith"
+      ],
+      "lexical_overlap": [
+        "endswith",
+        "startswith",
+        "str"
+      ],
+      "roux_rank_at_freeze": 4,
+      "provenance": {
+        "issue": 54942,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/54942",
+        "labels": [
+          "Bug",
+          "Strings"
+        ],
+        "fix_commit": "2b6af64bb034",
+        "changed_files": [
+          "pandas/core/arrays/string_arrow.py"
+        ],
+        "gold_candidates": [
+          "_str_contains",
+          "_str_endswith",
+          "_str_startswith"
+        ]
+      }
+    },
+    {
+      "id": "pandas-55009",
+      "bucket": "S",
+      "query": "The `DataFrame.apply` method does not use the extra argument list when `raw=True",
+      "gold": [
+        "pandas::ArrowParserWrapper::handle_warning"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 55009,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/55009",
+        "labels": [
+          "Bug",
+          "Apply"
+        ],
+        "fix_commit": "824a2738dc0b",
+        "changed_files": [
+          "pandas/io/parsers/arrow_parser_wrapper.py"
+        ],
+        "gold_candidates": [
+          "handle_warning"
+        ]
+      }
+    },
+    {
+      "id": "pandas-55027",
+      "bucket": "L",
+      "query": "ENH: _openpyxl.py load_workbook allow to modify the read_only, data_only and keep_links parameters using engine_kwargs",
+      "gold": [
+        "pandas::OpenpyxlReader::load_workbook"
+      ],
+      "lexical_overlap": [
+        "load",
+        "openpyxl",
+        "workbook"
+      ],
+      "roux_rank_at_freeze": 3,
+      "provenance": {
+        "issue": 55027,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/55027",
+        "labels": [
+          "Enhancement",
+          "Needs Triage"
+        ],
+        "fix_commit": "0d786bf6192b",
+        "changed_files": [
+          "pandas/io/excel/_openpyxl.py"
+        ],
+        "gold_candidates": [
+          "load_workbook"
+        ]
+      }
+    },
+    {
+      "id": "pandas-55254",
+      "bucket": "L",
+      "query": "melt method doesn't seem to preserve timezone settings",
+      "gold": [
+        "pandas::melt"
+      ],
+      "lexical_overlap": [
+        "melt"
+      ],
+      "roux_rank_at_freeze": 7,
+      "provenance": {
+        "issue": 55254,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/55254",
+        "labels": [
+          "Bug",
+          "Needs Triage"
+        ],
+        "fix_commit": "22452174d44f",
+        "changed_files": [
+          "pandas/core/reshape/melt.py"
+        ],
+        "gold_candidates": [
+          "melt"
+        ]
+      }
+    },
+    {
+      "id": "pandas-55884",
+      "bucket": "L",
+      "query": "merge_ordered()` doesn't validate `fill_method",
+      "gold": [
+        "pandas::_MergeOperation::get_result",
+        "pandas::_OrderedMerge::get_result"
+      ],
+      "lexical_overlap": [
+        "merge",
+        "ordered"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 55884,
+        "issue_url": "https://github.com/pandas-dev/pandas/issues/55884",
+        "labels": [
+          "Reshaping",
+          "Error Reporting"
+        ],
+        "fix_commit": "112fd0b5cbf2",
+        "changed_files": [
+          "pandas/core/reshape/merge.py"
+        ],
+        "gold_candidates": [
+          "get_result"
+        ]
+      }
+    }
+  ]
+}

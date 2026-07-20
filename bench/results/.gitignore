@@ -1,0 +1,6 @@
+# Per-run output is reproducible — don't check in.
+*.jsonl
+*.log
+heldout_*.json
+freshness_*.json
+vocab_gap_*.json

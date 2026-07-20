@@ -1,0 +1,92 @@
+{
+  "timestamp": 1783216441,
+  "commit": "89e55aa60a004e7ebd976346e1e8f11686c93e0a",
+  "personas": [
+    {
+      "name": "rust-cli (ripgrep)",
+      "slug": "ripgrep",
+      "language": "rust",
+      "metrics": {
+        "h1": 0.375,
+        "h5": 0.5,
+        "h10": 0.875,
+        "mrr": 0.48333333333333334,
+        "agent_h1": 0.75,
+        "agent_mrr": 0.875,
+        "dev_h1": 0.0,
+        "dev_mrr": 0.09166666666666667
+      }
+    },
+    {
+      "name": "data-scientist (pandas)",
+      "slug": "pandas",
+      "language": "python",
+      "metrics": {
+        "h1": 0.875,
+        "h5": 1.0,
+        "h10": 1.0,
+        "mrr": 0.90625,
+        "agent_h1": 0.75,
+        "agent_mrr": 0.8125,
+        "dev_h1": 1.0,
+        "dev_mrr": 1.0
+      }
+    },
+    {
+      "name": "js-frontend (remix)",
+      "slug": "remix",
+      "language": "typescript",
+      "metrics": {
+        "h1": 0.5,
+        "h5": 1.0,
+        "h10": 1.0,
+        "mrr": 0.6666666666666666,
+        "agent_h1": 0.75,
+        "agent_mrr": 0.8125,
+        "dev_h1": 0.25,
+        "dev_mrr": 0.5208333333333333
+      }
+    },
+    {
+      "name": "go-backend (gin)",
+      "slug": "gin",
+      "language": "go",
+      "metrics": {
+        "h1": 0.625,
+        "h5": 0.875,
+        "h10": 1.0,
+        "mrr": 0.7135416666666666,
+        "agent_h1": 1.0,
+        "agent_mrr": 1.0,
+        "dev_h1": 0.25,
+        "dev_mrr": 0.4270833333333333
+      }
+    },
+    {
+      "name": "firmware-cpp (Marlin)",
+      "slug": "Marlin",
+      "language": "cpp",
+      "metrics": {
+        "h1": 0.5,
+        "h5": 1.0,
+        "h10": 1.0,
+        "mrr": 0.65,
+        "agent_h1": 0.75,
+        "agent_mrr": 0.875,
+        "dev_h1": 0.25,
+        "dev_mrr": 0.425
+      }
+    }
+  ],
+  "aggregate": {
+    "count": 5,
+    "h1": 0.575,
+    "h5": 0.875,
+    "h10": 0.975,
+    "mrr": 0.6839583333333332,
+    "agent_h1": 0.8,
+    "agent_mrr": 0.875,
+    "dev_h1": 0.35,
+    "dev_mrr": 0.4929166666666666
+  }
+}

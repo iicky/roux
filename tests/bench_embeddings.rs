@@ -1,7 +1,7 @@
-/// Embedding benchmark: measures whether vector search improves retrieval
-/// on queries that BM25 misses (the adversarial/developer queries).
-///
-/// Run with: cargo test --test bench_embeddings -- --ignored --nocapture
+//! Embedding benchmark: measures whether vector search improves retrieval
+//! on queries that BM25 misses (the adversarial/developer queries).
+//!
+//! Run with: cargo test --test bench_embeddings -- --ignored --nocapture
 
 struct EmbedQuery {
     query: &'static str,
@@ -90,8 +90,7 @@ fn bench_embedding_value() {
 
     // Index roux source
     let store = GraphStore::open_in_memory().unwrap();
-    let graph =
-        extract::extract_dir(std::path::Path::new("src"), "roux", "dev", Some("rust")).unwrap();
+    let graph = extract::extract_dir(std::path::Path::new("src"), "roux", Some("rust")).unwrap();
     store
         .upsert_source("roux", "dev", "rust", &graph.nodes, &graph.edges)
         .unwrap();

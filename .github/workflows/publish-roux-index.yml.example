@@ -1,0 +1,49 @@
+# Example workflow — copy into .github/workflows/ in your own repo.
+#
+# Builds a roux index on release, uploads it as a release asset, and makes it
+# agent-discoverable via a predictable URL:
+#   https://github.com/<owner>/<repo>/releases/download/<tag>/roux-index.sqlite.gz
+#
+# Agents can then query the downloaded artifact directly:
+#   curl -L -o idx.sqlite.gz https://github.com/...
+#   gunzip idx.sqlite.gz
+#   roux query "auth middleware" --db idx.sqlite
+
+name: Publish roux index
+
+on:
+  release:
+    types: [published]
+  # Also allow manual runs for testing.
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # needed to attach assets to the release
+
+jobs:
+  build-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install roux
+        run: cargo install --locked roux-cli
+
+      - name: Index repository
+        run: roux init --local
+
+      - name: Export portable artifact
+        run: roux export --output roux-index.sqlite.gz --gzip
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: roux-index
+          path: roux-index.sqlite.gz
+          retention-days: 30
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: roux-index.sqlite.gz

@@ -1,9 +1,8 @@
 [advisories]
 yanked = "warn"
 ignore = [
-    # transitive: number_prefix (via indicatif) — unmaintained, no security issue
-    "RUSTSEC-2025-0119",
-    # transitive: paste (via candle) — unmaintained, no security issue
+    # `paste` is unmaintained (archived by its author) but ships no code paths
+    # of concern; it reaches us only through the candle/gemm embedding stack.
     "RUSTSEC-2024-0436",
 ]
 

@@ -1,0 +1,6 @@
+# roux token-economics harness — baseline arm. Disables the roux MCP server.
+display_name = "Roux Bench (no roux)"
+description = "Token-economics baseline arm: file tools only, roux MCP disabled."
+safety = "yolo"
+auto_approve = true
+disabled_tools = ["roux_roux_query", "ask_user_question", "webfetch", "web_search"]

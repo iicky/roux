@@ -1,0 +1,6 @@
+# roux token-economics harness — with-roux arm. Keeps roux MCP tools enabled.
+display_name = "Roux Bench (with roux)"
+description = "Token-economics with-roux arm: file tools + roux MCP enabled."
+safety = "yolo"
+auto_approve = true
+disabled_tools = ["ask_user_question", "webfetch", "web_search"]

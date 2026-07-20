@@ -43,13 +43,11 @@ pub fn rank_subgraph(
         bm25_scores,
         top_k,
         FusionMethod::ScoreFusion,
-        None,
     )
 }
 
 /// Build a petgraph from nodes + edges, run PPR from seed nodes,
 /// fuse with BM25 scores using the specified fusion method, return the top-k scored subgraph.
-/// If `query` is provided, applies description re-ranking as a boost pass.
 pub fn rank_subgraph_with(
     nodes: Vec<Node>,
     edges: Vec<Edge>,
@@ -57,7 +55,6 @@ pub fn rank_subgraph_with(
     bm25_scores: &HashMap<String, f64>,
     top_k: usize,
     fusion: FusionMethod,
-    query: Option<&str>,
 ) -> RankedSubgraph {
     if nodes.is_empty() {
         return RankedSubgraph {
@@ -103,7 +100,9 @@ pub fn rank_subgraph_with(
         .filter_map(|id| id_to_idx.get(id).copied())
         .collect();
 
-    let ppr_scores = personalized_pagerank(&graph, &seed_indices, 0.15, 20);
+    let cfg = crate::settings::get();
+    let ppr_scores =
+        personalized_pagerank(&graph, &seed_indices, cfg.ppr_alpha, cfg.ppr_iterations);
 
     // Normalize PPR scores to [0,1]
     let ppr_max = ppr_scores.values().cloned().fold(0.0f64, f64::max);
@@ -118,13 +117,21 @@ pub fn rank_subgraph_with(
 
     let scored: Vec<(String, f64)> = match fusion {
         FusionMethod::ScoreFusion => {
-            // Fuse: combined = BM25^0.7 × PPR^0.3
-            let alpha = 0.7;
-            let beta = 0.3;
+            // Fuse: combined = BM25^α × PPR^β (α, β from settings)
+            let alpha = cfg.fusion_bm25_exp;
+            let beta = cfg.fusion_ppr_exp;
             let mut s: Vec<(String, f64)> = nodes
                 .iter()
                 .map(|n| {
-                    let bm25 = bm25_scores.get(&n.id).copied().unwrap_or(0.0);
+                    // Floor BM25 at ε: graph neighbors (no lexical hit) and the
+                    // worst BM25 candidate both normalize to 0, and 0^α zeroes
+                    // the product regardless of PPR. With the floor, PPR ranks
+                    // the lexically weak/absent nodes.
+                    let bm25 = bm25_scores
+                        .get(&n.id)
+                        .copied()
+                        .unwrap_or(0.0)
+                        .max(cfg.fusion_bm25_floor);
                     let ppr = ppr_normalized.get(&n.id).copied().unwrap_or(0.0);
                     let combined = bm25.powf(alpha) * ppr.powf(beta);
                     (n.id.clone(), combined)
@@ -135,7 +142,7 @@ pub fn rank_subgraph_with(
         }
         FusionMethod::RRF => {
             // Reciprocal Rank Fusion: score = 1/(k+rank_bm25) + 1/(k+rank_ppr)
-            let k = 60.0;
+            let k = cfg.rrf_k;
 
             // BM25 ranking (by normalized score, descending)
             let mut bm25_ranked: Vec<(&String, f64)> = nodes
@@ -180,65 +187,21 @@ pub fn rank_subgraph_with(
         .iter()
         .map(|n| (n.id.as_str(), n.kind.as_str()))
         .collect();
-    let scored: Vec<(String, f64)> = scored
+    let mut scored: Vec<(String, f64)> = scored
         .into_iter()
         .map(|(id, score)| {
             let multiplier = match kind_map.get(id.as_str()).copied().unwrap_or("") {
-                "file" => 0.5,
-                "doc_section" => 0.7,
+                "file" => cfg.kind_weight_file,
+                "doc_section" => cfg.kind_weight_doc,
                 _ => 1.0,
             };
             (id, score * multiplier)
         })
         .collect();
-
-    // Description re-ranking: boost scores by query-description term overlap
-    let scored = if let Some(query_str) = query {
-        let query_terms: HashSet<&str> = query_str
-            .split_whitespace()
-            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
-            .filter(|w| w.len() > 2)
-            .collect();
-
-        let node_map: HashMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-        let desc_alpha = 0.3;
-
-        let mut boosted: Vec<(String, f64)> = scored
-            .into_iter()
-            .map(|(id, score)| {
-                let desc_score = node_map
-                    .get(id.as_str())
-                    .and_then(|n| n.description.as_ref())
-                    .map(|desc| {
-                        let desc_lower = desc.to_lowercase();
-                        let desc_words: HashSet<&str> = desc_lower
-                            .split_whitespace()
-                            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
-                            .collect();
-                        let hits = query_terms
-                            .iter()
-                            .filter(|t| {
-                                let tl = t.to_lowercase();
-                                desc_words.iter().any(|dw| dw.contains(&tl))
-                            })
-                            .count();
-                        if query_terms.is_empty() {
-                            0.0
-                        } else {
-                            hits as f64 / query_terms.len() as f64
-                        }
-                    })
-                    .unwrap_or(0.0);
-                // Multiplicative boost: score × (1 + α × desc_match)
-                let boosted_score = score * (1.0 + desc_alpha * desc_score);
-                (id, boosted_score)
-            })
-            .collect();
-        boosted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        boosted
-    } else {
-        scored
-    };
+    // Re-sort after demotion: multipliers must affect top-k *selection*, not
+    // just the displayed score. Without this, a file node that out-scores a
+    // code symbol on fusion keeps its top-k slot despite the demotion below.
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     // Take top-k
     let seed_set: HashSet<&str> = seed_ids.iter().map(|s| s.as_str()).collect();
@@ -392,11 +355,13 @@ mod tests {
                 from_id: "a".to_string(),
                 to_id: "b".to_string(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
             Edge {
                 from_id: "a".to_string(),
                 to_id: "c".to_string(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
         ];
 
@@ -444,21 +409,25 @@ mod tests {
                 from_id: "seed".to_string(),
                 to_id: "hub".to_string(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
             Edge {
                 from_id: "hub".to_string(),
                 to_id: "a".to_string(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
             Edge {
                 from_id: "hub".to_string(),
                 to_id: "b".to_string(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
             Edge {
                 from_id: "hub".to_string(),
                 to_id: "c".to_string(),
                 kind: "calls".to_string(),
+                ref_name: None,
             },
         ];
 
@@ -480,6 +449,7 @@ mod tests {
             from_id: "n0".to_string(),
             to_id: "n1".to_string(),
             kind: "calls".to_string(),
+            ref_name: None,
         }];
 
         let result = rank_subgraph(nodes, edges, &["n0".to_string()], &HashMap::new(), 5);

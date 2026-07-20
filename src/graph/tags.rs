@@ -80,7 +80,7 @@ pub fn extract_tags(
     let query = match Query::new(&ts_lang, &clean_query) {
         Ok(q) => q,
         Err(e) => {
-            eprintln!("  warning: tags query failed for {lang}: {e}");
+            crate::output::warn(format!("tags query failed for {lang}: {e}"));
             return (vec![], vec![]);
         }
     };
@@ -107,7 +107,10 @@ pub fn extract_tags(
             "definition.class" => {
                 def_captures.insert(idx, SymbolKind::Class);
             }
-            "definition.interface" | "definition.trait" => {
+            "definition.interface" => {
+                def_captures.insert(idx, SymbolKind::Interface);
+            }
+            "definition.trait" => {
                 def_captures.insert(idx, SymbolKind::Trait);
             }
             "definition.struct" => {
@@ -358,8 +361,69 @@ const TAGS_JAVASCRIPT: &str = r#"
   constructor: (_) @name) @reference.class
 "#;
 
-// TypeScript reuses JavaScript queries (same grammar base)
-const TAGS_TYPESCRIPT: &str = TAGS_JAVASCRIPT;
+// TypeScript: JavaScript queries plus interface and type-alias declarations
+// (which only exist in the TS grammar).
+const TAGS_TYPESCRIPT: &str = r#"
+(method_definition
+    name: (property_identifier) @name) @definition.method
+
+[
+    (class
+      name: (_) @name)
+    (class_declaration
+      name: (_) @name)
+] @definition.class
+
+[
+    (function_expression
+      name: (identifier) @name)
+    (function_declaration
+      name: (identifier) @name)
+    (generator_function
+      name: (identifier) @name)
+    (generator_function_declaration
+      name: (identifier) @name)
+] @definition.function
+
+(lexical_declaration
+    (variable_declarator
+      name: (identifier) @name
+      value: [(arrow_function) (function_expression)]) @definition.function)
+
+(variable_declaration
+    (variable_declarator
+      name: (identifier) @name
+      value: [(arrow_function) (function_expression)]) @definition.function)
+
+(assignment_expression
+  left: [
+    (identifier) @name
+    (member_expression
+      property: (property_identifier) @name)
+  ]
+  right: [(arrow_function) (function_expression)]
+) @definition.function
+
+(pair
+  key: (property_identifier) @name
+  value: [(arrow_function) (function_expression)]) @definition.function
+
+(call_expression
+    function: (identifier) @name) @reference.call
+
+(call_expression
+  function: (member_expression
+    property: (property_identifier) @name)) @reference.call
+
+(new_expression
+  constructor: (_) @name) @reference.class
+
+(interface_declaration
+    name: (type_identifier) @name) @definition.interface
+
+(type_alias_declaration
+    name: (type_identifier) @name) @definition.type
+"#;
 
 const TAGS_GO: &str = r#"
 (function_declaration
@@ -382,18 +446,60 @@ const TAGS_GO: &str = r#"
 
 const TAGS_CPP: &str = r#"
 (struct_specifier name: (type_identifier) @name body:(_)) @definition.class
-
+(class_specifier name: (type_identifier) @name) @definition.class
 (declaration type: (union_specifier name: (type_identifier) @name)) @definition.class
 
-(function_declarator declarator: (identifier) @name) @definition.function
+; Function/method definitions with bodies. Anchoring on `function_definition`
+; (rather than the bare `function_declarator`) makes the captured byte range
+; cover the body, which the call-edge walker needs to recurse into.
+(function_definition
+    declarator: (function_declarator
+        declarator: (identifier) @name)) @definition.function
 
-(function_declarator declarator: (field_identifier) @name) @definition.function
+(function_definition
+    declarator: (function_declarator
+        declarator: (field_identifier) @name)) @definition.method
+
+(function_definition
+    declarator: (function_declarator
+        declarator: (qualified_identifier
+            name: (identifier) @name))) @definition.method
+
+(function_definition
+    declarator: (function_declarator
+        declarator: (destructor_name (identifier) @name))) @definition.method
+
+; Header / out-of-line declarations (no body). These match free functions in
+; a header (`int foo(int);`) and member functions inside a class body
+; (`void bar();`). They never match inside a `function_definition`, so they
+; complement the patterns above.
+(declaration
+    declarator: (function_declarator
+        declarator: (identifier) @name)) @definition.function
+
+(field_declaration
+    declarator: (function_declarator
+        declarator: (field_identifier) @name)) @definition.method
 
 (type_definition declarator: (type_identifier) @name) @definition.type
-
 (enum_specifier name: (type_identifier) @name) @definition.type
 
-(class_specifier name: (type_identifier) @name) @definition.class
+; Call references — function calls, method calls, qualified calls, template
+; calls. Each becomes a `calls` edge resolved against in-file symbols.
+(call_expression
+    function: (identifier) @name) @reference.call
+
+(call_expression
+    function: (field_expression
+        field: (field_identifier) @name)) @reference.call
+
+(call_expression
+    function: (qualified_identifier
+        name: (identifier) @name)) @reference.call
+
+(call_expression
+    function: (template_function
+        name: (identifier) @name)) @reference.call
 "#;
 
 const TAGS_BASH: &str = r#"

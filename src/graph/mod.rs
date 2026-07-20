@@ -4,7 +4,7 @@ pub mod store;
 pub mod tags;
 
 /// A node in the code graph — a file, function, class, etc.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node {
     /// Unique ID (blake3 hash of source_name + qualified_name)
     pub id: String,
@@ -48,18 +48,87 @@ pub struct Node {
 }
 
 /// An edge between two nodes (cross-references only, not containment).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Edge {
     pub from_id: String,
     pub to_id: String,
     /// Relationship kind: calls, imports, implements, inherits, type_ref
     pub kind: String,
+    /// Raw reference token this edge was created from (the unresolved name),
+    /// persisted so resolution can be re-run over stored data during an
+    /// incremental refresh. None for edges built with a concrete target id.
+    pub ref_name: Option<String>,
 }
 
 impl Node {
     pub fn id_for(source_name: &str, qualified_name: &str) -> String {
         let input = format!("{source_name}:{qualified_name}");
         blake3::hash(input.as_bytes()).to_hex().to_string()
+    }
+
+    /// ID for a file-scoped symbol, disambiguated by `file_path` and an
+    /// optional `discriminator` (typically the parameter list, for overloads).
+    ///
+    /// A top-level symbol's qualified name is just `source::name` (no file
+    /// path), so two private `helper`s in different files, `main` in a
+    /// multi-binary crate, or a symbol redefined per file all hash to the same
+    /// `id_for` and get silently merged by `merge_duplicate_nodes` — with the
+    /// loser's edges misattributed to the survivor. Folding
+    /// `file_path` into the hash keeps them distinct. File nodes stay on
+    /// `id_for`: their qualified name already embeds the path.
+    ///
+    /// Same-file overloads (`add(int)` vs `add(double)`) share a signatureless
+    /// qualified name and would still collide, so callers pass the parameter
+    /// list as `discriminator` for function/method kinds — overloads differ in
+    /// it, while a forward declaration and its definition share it and stay
+    /// merged. Non-overloadable kinds pass `""`.
+    pub fn id_for_symbol(
+        source_name: &str,
+        file_path: &str,
+        qualified_name: &str,
+        discriminator: &str,
+    ) -> String {
+        let input = format!("{source_name}:{file_path}:{qualified_name}:{discriminator}");
+        blake3::hash(input.as_bytes()).to_hex().to_string()
+    }
+
+    /// Parameter-list discriminator for overload disambiguation: the
+    /// whitespace-collapsed contents of the signature's first balanced
+    /// parenthesis group, or `""` when there is none.
+    ///
+    /// Overloads differ here (`(int a, int b)` vs `(double a, double b)`); a
+    /// prototype and its definition match (`(int x)` either way). Parameter
+    /// *names* are kept, so a decl/def pair that renames a parameter across the
+    /// header/source boundary won't merge — a rare, cosmetic duplicate.
+    pub fn param_discriminator(signature: Option<&str>) -> String {
+        let Some(sig) = signature else {
+            return String::new();
+        };
+        let Some(open) = sig.find('(') else {
+            return String::new();
+        };
+        let mut depth = 0i32;
+        let mut close = None;
+        for (i, b) in sig.bytes().enumerate().skip(open) {
+            match b {
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(close) = close else {
+            return String::new();
+        };
+        sig[open + 1..close]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     /// Build the FTS body text from node metadata.

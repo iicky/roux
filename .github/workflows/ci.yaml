@@ -2,14 +2,21 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
     branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions: read-all
 
 env:
   CARGO_TERM_COLOR: always
+  # Shared CI runners are far slower and noisier than a dev box; loosen the
+  # search-latency gate here so it catches gross regressions without flaking.
+  ROUX_BENCH_MAX_SEARCH_MS: "500"
 
 jobs:
   lint:
@@ -22,7 +29,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
-      - run: cargo clippy -- -D warnings
+      - run: cargo clippy --all-targets -- -D warnings
       - uses: EmbarkStudios/cargo-deny-action@v2
       - uses: taiki-e/install-action@cargo-audit
       - run: cargo audit --ignore RUSTSEC-2026-0009
@@ -31,12 +38,15 @@ jobs:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             features: ""
           - os: macos-latest
             features: "--features metal"
+          - os: windows-latest
+            features: ""
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

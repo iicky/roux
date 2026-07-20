@@ -1,0 +1,461 @@
+{
+  "note": "BLIND generator input for the vocab-gap (S bucket) diagnosis; contains NO gold.",
+  "items": [
+    {
+      "id": "Marlin-8577",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "Compile error with last Bugfix 2.0.x"
+    },
+    {
+      "id": "Marlin-8579",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "2.x Fan speed (M106) doesn't work until after G1 command"
+    },
+    {
+      "id": "Marlin-8669",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "Z_HOMING_HEIGHT ignored when Z_HOME_DIR > 0"
+    },
+    {
+      "id": "Marlin-8710",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[2.0.X]- LPC1768 -  TCNT0 not defined when using LIN_ADVANCE or BABYSTEPPING"
+    },
+    {
+      "id": "Marlin-8779",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "Sainsmart 2-in-1 board pulling up gen7-custom board pins definition?"
+    },
+    {
+      "id": "Marlin-8805",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[2.0.x] LEVEL_BED_CORNERS times out after one lap around bed"
+    },
+    {
+      "id": "Marlin-9155",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "Marlin 2.0 Build for MKS SBase 1.3 not compiling"
+    },
+    {
+      "id": "Marlin-9948",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "Bugfix-2.0.x Compile failure when using dual serial ports on MKS-SBase (LPC1768)"
+    },
+    {
+      "id": "Marlin-10137",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "Error MAXTEMP triggered if manual leveling bed is GT 0.05"
+    },
+    {
+      "id": "Marlin-10660",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[Bugfix-1.1.x] Enable UBL compile error 'ARG_X' has not been declared"
+    },
+    {
+      "id": "Marlin-11697",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[2.0.x] Too long extrusion during filament change"
+    },
+    {
+      "id": "Marlin-13410",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "Marlin\\src\\module\\temperature.cpp:826:46: error: operator ',' has no right operand[BUG] (short description)"
+    },
+    {
+      "id": "Marlin-14328",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG] [bugfix-2.0.x] Using M401 makes a subsequent G28 fail"
+    },
+    {
+      "id": "Marlin-14774",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG] M0 injection on end of SD card causing nozzle to linger heated on model"
+    },
+    {
+      "id": "Marlin-16767",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG] latest bugfix compile error for due"
+    },
+    {
+      "id": "Marlin-16881",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG] Compile fails with BABYSTEP_TICKS not declared in scope"
+    },
+    {
+      "id": "Marlin-17125",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "GCODE_MACROS (i.e. M810 - M819) only execute once"
+    },
+    {
+      "id": "Marlin-17255",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG][bugfix-2.0.x] M114 Reports steps count twice"
+    },
+    {
+      "id": "Marlin-17264",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG] Y Layer Shift when Skew Value is Set"
+    },
+    {
+      "id": "Marlin-17422",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG] min_temp_error for thermistor_998 and 999"
+    },
+    {
+      "id": "Marlin-17635",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG] Virtual Tool 1 is Incorrectly initialized with 0 : 0 mix on 2 in 1 mixing printer"
+    },
+    {
+      "id": "Marlin-17770",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG] Incorrect total count when probing for leveling"
+    },
+    {
+      "id": "Marlin-21712",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG] compile error with TEMP_SENSOR_1_AS_REDUNDANT"
+    },
+    {
+      "id": "Marlin-21929",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG] EEPROM_CHITCHAT No Feedback?"
+    },
+    {
+      "id": "Marlin-22167",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG] X_HEAD undeclared compiler errors"
+    },
+    {
+      "id": "Marlin-22729",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG] Delta sensorless probing compile error"
+    },
+    {
+      "id": "Marlin-24963",
+      "source": "Marlin",
+      "domain": "Marlin 3D-printer firmware (C++)",
+      "query": "[BUG] EEPROM error with M502 then M500"
+    },
+    {
+      "id": "gin-391",
+      "source": "gin",
+      "domain": "the Gin HTTP web framework (Go)",
+      "query": "Support HTTP content negotiation wildcards"
+    },
+    {
+      "id": "gin-630",
+      "source": "gin",
+      "domain": "the Gin HTTP web framework (Go)",
+      "query": "gin.Error does not implement the error interface"
+    },
+    {
+      "id": "gin-752",
+      "source": "gin",
+      "domain": "the Gin HTTP web framework (Go)",
+      "query": "IsTerminal not available on Google App Engine"
+    },
+    {
+      "id": "gin-1644",
+      "source": "gin",
+      "domain": "the Gin HTTP web framework (Go)",
+      "query": "Multiple slashes in path is not working"
+    },
+    {
+      "id": "gin-1760",
+      "source": "gin",
+      "domain": "the Gin HTTP web framework (Go)",
+      "query": "Out of range if redirect more than 45 times"
+    },
+    {
+      "id": "gin-1823",
+      "source": "gin",
+      "domain": "the Gin HTTP web framework (Go)",
+      "query": "Styling breaks when request takes long"
+    },
+    {
+      "id": "gin-2674",
+      "source": "gin",
+      "domain": "the Gin HTTP web framework (Go)",
+      "query": "Data race with gin-gonic v1.7.0"
+    },
+    {
+      "id": "gin-2786",
+      "source": "gin",
+      "domain": "the Gin HTTP web framework (Go)",
+      "query": "[Bug]mixed param and non-param paths"
+    },
+    {
+      "id": "gin-3659",
+      "source": "gin",
+      "domain": "the Gin HTTP web framework (Go)",
+      "query": "Can't bind list of struct pointer in query"
+    },
+    {
+      "id": "gin-3819",
+      "source": "gin",
+      "domain": "the Gin HTTP web framework (Go)",
+      "query": "Binding a non mandatory file parameter will directly result in an error message"
+    },
+    {
+      "id": "pandas-19289",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "Unstack performance regression"
+    },
+    {
+      "id": "pandas-20554",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "DEPR: remove resample compatibility"
+    },
+    {
+      "id": "pandas-20753",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "Inconsistent behaviour of .ix between list and scalar key with (missing) ints"
+    },
+    {
+      "id": "pandas-21374",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "pd.eval() discards imaginary part in division \"/\""
+    },
+    {
+      "id": "pandas-21593",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": ".ix[int_number] falls back to positional indexing with MultiIndex with integers on first level"
+    },
+    {
+      "id": "pandas-22702",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "ValueError in Categorical Constructor with empty data and boolean categories"
+    },
+    {
+      "id": "pandas-23438",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "Converting series of dates to Periods"
+    },
+    {
+      "id": "pandas-25580",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "Int64 series resampling"
+    },
+    {
+      "id": "pandas-27148",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "Indexing single level with list of missing labels raises if (and only if) it has length 1"
+    },
+    {
+      "id": "pandas-27516",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "Partial string indexing returns ndarray rather than Series"
+    },
+    {
+      "id": "pandas-27526",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "Groupby Array-Type Quantiles Broken in 0.25.0"
+    },
+    {
+      "id": "pandas-28204",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "CSS selector for index cells"
+    },
+    {
+      "id": "pandas-28283",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "Various methods don't call call __finalize__"
+    },
+    {
+      "id": "pandas-29563",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "Sparse DataFrame with all-zeros column returns NA for fancy index"
+    },
+    {
+      "id": "pandas-37782",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "json_normalize cannot parse metadata fields list type"
+    },
+    {
+      "id": "pandas-44366",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "parse_dates=False while passing date_parser tries to use date parser"
+    },
+    {
+      "id": "pandas-45319",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "Calling to_datetime With errrors=\"coerce\" Still Raises After 50 Rows"
+    },
+    {
+      "id": "pandas-46389",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "colon in URL gets cut off during call of to_html() when applying format(hyperlinks='html')"
+    },
+    {
+      "id": "pandas-47705",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "groupby.resample have inconsistent behavior when calling dataframe that's empty vs have entries"
+    },
+    {
+      "id": "pandas-48916",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "per docs, \"margins\" parameter returns row and column sums if True, but I think it returns the mean"
+    },
+    {
+      "id": "pandas-50840",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "df.groupby().resample()[[cols]] raise KeyError when resampling on index"
+    },
+    {
+      "id": "pandas-53983",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "Partial slicing of unordered datetimeindex inconsistent between providing start and end points"
+    },
+    {
+      "id": "pandas-55009",
+      "source": "pandas",
+      "domain": "the pandas data-analysis library (Python)",
+      "query": "The `DataFrame.apply` method does not use the extra argument list when `raw=True"
+    },
+    {
+      "id": "rg-1311",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "Unexpected (or incorrect?) multiline replace behavior"
+    },
+    {
+      "id": "rg-1339",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "ripgrep doesn't match arbitrary bytes within a file"
+    },
+    {
+      "id": "rg-1401",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "Ending newline character of a line seems to be exposed to the regex engine with -P option"
+    },
+    {
+      "id": "rg-1739",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "rg outputs wrong matches when everything is matched and replaced with custom string"
+    },
+    {
+      "id": "rg-1879",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "Second line is matching with multiline option when trying to match start of entire input"
+    },
+    {
+      "id": "rg-1891",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "panic with -w and empty string"
+    },
+    {
+      "id": "rg-1911",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "MS Windows 32bit binary does not work properly for files bigger than 4 gigabyte"
+    },
+    {
+      "id": "rg-2195",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "shell completion '-t' for extensions prompt"
+    },
+    {
+      "id": "rg-2246",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "emit log message when file is skipped becaue it was detected as \"binary\" data"
+    },
+    {
+      "id": "rg-2260",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "Unexpected character group issue with grep crate"
+    },
+    {
+      "id": "rg-2458",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "--trim runs after -M/--max-columns"
+    },
+    {
+      "id": "rg-2645",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "Append `--pcre2-version` info to `--version"
+    },
+    {
+      "id": "rg-2658",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "--line-regexp` no longer works with `--null-data` after upgrading to 14.0.1"
+    },
+    {
+      "id": "rg-2664",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "Using `--sortr path` gives error \"thread 'main' panicked\"/\"not yet implemented\""
+    },
+    {
+      "id": "rg-2694",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "consider adding an `rg:` prefix all error messages"
+    },
+    {
+      "id": "rg-2884",
+      "source": "ripgrep",
+      "domain": "ripgrep, a fast recursive line-search tool (Rust)",
+      "query": "Alternation match regression"
+    }
+  ]
+}

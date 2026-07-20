@@ -1,0 +1,89 @@
+name: Persona Benchmarks
+
+# Nightly retrieval-quality backstop. Runs the persona bench suite against
+# pinned upstream repos and publishes Hit@K / MRR metrics as a JSON artifact
+# plus a rendered job summary. Drift here (assuming pinned refs) means roux's
+# retrieval quality has changed.
+
+on:
+  schedule:
+    # 07:00 UTC daily
+    - cron: '0 7 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Persona repos. Pin to specific refs so metric drift reflects roux
+      # changes, not upstream churn. Shallow clones keep CI time reasonable.
+      - name: Clone persona — ripgrep
+        run: git clone --depth=1 --branch=14.1.1 https://github.com/BurntSushi/ripgrep /tmp/roux-sources/ripgrep
+      - name: Clone persona — pandas
+        run: git clone --depth=1 --branch=v2.2.3 https://github.com/pandas-dev/pandas /tmp/roux-sources/pandas
+      - name: Clone persona — remix
+        run: git clone --depth=1 --branch=remix@2.13.1 https://github.com/remix-run/remix /tmp/roux-sources/remix
+      - name: Clone persona — gin
+        run: git clone --depth=1 --branch=v1.10.0 https://github.com/gin-gonic/gin /tmp/roux-sources/gin
+      - name: Clone persona — Marlin
+        run: git clone --depth=1 --branch=2.1.2.5 https://github.com/MarlinFirmware/Marlin /tmp/roux-sources/Marlin
+
+      - name: Run persona benchmarks
+        env:
+          ROUX_BENCH_JSON_OUT: ${{ github.workspace }}/persona-metrics.json
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          cargo test --release --test bench_personas -- \
+            --ignored --nocapture bench_all_personas \
+            2>&1 | tee persona-output.txt
+
+      - name: Render job summary
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, os, pathlib, sys
+          path = pathlib.Path("persona-metrics.json")
+          if not path.exists():
+              print("## Persona Benchmarks\n\n_No metrics produced._")
+              sys.exit(0)
+          data = json.loads(path.read_text())
+          print("## Persona Benchmarks\n")
+          print(f"_roux {data['roux_version']} · commit `{(data.get('commit') or 'n/a')[:8]}`_\n")
+          agg = data.get("aggregate") or {}
+          if agg:
+              print("### Aggregate")
+              print("| split | Hit@1 | MRR |")
+              print("|-------|-------|-----|")
+              print(f"| agent | {agg['agent_h1']*100:.1f}% | {agg['agent_mrr']:.3f} |")
+              print(f"| dev   | {agg['dev_h1']*100:.1f}% | {agg['dev_mrr']:.3f} |")
+              print()
+          print("### Per-persona")
+          print("| persona | symbols | edges | extract | Hit@1 | Hit@10 | MRR | agent MRR | dev MRR |")
+          print("|---------|---------|-------|---------|-------|--------|-----|-----------|---------|")
+          for p in data.get("personas", []):
+              m = p["metrics"]
+              print(
+                  f"| {p['name']} | {p['node_count']} | {p['edge_count']} | "
+                  f"{p['extract_ms']}ms | {m['h1']*100:.1f}% | {m['h10']*100:.1f}% | "
+                  f"{m['mrr']:.3f} | {m['agent_mrr']:.3f} | {m['dev_mrr']:.3f} |"
+              )
+          PY
+
+      - name: Upload metrics artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-metrics
+          path: |
+            persona-metrics.json
+            persona-output.txt
+          retention-days: 90

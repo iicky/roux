@@ -1,0 +1,2550 @@
+{
+ "_comment": "Rotation trials for the blast-radius head-to-head. Seed = one prod .rs file changed by a polars fix PR (frozen set, pinned ref 434fa104a500); gold = sibling prod files of the same PR. Test-path files dropped; PRs with >= 10 prod files flagged whale and excluded from the primary metric.",
+ "pinned_ref": "434fa104a500e2c3371fdcd5701ce829848274d1",
+ "n_trials": 154,
+ "n_prs": 37,
+ "trials": [
+  {
+   "pr": 28280,
+   "seed": "polars-core/src/frame/mod.rs",
+   "gold": [
+    "polars-plan/src/plans/optimizer/projection_pushdown/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28280,
+   "seed": "polars-plan/src/plans/optimizer/projection_pushdown/mod.rs",
+   "gold": [
+    "polars-core/src/frame/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28255,
+   "seed": "polars-io/src/cloud/cloud_writer/bufferer.rs",
+   "gold": [
+    "polars-io/src/cloud/cloud_writer/io_trait_wrap.rs",
+    "polars-io/src/cloud/cloud_writer/writer.rs",
+    "polars-io/src/configs.rs",
+    "polars-io/src/utils/bytes_bufferer.rs",
+    "polars-io/src/utils/file.rs",
+    "polars-plan/src/dsl/options/sink.rs",
+    "polars-stream/src/nodes/io_sinks/components/file_provider.rs",
+    "polars-stream/src/nodes/io_sinks/config.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/single_file.rs",
+    "polars-stream/src/nodes/io_sinks/writers/ipc/io_writer.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28255,
+   "seed": "polars-io/src/cloud/cloud_writer/io_trait_wrap.rs",
+   "gold": [
+    "polars-io/src/cloud/cloud_writer/bufferer.rs",
+    "polars-io/src/cloud/cloud_writer/writer.rs",
+    "polars-io/src/configs.rs",
+    "polars-io/src/utils/bytes_bufferer.rs",
+    "polars-io/src/utils/file.rs",
+    "polars-plan/src/dsl/options/sink.rs",
+    "polars-stream/src/nodes/io_sinks/components/file_provider.rs",
+    "polars-stream/src/nodes/io_sinks/config.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/single_file.rs",
+    "polars-stream/src/nodes/io_sinks/writers/ipc/io_writer.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28255,
+   "seed": "polars-io/src/cloud/cloud_writer/writer.rs",
+   "gold": [
+    "polars-io/src/cloud/cloud_writer/bufferer.rs",
+    "polars-io/src/cloud/cloud_writer/io_trait_wrap.rs",
+    "polars-io/src/configs.rs",
+    "polars-io/src/utils/bytes_bufferer.rs",
+    "polars-io/src/utils/file.rs",
+    "polars-plan/src/dsl/options/sink.rs",
+    "polars-stream/src/nodes/io_sinks/components/file_provider.rs",
+    "polars-stream/src/nodes/io_sinks/config.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/single_file.rs",
+    "polars-stream/src/nodes/io_sinks/writers/ipc/io_writer.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28255,
+   "seed": "polars-io/src/configs.rs",
+   "gold": [
+    "polars-io/src/cloud/cloud_writer/bufferer.rs",
+    "polars-io/src/cloud/cloud_writer/io_trait_wrap.rs",
+    "polars-io/src/cloud/cloud_writer/writer.rs",
+    "polars-io/src/utils/bytes_bufferer.rs",
+    "polars-io/src/utils/file.rs",
+    "polars-plan/src/dsl/options/sink.rs",
+    "polars-stream/src/nodes/io_sinks/components/file_provider.rs",
+    "polars-stream/src/nodes/io_sinks/config.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/single_file.rs",
+    "polars-stream/src/nodes/io_sinks/writers/ipc/io_writer.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28255,
+   "seed": "polars-io/src/utils/bytes_bufferer.rs",
+   "gold": [
+    "polars-io/src/cloud/cloud_writer/bufferer.rs",
+    "polars-io/src/cloud/cloud_writer/io_trait_wrap.rs",
+    "polars-io/src/cloud/cloud_writer/writer.rs",
+    "polars-io/src/configs.rs",
+    "polars-io/src/utils/file.rs",
+    "polars-plan/src/dsl/options/sink.rs",
+    "polars-stream/src/nodes/io_sinks/components/file_provider.rs",
+    "polars-stream/src/nodes/io_sinks/config.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/single_file.rs",
+    "polars-stream/src/nodes/io_sinks/writers/ipc/io_writer.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28255,
+   "seed": "polars-io/src/utils/file.rs",
+   "gold": [
+    "polars-io/src/cloud/cloud_writer/bufferer.rs",
+    "polars-io/src/cloud/cloud_writer/io_trait_wrap.rs",
+    "polars-io/src/cloud/cloud_writer/writer.rs",
+    "polars-io/src/configs.rs",
+    "polars-io/src/utils/bytes_bufferer.rs",
+    "polars-plan/src/dsl/options/sink.rs",
+    "polars-stream/src/nodes/io_sinks/components/file_provider.rs",
+    "polars-stream/src/nodes/io_sinks/config.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/single_file.rs",
+    "polars-stream/src/nodes/io_sinks/writers/ipc/io_writer.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28255,
+   "seed": "polars-plan/src/dsl/options/sink.rs",
+   "gold": [
+    "polars-io/src/cloud/cloud_writer/bufferer.rs",
+    "polars-io/src/cloud/cloud_writer/io_trait_wrap.rs",
+    "polars-io/src/cloud/cloud_writer/writer.rs",
+    "polars-io/src/configs.rs",
+    "polars-io/src/utils/bytes_bufferer.rs",
+    "polars-io/src/utils/file.rs",
+    "polars-stream/src/nodes/io_sinks/components/file_provider.rs",
+    "polars-stream/src/nodes/io_sinks/config.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/single_file.rs",
+    "polars-stream/src/nodes/io_sinks/writers/ipc/io_writer.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28255,
+   "seed": "polars-stream/src/nodes/io_sinks/components/file_provider.rs",
+   "gold": [
+    "polars-io/src/cloud/cloud_writer/bufferer.rs",
+    "polars-io/src/cloud/cloud_writer/io_trait_wrap.rs",
+    "polars-io/src/cloud/cloud_writer/writer.rs",
+    "polars-io/src/configs.rs",
+    "polars-io/src/utils/bytes_bufferer.rs",
+    "polars-io/src/utils/file.rs",
+    "polars-plan/src/dsl/options/sink.rs",
+    "polars-stream/src/nodes/io_sinks/config.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/single_file.rs",
+    "polars-stream/src/nodes/io_sinks/writers/ipc/io_writer.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28255,
+   "seed": "polars-stream/src/nodes/io_sinks/config.rs",
+   "gold": [
+    "polars-io/src/cloud/cloud_writer/bufferer.rs",
+    "polars-io/src/cloud/cloud_writer/io_trait_wrap.rs",
+    "polars-io/src/cloud/cloud_writer/writer.rs",
+    "polars-io/src/configs.rs",
+    "polars-io/src/utils/bytes_bufferer.rs",
+    "polars-io/src/utils/file.rs",
+    "polars-plan/src/dsl/options/sink.rs",
+    "polars-stream/src/nodes/io_sinks/components/file_provider.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/single_file.rs",
+    "polars-stream/src/nodes/io_sinks/writers/ipc/io_writer.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28255,
+   "seed": "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+   "gold": [
+    "polars-io/src/cloud/cloud_writer/bufferer.rs",
+    "polars-io/src/cloud/cloud_writer/io_trait_wrap.rs",
+    "polars-io/src/cloud/cloud_writer/writer.rs",
+    "polars-io/src/configs.rs",
+    "polars-io/src/utils/bytes_bufferer.rs",
+    "polars-io/src/utils/file.rs",
+    "polars-plan/src/dsl/options/sink.rs",
+    "polars-stream/src/nodes/io_sinks/components/file_provider.rs",
+    "polars-stream/src/nodes/io_sinks/config.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/single_file.rs",
+    "polars-stream/src/nodes/io_sinks/writers/ipc/io_writer.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28255,
+   "seed": "polars-stream/src/nodes/io_sinks/pipeline_initialization/single_file.rs",
+   "gold": [
+    "polars-io/src/cloud/cloud_writer/bufferer.rs",
+    "polars-io/src/cloud/cloud_writer/io_trait_wrap.rs",
+    "polars-io/src/cloud/cloud_writer/writer.rs",
+    "polars-io/src/configs.rs",
+    "polars-io/src/utils/bytes_bufferer.rs",
+    "polars-io/src/utils/file.rs",
+    "polars-plan/src/dsl/options/sink.rs",
+    "polars-stream/src/nodes/io_sinks/components/file_provider.rs",
+    "polars-stream/src/nodes/io_sinks/config.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sinks/writers/ipc/io_writer.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28255,
+   "seed": "polars-stream/src/nodes/io_sinks/writers/ipc/io_writer.rs",
+   "gold": [
+    "polars-io/src/cloud/cloud_writer/bufferer.rs",
+    "polars-io/src/cloud/cloud_writer/io_trait_wrap.rs",
+    "polars-io/src/cloud/cloud_writer/writer.rs",
+    "polars-io/src/configs.rs",
+    "polars-io/src/utils/bytes_bufferer.rs",
+    "polars-io/src/utils/file.rs",
+    "polars-plan/src/dsl/options/sink.rs",
+    "polars-stream/src/nodes/io_sinks/components/file_provider.rs",
+    "polars-stream/src/nodes/io_sinks/config.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/single_file.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28369,
+   "seed": "polars-arrow/src/array/struct_/ffi.rs",
+   "gold": [
+    "polars-arrow/src/bitmap/immutable.rs",
+    "polars-arrow/src/ffi/array.rs",
+    "polars-arrow/src/io/ipc/write2/array/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28369,
+   "seed": "polars-arrow/src/bitmap/immutable.rs",
+   "gold": [
+    "polars-arrow/src/array/struct_/ffi.rs",
+    "polars-arrow/src/ffi/array.rs",
+    "polars-arrow/src/io/ipc/write2/array/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28369,
+   "seed": "polars-arrow/src/ffi/array.rs",
+   "gold": [
+    "polars-arrow/src/array/struct_/ffi.rs",
+    "polars-arrow/src/bitmap/immutable.rs",
+    "polars-arrow/src/io/ipc/write2/array/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28369,
+   "seed": "polars-arrow/src/io/ipc/write2/array/mod.rs",
+   "gold": [
+    "polars-arrow/src/array/struct_/ffi.rs",
+    "polars-arrow/src/bitmap/immutable.rs",
+    "polars-arrow/src/ffi/array.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28361,
+   "seed": "polars-core/src/frame/group_by/aggregations/dispatch.rs",
+   "gold": [
+    "polars-core/src/frame/group_by/aggregations/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28361,
+   "seed": "polars-core/src/frame/group_by/aggregations/mod.rs",
+   "gold": [
+    "polars-core/src/frame/group_by/aggregations/dispatch.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28297,
+   "seed": "polars-plan/src/plans/optimizer/cse/cache_states.rs",
+   "gold": [
+    "polars-plan/src/plans/optimizer/predicate_pushdown/mod.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28297,
+   "seed": "polars-plan/src/plans/optimizer/predicate_pushdown/mod.rs",
+   "gold": [
+    "polars-plan/src/plans/optimizer/cse/cache_states.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28297,
+   "seed": "polars-stream/src/physical_plan/lower_ir.rs",
+   "gold": [
+    "polars-plan/src/plans/optimizer/cse/cache_states.rs",
+    "polars-plan/src/plans/optimizer/predicate_pushdown/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28388,
+   "seed": "polars-time/src/chunkedarray/string/infer.rs",
+   "gold": [
+    "polars-time/src/chunkedarray/string/mod.rs",
+    "polars-time/src/chunkedarray/string/strptime.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28388,
+   "seed": "polars-time/src/chunkedarray/string/mod.rs",
+   "gold": [
+    "polars-time/src/chunkedarray/string/infer.rs",
+    "polars-time/src/chunkedarray/string/strptime.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28388,
+   "seed": "polars-time/src/chunkedarray/string/strptime.rs",
+   "gold": [
+    "polars-time/src/chunkedarray/string/infer.rs",
+    "polars-time/src/chunkedarray/string/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28258,
+   "seed": "polars-io/src/ipc/ipc_file.rs",
+   "gold": [
+    "polars-io/src/ipc/mmap.rs",
+    "polars-python/src/dataframe/io.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28258,
+   "seed": "polars-io/src/ipc/mmap.rs",
+   "gold": [
+    "polars-io/src/ipc/ipc_file.rs",
+    "polars-python/src/dataframe/io.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28258,
+   "seed": "polars-python/src/dataframe/io.rs",
+   "gold": [
+    "polars-io/src/ipc/ipc_file.rs",
+    "polars-io/src/ipc/mmap.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28145,
+   "seed": "polars-core/src/utils/supertype.rs",
+   "gold": [
+    "polars-plan/src/plans/conversion/type_coercion/binary.rs",
+    "polars-plan/src/plans/optimizer/simplify_expr/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28145,
+   "seed": "polars-plan/src/plans/conversion/type_coercion/binary.rs",
+   "gold": [
+    "polars-core/src/utils/supertype.rs",
+    "polars-plan/src/plans/optimizer/simplify_expr/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28145,
+   "seed": "polars-plan/src/plans/optimizer/simplify_expr/mod.rs",
+   "gold": [
+    "polars-core/src/utils/supertype.rs",
+    "polars-plan/src/plans/conversion/type_coercion/binary.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28108,
+   "seed": "polars-plan/src/plans/optimizer/projection_pushdown/edge.rs",
+   "gold": [
+    "polars-plan/src/plans/optimizer/projection_pushdown/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28108,
+   "seed": "polars-plan/src/plans/optimizer/projection_pushdown/mod.rs",
+   "gold": [
+    "polars-plan/src/plans/optimizer/projection_pushdown/edge.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28328,
+   "seed": "polars-io/src/cloud/concurrency/mod.rs",
+   "gold": [
+    "polars-io/src/cloud/options.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28328,
+   "seed": "polars-io/src/cloud/options.rs",
+   "gold": [
+    "polars-io/src/cloud/concurrency/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28122,
+   "seed": "polars-arrow/src/array/fixed_size_binary/mutable.rs",
+   "gold": [
+    "polars-parquet/src/arrow/read/deserialize/fixed_size_binary.rs",
+    "polars-parquet/src/arrow/read/statistics.rs",
+    "polars-stream/src/nodes/io_sources/parquet/init.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28122,
+   "seed": "polars-parquet/src/arrow/read/deserialize/fixed_size_binary.rs",
+   "gold": [
+    "polars-arrow/src/array/fixed_size_binary/mutable.rs",
+    "polars-parquet/src/arrow/read/statistics.rs",
+    "polars-stream/src/nodes/io_sources/parquet/init.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28122,
+   "seed": "polars-parquet/src/arrow/read/statistics.rs",
+   "gold": [
+    "polars-arrow/src/array/fixed_size_binary/mutable.rs",
+    "polars-parquet/src/arrow/read/deserialize/fixed_size_binary.rs",
+    "polars-stream/src/nodes/io_sources/parquet/init.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28122,
+   "seed": "polars-stream/src/nodes/io_sources/parquet/init.rs",
+   "gold": [
+    "polars-arrow/src/array/fixed_size_binary/mutable.rs",
+    "polars-parquet/src/arrow/read/deserialize/fixed_size_binary.rs",
+    "polars-parquet/src/arrow/read/statistics.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28042,
+   "seed": "polars-plan/src/plans/conversion/dsl_to_ir/mod.rs",
+   "gold": [
+    "polars-plan/src/plans/optimizer/predicate_pushdown/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28042,
+   "seed": "polars-plan/src/plans/optimizer/predicate_pushdown/mod.rs",
+   "gold": [
+    "polars-plan/src/plans/conversion/dsl_to_ir/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28165,
+   "seed": "polars-plan/src/dsl/arity.rs",
+   "gold": [
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/expr/serde.rs",
+    "polars-python/src/functions/whenthen.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28165,
+   "seed": "polars-python/src/conversion/mod.rs",
+   "gold": [
+    "polars-plan/src/dsl/arity.rs",
+    "polars-python/src/expr/serde.rs",
+    "polars-python/src/functions/whenthen.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28165,
+   "seed": "polars-python/src/expr/serde.rs",
+   "gold": [
+    "polars-plan/src/dsl/arity.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/functions/whenthen.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28165,
+   "seed": "polars-python/src/functions/whenthen.rs",
+   "gold": [
+    "polars-plan/src/dsl/arity.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/expr/serde.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-arrow/src/io/ipc/mod.rs",
+   "gold": [
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-core/src/frame/mod.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-io/src/cloud/object_store_setup.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-io/src/cloud/options.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-io/src/cloud/polars_object_store.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-io/src/file_cache/entry.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-mem-engine/src/executors/executor.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-mem-engine/src/executors/filter.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-parquet/src/parquet/mod.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-plan/src/dsl/file_scan/mod.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-plan/src/plans/ir/format.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-plan/src/plans/optimizer/expand_datasets.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-python/src/conversion/mod.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-python/src/dataset/dataset_provider_funcs.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-python/src/error.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-python/src/interop/arrow/mod.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-python/src/io/cloud_options.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-stream/src/nodes/io_sources/batch.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-stream/src/nodes/io_sources/csv/mod.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-stream/src/physical_plan/fmt.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-stream/src/physical_plan/lower_ir.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-utils/src/mem.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28305,
+   "seed": "polars-utils/src/mem.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/mod.rs",
+    "polars-core/src/frame/mod.rs",
+    "polars-io/src/cloud/object_store_setup.rs",
+    "polars-io/src/cloud/options.rs",
+    "polars-io/src/cloud/polars_object_store.rs",
+    "polars-io/src/file_cache/entry.rs",
+    "polars-mem-engine/src/executors/executor.rs",
+    "polars-mem-engine/src/executors/filter.rs",
+    "polars-parquet/src/parquet/mod.rs",
+    "polars-plan/src/dsl/file_scan/mod.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/optimizer/expand_datasets.rs",
+    "polars-plan/src/plans/optimizer/simplify_ordering/mod.rs",
+    "polars-python/src/conversion/mod.rs",
+    "polars-python/src/dataset/dataset_provider_funcs.rs",
+    "polars-python/src/error.rs",
+    "polars-python/src/interop/arrow/mod.rs",
+    "polars-python/src/io/cloud_options.rs",
+    "polars-stream/src/nodes/io_sinks/pipeline_initialization/partition_by.rs",
+    "polars-stream/src/nodes/io_sources/batch.rs",
+    "polars-stream/src/nodes/io_sources/csv/mod.rs",
+    "polars-stream/src/nodes/io_sources/ipc/metadata.rs",
+    "polars-stream/src/nodes/io_sources/ipc/mod.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/components/column_selector/builder.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/initialization.rs",
+    "polars-stream/src/nodes/io_sources/multi_scan/pipeline/tasks/reader_starter.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/mod.rs",
+    "polars-stream/src/nodes/io_sources/ndjson/row_index_limit_pass.rs",
+    "polars-stream/src/nodes/io_sources/parquet/mod.rs",
+    "polars-stream/src/physical_plan/fmt.rs",
+    "polars-stream/src/physical_plan/lower_ir.rs"
+   ],
+   "whale": true
+  },
+  {
+   "pr": 28269,
+   "seed": "polars-plan/src/plans/optimizer/mod.rs",
+   "gold": [
+    "polars-plan/src/plans/optimizer/predicate_pushdown/group_by.rs",
+    "polars-plan/src/plans/optimizer/predicate_pushdown/join.rs",
+    "polars-plan/src/plans/optimizer/predicate_pushdown/mod.rs",
+    "polars-plan/src/plans/optimizer/predicate_pushdown/utils.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28269,
+   "seed": "polars-plan/src/plans/optimizer/predicate_pushdown/group_by.rs",
+   "gold": [
+    "polars-plan/src/plans/optimizer/mod.rs",
+    "polars-plan/src/plans/optimizer/predicate_pushdown/join.rs",
+    "polars-plan/src/plans/optimizer/predicate_pushdown/mod.rs",
+    "polars-plan/src/plans/optimizer/predicate_pushdown/utils.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28269,
+   "seed": "polars-plan/src/plans/optimizer/predicate_pushdown/mod.rs",
+   "gold": [
+    "polars-plan/src/plans/optimizer/mod.rs",
+    "polars-plan/src/plans/optimizer/predicate_pushdown/group_by.rs",
+    "polars-plan/src/plans/optimizer/predicate_pushdown/join.rs",
+    "polars-plan/src/plans/optimizer/predicate_pushdown/utils.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28269,
+   "seed": "polars-plan/src/plans/optimizer/predicate_pushdown/utils.rs",
+   "gold": [
+    "polars-plan/src/plans/optimizer/mod.rs",
+    "polars-plan/src/plans/optimizer/predicate_pushdown/group_by.rs",
+    "polars-plan/src/plans/optimizer/predicate_pushdown/join.rs",
+    "polars-plan/src/plans/optimizer/predicate_pushdown/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28355,
+   "seed": "polars-core/src/frame/group_by/position.rs",
+   "gold": [
+    "polars-core/src/series/implementations/struct_.rs",
+    "polars-expr/src/expressions/len.rs",
+    "polars-expr/src/reduce/convert.rs",
+    "polars-expr/src/reduce/count.rs",
+    "polars-expr/src/reduce/sum.rs",
+    "polars-mem-engine/src/executors/group_by_streaming.rs",
+    "polars-utils/src/index.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28355,
+   "seed": "polars-core/src/series/implementations/struct_.rs",
+   "gold": [
+    "polars-core/src/frame/group_by/position.rs",
+    "polars-expr/src/expressions/len.rs",
+    "polars-expr/src/reduce/convert.rs",
+    "polars-expr/src/reduce/count.rs",
+    "polars-expr/src/reduce/sum.rs",
+    "polars-mem-engine/src/executors/group_by_streaming.rs",
+    "polars-utils/src/index.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28355,
+   "seed": "polars-expr/src/expressions/len.rs",
+   "gold": [
+    "polars-core/src/frame/group_by/position.rs",
+    "polars-core/src/series/implementations/struct_.rs",
+    "polars-expr/src/reduce/convert.rs",
+    "polars-expr/src/reduce/count.rs",
+    "polars-expr/src/reduce/sum.rs",
+    "polars-mem-engine/src/executors/group_by_streaming.rs",
+    "polars-utils/src/index.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28355,
+   "seed": "polars-expr/src/reduce/convert.rs",
+   "gold": [
+    "polars-core/src/frame/group_by/position.rs",
+    "polars-core/src/series/implementations/struct_.rs",
+    "polars-expr/src/expressions/len.rs",
+    "polars-expr/src/reduce/count.rs",
+    "polars-expr/src/reduce/sum.rs",
+    "polars-mem-engine/src/executors/group_by_streaming.rs",
+    "polars-utils/src/index.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28355,
+   "seed": "polars-expr/src/reduce/count.rs",
+   "gold": [
+    "polars-core/src/frame/group_by/position.rs",
+    "polars-core/src/series/implementations/struct_.rs",
+    "polars-expr/src/expressions/len.rs",
+    "polars-expr/src/reduce/convert.rs",
+    "polars-expr/src/reduce/sum.rs",
+    "polars-mem-engine/src/executors/group_by_streaming.rs",
+    "polars-utils/src/index.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28355,
+   "seed": "polars-expr/src/reduce/sum.rs",
+   "gold": [
+    "polars-core/src/frame/group_by/position.rs",
+    "polars-core/src/series/implementations/struct_.rs",
+    "polars-expr/src/expressions/len.rs",
+    "polars-expr/src/reduce/convert.rs",
+    "polars-expr/src/reduce/count.rs",
+    "polars-mem-engine/src/executors/group_by_streaming.rs",
+    "polars-utils/src/index.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28355,
+   "seed": "polars-mem-engine/src/executors/group_by_streaming.rs",
+   "gold": [
+    "polars-core/src/frame/group_by/position.rs",
+    "polars-core/src/series/implementations/struct_.rs",
+    "polars-expr/src/expressions/len.rs",
+    "polars-expr/src/reduce/convert.rs",
+    "polars-expr/src/reduce/count.rs",
+    "polars-expr/src/reduce/sum.rs",
+    "polars-utils/src/index.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28355,
+   "seed": "polars-utils/src/index.rs",
+   "gold": [
+    "polars-core/src/frame/group_by/position.rs",
+    "polars-core/src/series/implementations/struct_.rs",
+    "polars-expr/src/expressions/len.rs",
+    "polars-expr/src/reduce/convert.rs",
+    "polars-expr/src/reduce/count.rs",
+    "polars-expr/src/reduce/sum.rs",
+    "polars-mem-engine/src/executors/group_by_streaming.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28236,
+   "seed": "polars-io/src/file_cache/cache.rs",
+   "gold": [
+    "polars-io/src/file_cache/eviction.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28236,
+   "seed": "polars-io/src/file_cache/eviction.rs",
+   "gold": [
+    "polars-io/src/file_cache/cache.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28226,
+   "seed": "polars-io/src/csv/read/streaming.rs",
+   "gold": [
+    "polars-lazy/src/scan/csv.rs",
+    "polars-plan/src/plans/conversion/dsl_to_ir/scans.rs",
+    "polars-python/src/lazyframe/general.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28226,
+   "seed": "polars-lazy/src/scan/csv.rs",
+   "gold": [
+    "polars-io/src/csv/read/streaming.rs",
+    "polars-plan/src/plans/conversion/dsl_to_ir/scans.rs",
+    "polars-python/src/lazyframe/general.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28226,
+   "seed": "polars-plan/src/plans/conversion/dsl_to_ir/scans.rs",
+   "gold": [
+    "polars-io/src/csv/read/streaming.rs",
+    "polars-lazy/src/scan/csv.rs",
+    "polars-python/src/lazyframe/general.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28226,
+   "seed": "polars-python/src/lazyframe/general.rs",
+   "gold": [
+    "polars-io/src/csv/read/streaming.rs",
+    "polars-lazy/src/scan/csv.rs",
+    "polars-plan/src/plans/conversion/dsl_to_ir/scans.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28238,
+   "seed": "polars-ops/src/chunked_array/array/to_struct.rs",
+   "gold": [
+    "polars-ops/src/chunked_array/list/to_struct.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28238,
+   "seed": "polars-ops/src/chunked_array/list/to_struct.rs",
+   "gold": [
+    "polars-ops/src/chunked_array/array/to_struct.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28055,
+   "seed": "polars-arrow/src/trusted_len.rs",
+   "gold": [
+    "polars-core/src/chunked_array/ops/fill_null.rs",
+    "polars-ops/src/series/ops/cum_agg.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28055,
+   "seed": "polars-core/src/chunked_array/ops/fill_null.rs",
+   "gold": [
+    "polars-arrow/src/trusted_len.rs",
+    "polars-ops/src/series/ops/cum_agg.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28055,
+   "seed": "polars-ops/src/series/ops/cum_agg.rs",
+   "gold": [
+    "polars-arrow/src/trusted_len.rs",
+    "polars-core/src/chunked_array/ops/fill_null.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28300,
+   "seed": "polars-plan/src/plans/conversion/type_coercion/binary.rs",
+   "gold": [
+    "polars-plan/src/plans/conversion/type_coercion/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28300,
+   "seed": "polars-plan/src/plans/conversion/type_coercion/mod.rs",
+   "gold": [
+    "polars-plan/src/plans/conversion/type_coercion/binary.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28273,
+   "seed": "polars-expr/src/state/execution_state.rs",
+   "gold": [
+    "polars-expr/src/state/node_timer.rs",
+    "polars-lazy/src/frame/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28273,
+   "seed": "polars-expr/src/state/node_timer.rs",
+   "gold": [
+    "polars-expr/src/state/execution_state.rs",
+    "polars-lazy/src/frame/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28273,
+   "seed": "polars-lazy/src/frame/mod.rs",
+   "gold": [
+    "polars-expr/src/state/execution_state.rs",
+    "polars-expr/src/state/node_timer.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27812,
+   "seed": "polars-compute/src/rolling/mod.rs",
+   "gold": [
+    "polars-compute/src/rolling/no_nulls/quantile.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27812,
+   "seed": "polars-compute/src/rolling/no_nulls/quantile.rs",
+   "gold": [
+    "polars-compute/src/rolling/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28246,
+   "seed": "polars-plan/src/plans/aexpr/schema.rs",
+   "gold": [
+    "polars-plan/src/plans/conversion/dsl_to_ir/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28246,
+   "seed": "polars-plan/src/plans/conversion/dsl_to_ir/mod.rs",
+   "gold": [
+    "polars-plan/src/plans/aexpr/schema.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28048,
+   "seed": "polars-arrow/src/array/binview/builder.rs",
+   "gold": [
+    "polars-arrow/src/array/binview/mod.rs",
+    "polars-arrow/src/array/binview/mutable.rs",
+    "polars-arrow/src/array/mod.rs",
+    "polars-compute/src/cast/binary_to.rs",
+    "polars-compute/src/cast/mod.rs",
+    "polars-compute/src/cast/utf8_to.rs",
+    "polars-io/src/scan_lines.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28048,
+   "seed": "polars-arrow/src/array/binview/mod.rs",
+   "gold": [
+    "polars-arrow/src/array/binview/builder.rs",
+    "polars-arrow/src/array/binview/mutable.rs",
+    "polars-arrow/src/array/mod.rs",
+    "polars-compute/src/cast/binary_to.rs",
+    "polars-compute/src/cast/mod.rs",
+    "polars-compute/src/cast/utf8_to.rs",
+    "polars-io/src/scan_lines.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28048,
+   "seed": "polars-arrow/src/array/binview/mutable.rs",
+   "gold": [
+    "polars-arrow/src/array/binview/builder.rs",
+    "polars-arrow/src/array/binview/mod.rs",
+    "polars-arrow/src/array/mod.rs",
+    "polars-compute/src/cast/binary_to.rs",
+    "polars-compute/src/cast/mod.rs",
+    "polars-compute/src/cast/utf8_to.rs",
+    "polars-io/src/scan_lines.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28048,
+   "seed": "polars-arrow/src/array/mod.rs",
+   "gold": [
+    "polars-arrow/src/array/binview/builder.rs",
+    "polars-arrow/src/array/binview/mod.rs",
+    "polars-arrow/src/array/binview/mutable.rs",
+    "polars-compute/src/cast/binary_to.rs",
+    "polars-compute/src/cast/mod.rs",
+    "polars-compute/src/cast/utf8_to.rs",
+    "polars-io/src/scan_lines.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28048,
+   "seed": "polars-compute/src/cast/binary_to.rs",
+   "gold": [
+    "polars-arrow/src/array/binview/builder.rs",
+    "polars-arrow/src/array/binview/mod.rs",
+    "polars-arrow/src/array/binview/mutable.rs",
+    "polars-arrow/src/array/mod.rs",
+    "polars-compute/src/cast/mod.rs",
+    "polars-compute/src/cast/utf8_to.rs",
+    "polars-io/src/scan_lines.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28048,
+   "seed": "polars-compute/src/cast/mod.rs",
+   "gold": [
+    "polars-arrow/src/array/binview/builder.rs",
+    "polars-arrow/src/array/binview/mod.rs",
+    "polars-arrow/src/array/binview/mutable.rs",
+    "polars-arrow/src/array/mod.rs",
+    "polars-compute/src/cast/binary_to.rs",
+    "polars-compute/src/cast/utf8_to.rs",
+    "polars-io/src/scan_lines.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28048,
+   "seed": "polars-compute/src/cast/utf8_to.rs",
+   "gold": [
+    "polars-arrow/src/array/binview/builder.rs",
+    "polars-arrow/src/array/binview/mod.rs",
+    "polars-arrow/src/array/binview/mutable.rs",
+    "polars-arrow/src/array/mod.rs",
+    "polars-compute/src/cast/binary_to.rs",
+    "polars-compute/src/cast/mod.rs",
+    "polars-io/src/scan_lines.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28048,
+   "seed": "polars-io/src/scan_lines.rs",
+   "gold": [
+    "polars-arrow/src/array/binview/builder.rs",
+    "polars-arrow/src/array/binview/mod.rs",
+    "polars-arrow/src/array/binview/mutable.rs",
+    "polars-arrow/src/array/mod.rs",
+    "polars-compute/src/cast/binary_to.rs",
+    "polars-compute/src/cast/mod.rs",
+    "polars-compute/src/cast/utf8_to.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28083,
+   "seed": "polars-plan/src/plans/aexpr/function_expr/boolean.rs",
+   "gold": [
+    "polars-plan/src/plans/conversion/type_coercion/is_in.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28083,
+   "seed": "polars-plan/src/plans/conversion/type_coercion/is_in.rs",
+   "gold": [
+    "polars-plan/src/plans/aexpr/function_expr/boolean.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27939,
+   "seed": "polars-plan/src/plans/ir/format.rs",
+   "gold": [
+    "polars-plan/src/plans/ir/tree_format.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27939,
+   "seed": "polars-plan/src/plans/ir/tree_format.rs",
+   "gold": [
+    "polars-plan/src/plans/ir/format.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28004,
+   "seed": "polars-lazy/src/frame/cached_arenas.rs",
+   "gold": [
+    "polars-plan/src/dsl/plan.rs",
+    "polars-plan/src/dsl/serializable_plan.rs",
+    "polars-plan/src/frame/opt_state.rs",
+    "polars-plan/src/plans/conversion/dsl_to_ir/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28004,
+   "seed": "polars-plan/src/dsl/plan.rs",
+   "gold": [
+    "polars-lazy/src/frame/cached_arenas.rs",
+    "polars-plan/src/dsl/serializable_plan.rs",
+    "polars-plan/src/frame/opt_state.rs",
+    "polars-plan/src/plans/conversion/dsl_to_ir/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28004,
+   "seed": "polars-plan/src/dsl/serializable_plan.rs",
+   "gold": [
+    "polars-lazy/src/frame/cached_arenas.rs",
+    "polars-plan/src/dsl/plan.rs",
+    "polars-plan/src/frame/opt_state.rs",
+    "polars-plan/src/plans/conversion/dsl_to_ir/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28004,
+   "seed": "polars-plan/src/frame/opt_state.rs",
+   "gold": [
+    "polars-lazy/src/frame/cached_arenas.rs",
+    "polars-plan/src/dsl/plan.rs",
+    "polars-plan/src/dsl/serializable_plan.rs",
+    "polars-plan/src/plans/conversion/dsl_to_ir/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 28004,
+   "seed": "polars-plan/src/plans/conversion/dsl_to_ir/mod.rs",
+   "gold": [
+    "polars-lazy/src/frame/cached_arenas.rs",
+    "polars-plan/src/dsl/plan.rs",
+    "polars-plan/src/dsl/serializable_plan.rs",
+    "polars-plan/src/frame/opt_state.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27876,
+   "seed": "polars-io/src/path_utils/mod.rs",
+   "gold": [
+    "polars-plan/src/dsl/scan_sources.rs",
+    "polars-utils/src/pl_path.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27876,
+   "seed": "polars-plan/src/dsl/scan_sources.rs",
+   "gold": [
+    "polars-io/src/path_utils/mod.rs",
+    "polars-utils/src/pl_path.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27876,
+   "seed": "polars-utils/src/pl_path.rs",
+   "gold": [
+    "polars-io/src/path_utils/mod.rs",
+    "polars-plan/src/dsl/scan_sources.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27764,
+   "seed": "polars-mem-engine/src/executors/scan/python_scan.rs",
+   "gold": [
+    "polars-mem-engine/src/planner/lp.rs",
+    "polars-plan/src/plans/ir/dot.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/python/source.rs",
+    "polars-plan/src/plans/visitor/hash.rs",
+    "polars-python/src/lazyframe/visitor/nodes.rs",
+    "polars-stream/src/physical_plan/to_graph.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27764,
+   "seed": "polars-mem-engine/src/planner/lp.rs",
+   "gold": [
+    "polars-mem-engine/src/executors/scan/python_scan.rs",
+    "polars-plan/src/plans/ir/dot.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/python/source.rs",
+    "polars-plan/src/plans/visitor/hash.rs",
+    "polars-python/src/lazyframe/visitor/nodes.rs",
+    "polars-stream/src/physical_plan/to_graph.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27764,
+   "seed": "polars-plan/src/plans/ir/dot.rs",
+   "gold": [
+    "polars-mem-engine/src/executors/scan/python_scan.rs",
+    "polars-mem-engine/src/planner/lp.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/python/source.rs",
+    "polars-plan/src/plans/visitor/hash.rs",
+    "polars-python/src/lazyframe/visitor/nodes.rs",
+    "polars-stream/src/physical_plan/to_graph.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27764,
+   "seed": "polars-plan/src/plans/ir/format.rs",
+   "gold": [
+    "polars-mem-engine/src/executors/scan/python_scan.rs",
+    "polars-mem-engine/src/planner/lp.rs",
+    "polars-plan/src/plans/ir/dot.rs",
+    "polars-plan/src/plans/python/source.rs",
+    "polars-plan/src/plans/visitor/hash.rs",
+    "polars-python/src/lazyframe/visitor/nodes.rs",
+    "polars-stream/src/physical_plan/to_graph.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27764,
+   "seed": "polars-plan/src/plans/python/source.rs",
+   "gold": [
+    "polars-mem-engine/src/executors/scan/python_scan.rs",
+    "polars-mem-engine/src/planner/lp.rs",
+    "polars-plan/src/plans/ir/dot.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/visitor/hash.rs",
+    "polars-python/src/lazyframe/visitor/nodes.rs",
+    "polars-stream/src/physical_plan/to_graph.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27764,
+   "seed": "polars-plan/src/plans/visitor/hash.rs",
+   "gold": [
+    "polars-mem-engine/src/executors/scan/python_scan.rs",
+    "polars-mem-engine/src/planner/lp.rs",
+    "polars-plan/src/plans/ir/dot.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/python/source.rs",
+    "polars-python/src/lazyframe/visitor/nodes.rs",
+    "polars-stream/src/physical_plan/to_graph.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27764,
+   "seed": "polars-python/src/lazyframe/visitor/nodes.rs",
+   "gold": [
+    "polars-mem-engine/src/executors/scan/python_scan.rs",
+    "polars-mem-engine/src/planner/lp.rs",
+    "polars-plan/src/plans/ir/dot.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/python/source.rs",
+    "polars-plan/src/plans/visitor/hash.rs",
+    "polars-stream/src/physical_plan/to_graph.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27764,
+   "seed": "polars-stream/src/physical_plan/to_graph.rs",
+   "gold": [
+    "polars-mem-engine/src/executors/scan/python_scan.rs",
+    "polars-mem-engine/src/planner/lp.rs",
+    "polars-plan/src/plans/ir/dot.rs",
+    "polars-plan/src/plans/ir/format.rs",
+    "polars-plan/src/plans/python/source.rs",
+    "polars-plan/src/plans/visitor/hash.rs",
+    "polars-python/src/lazyframe/visitor/nodes.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27575,
+   "seed": "polars-core/src/scalar/mod.rs",
+   "gold": [
+    "polars-core/src/series/mod.rs",
+    "polars-plan/src/plans/lit.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27575,
+   "seed": "polars-core/src/series/mod.rs",
+   "gold": [
+    "polars-core/src/scalar/mod.rs",
+    "polars-plan/src/plans/lit.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27575,
+   "seed": "polars-plan/src/plans/lit.rs",
+   "gold": [
+    "polars-core/src/scalar/mod.rs",
+    "polars-core/src/series/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27888,
+   "seed": "polars-sql/src/context.rs",
+   "gold": [
+    "polars-sql/src/lib.rs",
+    "polars-sql/src/subquery.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27888,
+   "seed": "polars-sql/src/lib.rs",
+   "gold": [
+    "polars-sql/src/context.rs",
+    "polars-sql/src/subquery.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27888,
+   "seed": "polars-sql/src/subquery.rs",
+   "gold": [
+    "polars-sql/src/context.rs",
+    "polars-sql/src/lib.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27712,
+   "seed": "polars-io/src/cloud/credential_provider.rs",
+   "gold": [
+    "polars-io/src/cloud/object_store_setup.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27712,
+   "seed": "polars-io/src/cloud/object_store_setup.rs",
+   "gold": [
+    "polars-io/src/cloud/credential_provider.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27763,
+   "seed": "polars-plan/src/plans/optimizer/predicate_pushdown/mod.rs",
+   "gold": [
+    "polars-plan/src/plans/optimizer/predicate_pushdown/utils.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27763,
+   "seed": "polars-plan/src/plans/optimizer/predicate_pushdown/utils.rs",
+   "gold": [
+    "polars-plan/src/plans/optimizer/predicate_pushdown/mod.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27632,
+   "seed": "polars-arrow/src/io/ipc/read/schema.rs",
+   "gold": [
+    "polars-core/src/datatypes/dtype.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27632,
+   "seed": "polars-core/src/datatypes/dtype.rs",
+   "gold": [
+    "polars-arrow/src/io/ipc/read/schema.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27831,
+   "seed": "polars-python/src/functions/misc.rs",
+   "gold": [
+    "polars-python/src/on_startup.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27831,
+   "seed": "polars-python/src/on_startup.rs",
+   "gold": [
+    "polars-python/src/functions/misc.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27476,
+   "seed": "polars-core/src/datatypes/any_value.rs",
+   "gold": [
+    "polars-core/src/series/ops/extend.rs"
+   ],
+   "whale": false
+  },
+  {
+   "pr": 27476,
+   "seed": "polars-core/src/series/ops/extend.rs",
+   "gold": [
+    "polars-core/src/datatypes/any_value.rs"
+   ],
+   "whale": false
+  }
+ ]
+}

@@ -1,0 +1,1048 @@
+{
+  "_comment": "HUMAN-REVIEWED frozen held-out set (Marlin) \u2014 anti-Goodhart. Harvested by bench/harvest_persona_queries.py, frozen/reviewed by bench/freeze_heldout.py. S/L by distinctive query<->gold(qualified_name) token overlap (source-prefix stripped, stoplist-filtered): S = no distinctive overlap (vocab/semantic gap \u2014 the real test); L = distinctive overlap (control). gold = qualified_name substrings; any in top-K = hit. Reviewed: generic-constructor gold removed (harvester + freeze), maintainer-process queries and weak-gold mis-pins pruned (see freeze_provenance.review). FROZEN: never tune against it; report SEPARATELY from the CI gate.",
+  "source_name": "Marlin",
+  "index_path": "/Users/mickey/Repos/iicky/roux/bench/snapshots/Marlin.sqlite",
+  "pinned_ref": "2.1.2.5",
+  "freeze_provenance": {
+    "frozen": "2026-07-07",
+    "roux_commit": "f63eda5",
+    "auto_frozen": false,
+    "human_reviewed": true,
+    "from_draft": "bench/gold_Marlin.draft.json",
+    "harvester": "bench/harvest_persona_queries.py",
+    "triage": "S/L by distinctive query<->gold token overlap (source-prefix stripped, stoplist-filtered)",
+    "review": {
+      "reviewer": "gold-tightening pass",
+      "generic_gold": "dunders/from_low_args/per-persona skip_syms dropped at pin time + freeze safety-net",
+      "off_topic_rule": "CI/TST/STYLE/test/CLN prefixes, doctest/pylint/flake8/mypy, typo, sweeping-doc edits, bare-path titles",
+      "weak_gold_manual": [],
+      "retain_recent_cap": null,
+      "backlog_in_draft": 0,
+      "dropped_counts": {},
+      "dropped": []
+    }
+  },
+  "distribution": {
+    "S": 27,
+    "L": 13
+  },
+  "queries": [
+    {
+      "id": "Marlin-8577",
+      "bucket": "S",
+      "query": "Compile error with last Bugfix 2.0.x",
+      "gold": [
+        "Marlin::M290"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 8577,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/8577",
+        "labels": [
+          "Bug: Confirmed !",
+          "S: Solved"
+        ],
+        "fix_commit": "4793c34c5365",
+        "changed_files": [
+          "Marlin/src/gcode/motion/M290.cpp"
+        ],
+        "gold_candidates": [
+          "M290"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-8579",
+      "bucket": "S",
+      "query": "2.x Fan speed (M106) doesn't work until after G1 command",
+      "gold": [
+        "Marlin::check_axes_activity"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 7,
+      "provenance": {
+        "issue": 8579,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/8579",
+        "labels": [
+          "Bug: Potential ?",
+          "Needs: Work"
+        ],
+        "fix_commit": "16baa48699ce",
+        "changed_files": [
+          "Marlin/src/module/planner.cpp"
+        ],
+        "gold_candidates": [
+          "check_axes_activity"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-8669",
+      "bucket": "S",
+      "query": "Z_HOMING_HEIGHT ignored when Z_HOME_DIR > 0",
+      "gold": [
+        "Marlin::G28"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 7,
+      "provenance": {
+        "issue": 8669,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/8669",
+        "labels": [],
+        "fix_commit": "9e3fbcf35cd3",
+        "changed_files": [
+          "Marlin/src/gcode/calibrate/G28.cpp"
+        ],
+        "gold_candidates": [
+          "G28"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-8710",
+      "bucket": "S",
+      "query": "[2.0.X]- LPC1768 -  TCNT0 not defined when using LIN_ADVANCE or BABYSTEPPING",
+      "gold": [
+        "Marlin::Stepper",
+        "Marlin::isr",
+        "Marlin::report_positions"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 8710,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/8710",
+        "labels": [
+          "Bug: Confirmed !",
+          "T: HAL & APIs"
+        ],
+        "fix_commit": "4fa65a5c25d8",
+        "changed_files": [
+          "Marlin/src/module/stepper.cpp",
+          "Marlin/src/module/stepper.h",
+          "Marlin/src/module/temperature.cpp"
+        ],
+        "gold_candidates": [
+          "Stepper",
+          "isr",
+          "report_positions"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-8779",
+      "bucket": "S",
+      "query": "Sainsmart 2-in-1 board pulling up gen7-custom board pins definition?",
+      "gold": [
+        "Marlin::updateTemperaturesFromRawValues"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 8779,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/8779",
+        "labels": [],
+        "fix_commit": "0d531d96551a",
+        "changed_files": [
+          "Marlin/src/module/temperature.cpp"
+        ],
+        "gold_candidates": [
+          "updateTemperaturesFromRawValues"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-8805",
+      "bucket": "S",
+      "query": "[2.0.x] LEVEL_BED_CORNERS times out after one lap around bed",
+      "gold": [
+        "Marlin::M18_M84"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 8805,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/8805",
+        "labels": [
+          "C: LCD & Controllers"
+        ],
+        "fix_commit": "65519263f4d2",
+        "changed_files": [
+          "Marlin/src/Marlin.cpp",
+          "Marlin/src/gcode/control/M17_M18_M84.cpp"
+        ],
+        "gold_candidates": [
+          "M18_M84"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-9155",
+      "bucket": "S",
+      "query": "Marlin 2.0 Build for MKS SBase 1.3 not compiling",
+      "gold": [
+        "Marlin::M502"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 9155,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/9155",
+        "labels": [],
+        "fix_commit": "d178d6e92112",
+        "changed_files": [
+          "Marlin/src/gcode/eeprom/M500-M504.cpp"
+        ],
+        "gold_candidates": [
+          "M502"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-9948",
+      "bucket": "S",
+      "query": "Bugfix-2.0.x Compile failure when using dual serial ports on MKS-SBase (LPC1768)",
+      "gold": [
+        "Marlin::M500",
+        "Marlin::M501",
+        "Marlin::M502"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 9948,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/9948",
+        "labels": [
+          "Bug: Confirmed !",
+          "S: Solved"
+        ],
+        "fix_commit": "49ca67202f87",
+        "changed_files": [
+          "Marlin/src/gcode/eeprom/M500-M504.cpp",
+          "Marlin/src/module/configuration_store.cpp",
+          "Marlin/src/module/configuration_store.h"
+        ],
+        "gold_candidates": [
+          "M500",
+          "M501",
+          "M502"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-10137",
+      "bucket": "S",
+      "query": "Error MAXTEMP triggered if manual leveling bed is GT 0.05",
+      "gold": [
+        "Marlin::G29"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 10,
+      "provenance": {
+        "issue": 10137,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10137",
+        "labels": [
+          "Bug: Confirmed !",
+          "F: Calibration"
+        ],
+        "fix_commit": "aa20b3ef7ce6",
+        "changed_files": [
+          "Marlin/src/gcode/bedlevel/abl/G29.cpp"
+        ],
+        "gold_candidates": [
+          "G29"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-10388",
+      "bucket": "L",
+      "query": "M118 Not working as expected",
+      "gold": [
+        "Marlin::M118"
+      ],
+      "lexical_overlap": [
+        "m118"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 10388,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10388",
+        "labels": [
+          "Bug: Confirmed !",
+          "Needs: Patch"
+        ],
+        "fix_commit": "4c8751727acf",
+        "changed_files": [
+          "Marlin/src/gcode/host/M118.cpp",
+          "Marlin/src/gcode/parser.cpp"
+        ],
+        "gold_candidates": [
+          "M118"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-10410",
+      "bucket": "L",
+      "query": "bugfix-1.1.x: stuttering motion after switching on AUTO_POWER_CONTROL",
+      "gold": [
+        "Marlin::power_off",
+        "Marlin::power_on"
+      ],
+      "lexical_overlap": [
+        "power"
+      ],
+      "roux_rank_at_freeze": 3,
+      "provenance": {
+        "issue": 10410,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10410",
+        "labels": [],
+        "fix_commit": "3c826e5d05bd",
+        "changed_files": [
+          "Marlin/src/feature/power.cpp"
+        ],
+        "gold_candidates": [
+          "power_off",
+          "power_on"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-10476",
+      "bucket": "L",
+      "query": "[bugfix 2.0] G28.cpp, tweaks cause Z homing with G28 X/Y",
+      "gold": [
+        "Marlin::G28"
+      ],
+      "lexical_overlap": [
+        "g28"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 10476,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10476",
+        "labels": [
+          "Bug: Confirmed !",
+          "F: Calibration",
+          "S: Solved"
+        ],
+        "fix_commit": "1c3d49afe022",
+        "changed_files": [
+          "Marlin/src/gcode/calibrate/G28.cpp"
+        ],
+        "gold_candidates": [
+          "G28"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-10505",
+      "bucket": "L",
+      "query": "bugfix-1.1.x compile error: 'current_temperature_chamber' was not declared in this scope",
+      "gold": [
+        "Marlin::Temperature",
+        "Marlin::getHeaterPower"
+      ],
+      "lexical_overlap": [
+        "temperature"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 10505,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10505",
+        "labels": [],
+        "fix_commit": "9789c1c719ac",
+        "changed_files": [
+          "Marlin/src/module/temperature.cpp",
+          "Marlin/src/module/temperature.h"
+        ],
+        "gold_candidates": [
+          "Temperature",
+          "getHeaterPower"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-10660",
+      "bucket": "S",
+      "query": "[Bugfix-1.1.x] Enable UBL compile error 'ARG_X' has not been declared",
+      "gold": [
+        "Marlin::Planner",
+        "Marlin::Planner::Planner"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 10660,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10660",
+        "labels": [],
+        "fix_commit": "a225d2e99e03",
+        "changed_files": [
+          "Marlin/src/module/planner.h"
+        ],
+        "gold_candidates": [
+          "Planner"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-10708",
+      "bucket": "L",
+      "query": "[bugfix-2.0.x] : Mesh bed leveling without segment leveled moves option compilation fail",
+      "gold": [
+        "Marlin::mesh_bed_leveling",
+        "Marlin::mesh_bed_leveling::mesh_bed_leveling"
+      ],
+      "lexical_overlap": [
+        "bed",
+        "leveling",
+        "mesh"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 10708,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/10708",
+        "labels": [
+          "T: Question",
+          "F: Calibration"
+        ],
+        "fix_commit": "836b0bbeee9f",
+        "changed_files": [
+          "Marlin/src/feature/bedlevel/mbl/mesh_bed_leveling.h",
+          "Marlin/src/module/motion.cpp"
+        ],
+        "gold_candidates": [
+          "mesh_bed_leveling"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-11697",
+      "bucket": "S",
+      "query": "[2.0.x] Too long extrusion during filament change",
+      "gold": [
+        "Marlin::set_position_mm"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 11697,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/11697",
+        "labels": [],
+        "fix_commit": "59e76e5fdf81",
+        "changed_files": [
+          "Marlin/src/module/planner.cpp"
+        ],
+        "gold_candidates": [
+          "set_position_mm"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-12326",
+      "bucket": "L",
+      "query": "[bugfix 2.0.x] velocity setting in lcd menu shows x axis 3 times, y and z are missing",
+      "gold": [
+        "Marlin::menu_advanced_temperature"
+      ],
+      "lexical_overlap": [
+        "menu"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 12326,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/12326",
+        "labels": [],
+        "fix_commit": "60dbd8161c77",
+        "changed_files": [
+          "Marlin/src/lcd/menu/menu_advanced.cpp"
+        ],
+        "gold_candidates": [
+          "menu_advanced_temperature"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-13410",
+      "bucket": "S",
+      "query": "Marlin\\src\\module\\temperature.cpp:826:46: error: operator ',' has no right operand[BUG] (short description)",
+      "gold": [
+        "Marlin::PIDRunner::get_pid_output"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 13410,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/13410",
+        "labels": [],
+        "fix_commit": "59353546e81b",
+        "changed_files": [
+          "Marlin/src/lcd/ultralcd.h",
+          "Marlin/src/module/temperature.cpp"
+        ],
+        "gold_candidates": [
+          "get_pid_output"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-14045",
+      "bucket": "L",
+      "query": "[BUG] Undefined reference to `Backlash::distance_mm'",
+      "gold": [
+        "Marlin::Backlash"
+      ],
+      "lexical_overlap": [
+        "backlash"
+      ],
+      "roux_rank_at_freeze": 2,
+      "provenance": {
+        "issue": 14045,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/14045",
+        "labels": [
+          "S: Solved",
+          "C: Build / Toolchain"
+        ],
+        "fix_commit": "cfca07852a8c",
+        "changed_files": [
+          "Marlin/src/feature/backlash.cpp",
+          "Marlin/src/feature/backlash.h"
+        ],
+        "gold_candidates": [
+          "Backlash"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-14328",
+      "bucket": "S",
+      "query": "[BUG] [bugfix-2.0.x] Using M401 makes a subsequent G28 fail",
+      "gold": [
+        "Marlin::probe_specific_action"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 14328,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/14328",
+        "labels": [],
+        "fix_commit": "f090a927f409",
+        "changed_files": [
+          "Marlin/src/module/probe.cpp"
+        ],
+        "gold_candidates": [
+          "probe_specific_action"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-14465",
+      "bucket": "L",
+      "query": "[BUG] LASER_FEATURE Error when compiling",
+      "gold": [
+        "Marlin::SpindleLaser"
+      ],
+      "lexical_overlap": [
+        "laser"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 14465,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/14465",
+        "labels": [
+          "Bug: Confirmed !",
+          "S: Solved"
+        ],
+        "fix_commit": "021c4ccf5fa0",
+        "changed_files": [
+          "Marlin/src/feature/spindle_laser.h"
+        ],
+        "gold_candidates": [
+          "SpindleLaser"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-14774",
+      "bucket": "S",
+      "query": "[BUG] M0 injection on end of SD card causing nozzle to linger heated on model",
+      "gold": [
+        "Marlin::get_serial_commands"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 14774,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/14774",
+        "labels": [],
+        "fix_commit": "dd6a7ca197cf",
+        "changed_files": [
+          "Marlin/src/gcode/queue.cpp"
+        ],
+        "gold_candidates": [
+          "get_serial_commands"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-16767",
+      "bucket": "S",
+      "query": "[BUG] latest bugfix compile error for due",
+      "gold": [
+        "Marlin::Probe"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 16767,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/16767",
+        "labels": [
+          "A: SAM3X8C/E"
+        ],
+        "fix_commit": "081ef46e7692",
+        "changed_files": [
+          "Marlin/src/module/probe.h"
+        ],
+        "gold_candidates": [
+          "Probe"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-16881",
+      "bucket": "S",
+      "query": "[BUG] Compile fails with BABYSTEP_TICKS not declared in scope",
+      "gold": [
+        "Marlin::Stepper",
+        "Marlin::isr",
+        "Marlin::report_positions",
+        "Marlin::step_axis"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 16881,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/16881",
+        "labels": [],
+        "fix_commit": "99a50743727e",
+        "changed_files": [
+          "Marlin/src/feature/babystep.cpp",
+          "Marlin/src/module/stepper.cpp",
+          "Marlin/src/module/stepper.h"
+        ],
+        "gold_candidates": [
+          "Stepper",
+          "isr",
+          "report_positions",
+          "step_axis"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-17125",
+      "bucket": "S",
+      "query": "GCODE_MACROS (i.e. M810 - M819) only execute once",
+      "gold": [
+        "Marlin::process_subcommands_now"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 17125,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17125",
+        "labels": [
+          "Bug: Confirmed !",
+          "S: Solved",
+          "C: G-code Parser"
+        ],
+        "fix_commit": "318a16637bd9",
+        "changed_files": [
+          "Marlin/src/gcode/gcode.cpp"
+        ],
+        "gold_candidates": [
+          "process_subcommands_now"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-17255",
+      "bucket": "S",
+      "query": "[BUG][bugfix-2.0.x] M114 Reports steps count twice",
+      "gold": [
+        "Marlin::report_logical_position",
+        "Marlin::report_real_position"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 17255,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17255",
+        "labels": [],
+        "fix_commit": "c87d73045b7b",
+        "changed_files": [
+          "Marlin/src/module/motion.cpp"
+        ],
+        "gold_candidates": [
+          "report_logical_position",
+          "report_real_position"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-17264",
+      "bucket": "S",
+      "query": "[BUG] Y Layer Shift when Skew Value is Set",
+      "gold": [
+        "Marlin::check_axes_activity"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 17264,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17264",
+        "labels": [],
+        "fix_commit": "fc11e7217460",
+        "changed_files": [
+          "Marlin/src/module/planner.cpp"
+        ],
+        "gold_candidates": [
+          "check_axes_activity"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-17422",
+      "bucket": "S",
+      "query": "[BUG] min_temp_error for thermistor_998 and 999",
+      "gold": [
+        "Marlin::readings_ready"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 17422,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17422",
+        "labels": [],
+        "fix_commit": "5507b6073c02",
+        "changed_files": [
+          "Marlin/src/module/temperature.cpp"
+        ],
+        "gold_candidates": [
+          "readings_ready"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-17430",
+      "bucket": "L",
+      "query": "[BUG] compiling error in M425.cpp (2.0.5.3)",
+      "gold": [
+        "Marlin::M425"
+      ],
+      "lexical_overlap": [
+        "m425"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 17430,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17430",
+        "labels": [],
+        "fix_commit": "3a42b6c5c60b",
+        "changed_files": [
+          "Marlin/src/gcode/calibrate/G425.cpp",
+          "Marlin/src/gcode/calibrate/M425.cpp",
+          "Marlin/src/inc/Conditionals_post.h"
+        ],
+        "gold_candidates": [
+          "M425"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-17635",
+      "bucket": "S",
+      "query": "[BUG] Virtual Tool 1 is Incorrectly initialized with 0 : 0 mix on 2 in 1 mixing printer",
+      "gold": [
+        "Marlin::reset_vtools"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 7,
+      "provenance": {
+        "issue": 17635,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17635",
+        "labels": [
+          "Bug: Confirmed !",
+          "S: Solved"
+        ],
+        "fix_commit": "a5b2e3e63c1b",
+        "changed_files": [
+          "Marlin/src/feature/mixing.cpp"
+        ],
+        "gold_candidates": [
+          "reset_vtools"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-17770",
+      "bucket": "S",
+      "query": "[BUG] Incorrect total count when probing for leveling",
+      "gold": [
+        "Marlin::G29"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 2,
+      "provenance": {
+        "issue": 17770,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/17770",
+        "labels": [
+          "Fix Included"
+        ],
+        "fix_commit": "ea520e670a1c",
+        "changed_files": [
+          "Marlin/src/gcode/bedlevel/abl/G29.cpp"
+        ],
+        "gold_candidates": [
+          "G29"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-21712",
+      "bucket": "S",
+      "query": "[BUG] compile error with TEMP_SENSOR_1_AS_REDUNDANT",
+      "gold": [
+        "Marlin::Temperature",
+        "Marlin::readings_ready",
+        "Marlin::updateTemperaturesFromRawValues",
+        "Marlin::update_raw_temperatures"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 21712,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/21712",
+        "labels": [
+          "Bug: Confirmed !",
+          "C: Safety",
+          "C: Temperatures"
+        ],
+        "fix_commit": "81d7a6b81d21",
+        "changed_files": [
+          "Marlin/src/module/temperature.cpp",
+          "Marlin/src/module/temperature.h"
+        ],
+        "gold_candidates": [
+          "Temperature",
+          "readings_ready",
+          "updateTemperaturesFromRawValues",
+          "update_raw_temperatures"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-21750",
+      "bucket": "L",
+      "query": "[BUG] M701 filament load: nozzle no longer raised during load and unload",
+      "gold": [
+        "Marlin::M701"
+      ],
+      "lexical_overlap": [
+        "m701"
+      ],
+      "roux_rank_at_freeze": 4,
+      "provenance": {
+        "issue": 21750,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/21750",
+        "labels": [],
+        "fix_commit": "2d9557cf40f2",
+        "changed_files": [
+          "Marlin/src/gcode/feature/pause/M701_M702.cpp"
+        ],
+        "gold_candidates": [
+          "M701"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-21929",
+      "bucket": "S",
+      "query": "[BUG] EEPROM_CHITCHAT No Feedback?",
+      "gold": [
+        "Marlin::postprocess"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 21929,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/21929",
+        "labels": [
+          "Bug: Confirmed !"
+        ],
+        "fix_commit": "dbb8f3db090e",
+        "changed_files": [
+          "Marlin/src/module/settings.cpp"
+        ],
+        "gold_candidates": [
+          "postprocess"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-22167",
+      "bucket": "S",
+      "query": "[BUG] X_HEAD undeclared compiler errors",
+      "gold": [
+        "Marlin::AxisEnum"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 22167,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/22167",
+        "labels": [],
+        "fix_commit": "cce585f6ca22",
+        "changed_files": [
+          "Marlin/src/core/types.h"
+        ],
+        "gold_candidates": [
+          "AxisEnum"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-22250",
+      "bucket": "L",
+      "query": "[BUG] PAUSE_MESSAGE_PAUSING undefined",
+      "gold": [
+        "Marlin::lv_draw_dialog",
+        "Marlin::lv_draw_pause_message"
+      ],
+      "lexical_overlap": [
+        "message",
+        "pause"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 22250,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/22250",
+        "labels": [
+          "C: LCD & Controllers"
+        ],
+        "fix_commit": "c7c56ac45f91",
+        "changed_files": [
+          "Marlin/src/lcd/extui/mks_ui/draw_dialog.cpp",
+          "Marlin/src/lcd/extui/mks_ui/draw_dialog.h",
+          "Marlin/src/lcd/extui/mks_ui/draw_pause_message.cpp"
+        ],
+        "gold_candidates": [
+          "lv_draw_dialog",
+          "lv_draw_pause_message"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-22295",
+      "bucket": "L",
+      "query": "[BUG] Broken PAUSE_PROBE_DEPLOY_WHEN_TRIGGERED",
+      "gold": [
+        "Marlin::probe_specific_action"
+      ],
+      "lexical_overlap": [
+        "probe"
+      ],
+      "roux_rank_at_freeze": 2,
+      "provenance": {
+        "issue": 22295,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/22295",
+        "labels": [
+          "F: Z-Probes"
+        ],
+        "fix_commit": "bcc31f68c660",
+        "changed_files": [
+          "Marlin/src/module/probe.cpp"
+        ],
+        "gold_candidates": [
+          "probe_specific_action"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-22598",
+      "bucket": "L",
+      "query": "[BUG] M115 - badly reported print area dimensions",
+      "gold": [
+        "Marlin::M115"
+      ],
+      "lexical_overlap": [
+        "m115"
+      ],
+      "roux_rank_at_freeze": 2,
+      "provenance": {
+        "issue": 22598,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/22598",
+        "labels": [],
+        "fix_commit": "caa6ec051917",
+        "changed_files": [
+          "Marlin/src/gcode/host/M115.cpp"
+        ],
+        "gold_candidates": [
+          "M115"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-22729",
+      "bucket": "S",
+      "query": "[BUG] Delta sensorless probing compile error",
+      "gold": [
+        "Marlin::EndstopEnum"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 22729,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/22729",
+        "labels": [
+          "C: Configuration"
+        ],
+        "fix_commit": "d6a87aa75ba4",
+        "changed_files": [
+          "Marlin/src/inc/Conditionals_LCD.h",
+          "Marlin/src/module/endstops.h"
+        ],
+        "gold_candidates": [
+          "EndstopEnum"
+        ]
+      }
+    },
+    {
+      "id": "Marlin-24963",
+      "bucket": "S",
+      "query": "[BUG] EEPROM error with M502 then M500",
+      "gold": [
+        "Marlin::postprocess"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 24963,
+        "issue_url": "https://github.com/MarlinFirmware/Marlin/issues/24963",
+        "labels": [
+          "Bug: Confirmed !",
+          "F: EEPROM",
+          "Fix Included"
+        ],
+        "fix_commit": "7002e72f1c48",
+        "changed_files": [
+          "Marlin/src/module/settings.cpp"
+        ],
+        "gold_candidates": [
+          "postprocess"
+        ]
+      }
+    }
+  ]
+}

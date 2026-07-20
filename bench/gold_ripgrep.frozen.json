@@ -1,0 +1,680 @@
+{
+  "_comment": "FROZEN held-out set (anti-Goodhart). Built by bench/harvest_persona_queries.py from ripgrep's own closed issues (titles = real user queries), then triaged. bucket S = NO lexical overlap between query and gold (pure vocab/semantic gap \u2014 the real test); bucket L = distinctive lexical overlap (control). gold = qualified_name substrings; any in top-K = hit. FROZEN: never tune against this; report SEPARATELY from the CI gate set. Every entry keeps full provenance (PROV).",
+  "source_name": "ripgrep",
+  "index_path": "/Users/mickey/Repos/iicky/roux/bench/snapshots/ripgrep.sqlite",
+  "pinned_ref": "14.1.1",
+  "freeze_provenance": {
+    "frozen": "2026-07-07",
+    "roux_commit": "f63eda5",
+    "from_draft": "bench/gold_ripgrep.draft.json",
+    "harvester": "bench/harvest_persona_queries.py",
+    "triage": "dropped gold that is only a generic mega-constructor (from_low_args); S/L assigned by distinctive query<->gold(qualified_name) word overlap, source-prefix stripped, stoplist-filtered"
+  },
+  "distribution": {
+    "S": 16,
+    "L": 8
+  },
+  "queries": [
+    {
+      "id": "rg-1087",
+      "bucket": "L",
+      "query": "ripgrep is slow when detecting whitespace literals, e.g., `'[ \\t]$'",
+      "gold": [
+        "ripgrep::InnerLiterals::one_regex"
+      ],
+      "lexical_overlap": [
+        "literals"
+      ],
+      "roux_rank_at_freeze": 4,
+      "provenance": {
+        "issue": 1087,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1087",
+        "labels": [
+          "enhancement",
+          "rollup"
+        ],
+        "fix_commit": "e772a95b58b7",
+        "changed_files": [
+          "crates/regex/src/lib.rs",
+          "crates/regex/src/literal.rs"
+        ],
+        "gold_candidates": [
+          "one_regex"
+        ]
+      }
+    },
+    {
+      "id": "rg-1520",
+      "bucket": "L",
+      "query": "warning about commondir on ripgrep over git repo with submodules",
+      "gold": [
+        "ripgrep::Ignore::add_child_path",
+        "ripgrep::resolve_git_commondir"
+      ],
+      "lexical_overlap": [
+        "commondir"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 1520,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1520",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "34edb8123a0b",
+        "changed_files": [
+          "crates/ignore/src/dir.rs"
+        ],
+        "gold_candidates": [
+          "add_child_path",
+          "resolve_git_commondir"
+        ]
+      }
+    },
+    {
+      "id": "rg-1550",
+      "bucket": "L",
+      "query": "high peak memory usage with parallel breadth first directory traversal",
+      "gold": [
+        "ripgrep::DirEntryRaw::from_entry_os",
+        "ripgrep::DirEntryRaw::from_path",
+        "ripgrep::WalkParallel::visit",
+        "ripgrep::Worker",
+        "ripgrep::get_work"
+      ],
+      "lexical_overlap": [
+        "parallel"
+      ],
+      "roux_rank_at_freeze": 2,
+      "provenance": {
+        "issue": 1550,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1550",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "139f186e5721",
+        "changed_files": [
+          "crates/ignore/src/lib.rs",
+          "crates/ignore/src/walk.rs"
+        ],
+        "gold_candidates": [
+          "Worker",
+          "from_entry_os",
+          "from_path",
+          "get_work",
+          "recv",
+          "send",
+          "send_quit",
+          "visit"
+        ]
+      }
+    },
+    {
+      "id": "rg-1866",
+      "bucket": "L",
+      "query": "--vimgrep doesn't satisfy vim's spec for multi-line searches",
+      "gold": [
+        "ripgrep::StandardBuilder::max_matches",
+        "ripgrep::StandardBuilder::only_matching",
+        "ripgrep::StandardBuilder::per_match",
+        "ripgrep::StandardBuilder::per_match_one_line",
+        "ripgrep::sink_slow_multi_per_match"
+      ],
+      "lexical_overlap": [
+        "multi"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 1866,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1866",
+        "labels": [
+          "bug",
+          "rollup"
+        ],
+        "fix_commit": "fc31aedcf3ca",
+        "changed_files": [
+          "crates/core/args.rs",
+          "crates/printer/src/standard.rs"
+        ],
+        "gold_candidates": [
+          "max_matches",
+          "only_matching",
+          "per_match",
+          "per_match_one_line",
+          "sink_slow_multi_per_match"
+        ]
+      }
+    },
+    {
+      "id": "rg-2208",
+      "bucket": "L",
+      "query": "Adding --replace to a --multiline search can expand what content is matched",
+      "gold": [
+        "ripgrep::replace_all",
+        "ripgrep::replace_with_captures_in_context"
+      ],
+      "lexical_overlap": [
+        "replace"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 2208,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2208",
+        "labels": [
+          "duplicate"
+        ],
+        "fix_commit": "91afd4214a9a",
+        "changed_files": [
+          "crates/printer/src/util.rs"
+        ],
+        "gold_candidates": [
+          "replace_all",
+          "replace_with_captures_in_context"
+        ]
+      }
+    },
+    {
+      "id": "rg-2236",
+      "bucket": "L",
+      "query": "rg/globset raises error for \"dangling '\\'\" in .gitignore",
+      "gold": [
+        "ripgrep::GitignoreBuilder::add_line"
+      ],
+      "lexical_overlap": [
+        "gitignore"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 2236,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2236",
+        "labels": [],
+        "fix_commit": "9f0e88bcb14e",
+        "changed_files": [
+          "crates/ignore/src/gitignore.rs"
+        ],
+        "gold_candidates": [
+          "add_line"
+        ]
+      }
+    },
+    {
+      "id": "rg-2690",
+      "bucket": "L",
+      "query": "Memory not freed in ignore crate when ignore flags are enabled",
+      "gold": [
+        "ripgrep::Ignore::add_parents",
+        "ripgrep::IgnoreInner"
+      ],
+      "lexical_overlap": [
+        "ignore"
+      ],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 2690,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2690",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "b9c774937fc2",
+        "changed_files": [
+          "crates/ignore/src/dir.rs"
+        ],
+        "gold_candidates": [
+          "IgnoreInner",
+          "add_parents"
+        ]
+      }
+    },
+    {
+      "id": "rg-2767",
+      "bucket": "L",
+      "query": "ignore: WalkBuilder::build_parallel() example does not compile",
+      "gold": [
+        "ripgrep::WalkBuilder::build"
+      ],
+      "lexical_overlap": [
+        "walk",
+        "walkbuilder"
+      ],
+      "roux_rank_at_freeze": 1,
+      "provenance": {
+        "issue": 2767,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2767",
+        "labels": [],
+        "fix_commit": "3ad0e8347158",
+        "changed_files": [
+          "crates/ignore/src/walk.rs"
+        ],
+        "gold_candidates": [
+          "build"
+        ]
+      }
+    },
+    {
+      "id": "rg-1311",
+      "bucket": "S",
+      "query": "Unexpected (or incorrect?) multiline replace behavior",
+      "gold": [
+        "ripgrep::StandardBuilder::replacement",
+        "ripgrep::sink"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 2,
+      "provenance": {
+        "issue": 1311,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1311",
+        "labels": [
+          "bug",
+          "rollup"
+        ],
+        "fix_commit": "656aa126492b",
+        "changed_files": [
+          "crates/printer/src/standard.rs",
+          "crates/searcher/src/searcher/glue.rs"
+        ],
+        "gold_candidates": [
+          "replacement",
+          "sink"
+        ]
+      }
+    },
+    {
+      "id": "rg-1339",
+      "bucket": "S",
+      "query": "ripgrep doesn't match arbitrary bytes within a file",
+      "gold": [
+        "ripgrep::InvalidPatternError::fmt",
+        "ripgrep::pattern_from_os"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 1339,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1339",
+        "labels": [
+          "doc"
+        ],
+        "fix_commit": "64a4dee4956e",
+        "changed_files": [
+          "crates/cli/src/pattern.rs"
+        ],
+        "gold_candidates": [
+          "fmt",
+          "pattern_from_os"
+        ]
+      }
+    },
+    {
+      "id": "rg-1401",
+      "bucket": "S",
+      "query": "Ending newline character of a line seems to be exposed to the regex engine with -P option",
+      "gold": [
+        "ripgrep::find_iter_at_in_context",
+        "ripgrep::trim_line_terminator"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 1401,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1401",
+        "labels": [
+          "bug",
+          "rollup"
+        ],
+        "fix_commit": "ee23ab51736d",
+        "changed_files": [
+          "crates/printer/src/standard.rs",
+          "crates/printer/src/util.rs"
+        ],
+        "gold_candidates": [
+          "find_iter_at_in_context",
+          "trim_line_terminator"
+        ]
+      }
+    },
+    {
+      "id": "rg-1739",
+      "bucket": "S",
+      "query": "rg outputs wrong matches when everything is matched and replaced with custom string",
+      "gold": [
+        "ripgrep::replace_all"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 1739,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1739",
+        "labels": [],
+        "fix_commit": "fbb2cfed28d6",
+        "changed_files": [
+          "crates/printer/src/util.rs"
+        ],
+        "gold_candidates": [
+          "replace_all"
+        ]
+      }
+    },
+    {
+      "id": "rg-1879",
+      "bucket": "S",
+      "query": "Second line is matching with multiline option when trying to match start of entire input",
+      "gold": [
+        "ripgrep::remove_matching_bytes"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 1879,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1879",
+        "labels": [
+          "duplicate"
+        ],
+        "fix_commit": "581a35e568c3",
+        "changed_files": [
+          "crates/regex/src/non_matching.rs"
+        ],
+        "gold_candidates": [
+          "remove_matching_bytes"
+        ]
+      }
+    },
+    {
+      "id": "rg-1891",
+      "bucket": "S",
+      "query": "panic with -w and empty string",
+      "gold": [
+        "ripgrep::Match::with_end",
+        "ripgrep::Match::with_start"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 1891,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1891",
+        "labels": [],
+        "fix_commit": "bc76a30c2331",
+        "changed_files": [
+          "crates/matcher/src/lib.rs",
+          "crates/regex/src/word.rs"
+        ],
+        "gold_candidates": [
+          "with_end",
+          "with_start"
+        ]
+      }
+    },
+    {
+      "id": "rg-1911",
+      "bucket": "S",
+      "query": "MS Windows 32bit binary does not work properly for files bigger than 4 gigabyte",
+      "gold": [
+        "ripgrep::MmapChoice::open"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 1911,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1911",
+        "labels": [],
+        "fix_commit": "fdfc418be55f",
+        "changed_files": [
+          "crates/searcher/src/searcher/mmap.rs"
+        ],
+        "gold_candidates": [
+          "open"
+        ]
+      }
+    },
+    {
+      "id": "rg-2195",
+      "bucket": "S",
+      "query": "shell completion '-t' for extensions prompt",
+      "gold": [
+        "ripgrep::DecompressionMatcherBuilder",
+        "ripgrep::file_name"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 5,
+      "provenance": {
+        "issue": 2195,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2195",
+        "labels": [
+          "enhancement",
+          "help wanted",
+          "rollup"
+        ],
+        "fix_commit": "97b5b7769c71",
+        "changed_files": [
+          "crates/cli/src/decompress.rs",
+          "crates/globset/src/pathutil.rs"
+        ],
+        "gold_candidates": [
+          "DecompressionMatcherBuilder",
+          "file_name"
+        ]
+      }
+    },
+    {
+      "id": "rg-2246",
+      "bucket": "S",
+      "query": "emit log message when file is skipped becaue it was detected as \"binary\" data",
+      "gold": [
+        "ripgrep::as_hyperlink",
+        "ripgrep::as_path"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 2246,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2246",
+        "labels": [
+          "enhancement",
+          "rollup"
+        ],
+        "fix_commit": "0e6e9417f1b1",
+        "changed_files": [
+          "crates/printer/src/json.rs",
+          "crates/printer/src/standard.rs",
+          "crates/printer/src/summary.rs",
+          "crates/printer/src/util.rs"
+        ],
+        "gold_candidates": [
+          "as_hyperlink",
+          "as_path"
+        ]
+      }
+    },
+    {
+      "id": "rg-2260",
+      "bucket": "S",
+      "query": "Unexpected character group issue with grep crate",
+      "gold": [
+        "ripgrep::ConfiguredHIR::line_terminator",
+        "ripgrep::RegexMatcherBuilder::build",
+        "ripgrep::match_by_line"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 5,
+      "provenance": {
+        "issue": 2260,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2260",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "8e57989cd203",
+        "changed_files": [
+          "crates/regex/src/config.rs",
+          "crates/regex/src/matcher.rs",
+          "crates/searcher/src/searcher/core.rs",
+          "crates/searcher/src/searcher/glue.rs"
+        ],
+        "gold_candidates": [
+          "build",
+          "line_terminator",
+          "match_by_line"
+        ]
+      }
+    },
+    {
+      "id": "rg-2458",
+      "bucket": "S",
+      "query": "--trim runs after -M/--max-columns",
+      "gold": [
+        "ripgrep::end_color_match",
+        "ripgrep::sink_slow_multi_line",
+        "ripgrep::sink_slow_multi_per_match",
+        "ripgrep::write_colored_line",
+        "ripgrep::write_colored_matches"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 2458,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2458",
+        "labels": [
+          "bug",
+          "rollup"
+        ],
+        "fix_commit": "038524a58007",
+        "changed_files": [
+          "crates/printer/src/standard.rs"
+        ],
+        "gold_candidates": [
+          "end_color_match",
+          "sink_slow_multi_line",
+          "sink_slow_multi_per_match",
+          "write_colored_line",
+          "write_colored_matches",
+          "write_line"
+        ]
+      }
+    },
+    {
+      "id": "rg-2645",
+      "bucket": "S",
+      "query": "Append `--pcre2-version` info to `--version",
+      "gold": [
+        "ripgrep::special"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": 20,
+      "provenance": {
+        "issue": 2645,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2645",
+        "labels": [
+          "rollup"
+        ],
+        "fix_commit": "286de9564e51",
+        "changed_files": [
+          "crates/core/flags/mod.rs",
+          "crates/core/main.rs"
+        ],
+        "gold_candidates": [
+          "special"
+        ]
+      }
+    },
+    {
+      "id": "rg-2658",
+      "bucket": "S",
+      "query": "--line-regexp` no longer works with `--null-data` after upgrading to 14.0.1",
+      "gold": [
+        "ripgrep::is_line_by_line_fast"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 2658,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2658",
+        "labels": [
+          "rollup"
+        ],
+        "fix_commit": "805fa32d184f",
+        "changed_files": [
+          "crates/searcher/src/searcher/core.rs"
+        ],
+        "gold_candidates": [
+          "is_line_by_line_fast"
+        ]
+      }
+    },
+    {
+      "id": "rg-2664",
+      "bucket": "S",
+      "query": "Using `--sortr path` gives error \"thread 'main' panicked\"/\"not yet implemented\"",
+      "gold": [
+        "ripgrep::HiArgs::attach_timestamps"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 2664,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2664",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "daa157b5f99c",
+        "changed_files": [
+          "crates/core/flags/hiargs.rs"
+        ],
+        "gold_candidates": [
+          "attach_timestamps"
+        ]
+      }
+    },
+    {
+      "id": "rg-2694",
+      "bucket": "S",
+      "query": "consider adding an `rg:` prefix all error messages",
+      "gold": [
+        "ripgrep::eprintln_locked"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 2694,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2694",
+        "labels": [
+          "enhancement",
+          "help wanted"
+        ],
+        "fix_commit": "c8e4a84519ed",
+        "changed_files": [
+          "crates/core/messages.rs"
+        ],
+        "gold_candidates": [
+          "eprintln_locked"
+        ]
+      }
+    },
+    {
+      "id": "rg-2884",
+      "bucket": "S",
+      "query": "Alternation match regression",
+      "gold": [
+        "ripgrep::Extractor::union",
+        "ripgrep::TSeq::choose",
+        "ripgrep::TSeq::has_poisonous_literal",
+        "ripgrep::TSeq::union"
+      ],
+      "lexical_overlap": [],
+      "roux_rank_at_freeze": null,
+      "provenance": {
+        "issue": 2884,
+        "issue_url": "https://github.com/BurntSushi/ripgrep/issues/2884",
+        "labels": [
+          "bug"
+        ],
+        "fix_commit": "9d738ad0c009",
+        "changed_files": [
+          "crates/regex/src/literal.rs"
+        ],
+        "gold_candidates": [
+          "choose",
+          "has_poisonous_literal",
+          "union"
+        ]
+      }
+    }
+  ]
+}

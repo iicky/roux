@@ -1,0 +1,18 @@
+{
+  "_comment": "Vocabulary-mismatch query set. bucket S = zero query-lexical overlap with gold's INDEXED text (verified against the roux DB, not raw source); only S tests embeddings. L/B = lexical controls (must be easy). gold = list of qualified_name substrings; any match in top-K = hit (same semantics as bench/rank_eval.py). source repo: Marlin 2.1.2.5, index built by bench/build_persona_indexes.sh.",
+  "source_name": "Marlin",
+  "index_path": "/tmp/roux-sources/Marlin",
+  "queries": [
+    {"id": "S1", "bucket": "S", "query": "stop ringing and ghosting artifacts in prints", "gold": ["M593"], "concept": "ringing -> input shaping"},
+    {"id": "S2", "bucket": "S", "query": "shut down if a heater goes out of control", "gold": ["tr_state_machine"], "concept": "out-of-control -> thermal runaway"},
+    {"id": "S3", "bucket": "S", "query": "compensate for pressure buildup in the nozzle", "gold": ["M900"], "concept": "pressure -> linear advance"},
+    {"id": "S4", "bucket": "S", "query": "move the tool back to its origin", "gold": ["homeaxis", "G28"], "concept": "origin -> home"},
+    {"id": "S5", "bucket": "S", "query": "detect when the spool is empty", "gold": ["FilamentMonitor", "has_run_out"], "concept": "spool empty -> filament runout"},
+    {"id": "S6", "bucket": "S", "query": "remember my configuration after power off", "gold": ["M500"], "concept": "remember after power off -> store in EEPROM"},
+    {"id": "S7", "bucket": "S", "query": "limit sudden jolts when speed changes", "gold": ["M205"], "concept": "sudden jolts -> jerk / junction deviation"},
+    {"id": "S8", "bucket": "S", "query": "nudge the nozzle height while printing", "gold": ["Babystep"], "concept": "live nudge -> babystepping"},
+
+    {"id": "L1", "bucket": "L", "query": "input shaping frequency", "gold": ["M593"], "concept": "control: query is the jargon itself"},
+    {"id": "B1", "bucket": "B", "query": "set the hotend temperature", "gold": ["M104_M109"], "concept": "control: terms in body, name is the gcode number"}
+  ]
+}

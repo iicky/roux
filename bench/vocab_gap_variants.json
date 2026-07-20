@@ -1,0 +1,1145 @@
+{
+  "note": "BLIND reformulations for the vocab-gap (S bucket) diagnosis (completion, gold never in context).",
+  "results": [
+    {
+      "id": "Marlin-8577",
+      "source": "Marlin",
+      "query": "Compile error with last Bugfix 2.0.x",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"Compile error with last Bugfix 2.0.x\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "error: was not declared in this scope\n#error Marlin\nstatic_assert\nSANITYCHECK\n#if ENABLED\nConditionals_post.h",
+      "variants": [
+        "error: was not declared in this scope",
+        "#error Marlin",
+        "static_assert",
+        "SANITYCHECK",
+        "#if ENABLED",
+        "Conditionals_post.h"
+      ]
+    },
+    {
+      "id": "Marlin-8579",
+      "source": "Marlin",
+      "query": "2.x Fan speed (M106) doesn't work until after G1 command",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"2.x Fan speed (M106) doesn't work until after G1 command\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "M106\nset_fan_speed\nthermalManager.fan_speed\nFANKICK\nplanner.buffer_line fan sync\nGcodeSuite::M106",
+      "variants": [
+        "M106",
+        "set_fan_speed",
+        "thermalManager.fan_speed",
+        "FANKICK",
+        "planner.buffer_line fan sync",
+        "GcodeSuite::M106"
+      ]
+    },
+    {
+      "id": "Marlin-8669",
+      "source": "Marlin",
+      "query": "Z_HOMING_HEIGHT ignored when Z_HOME_DIR > 0",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"Z_HOMING_HEIGHT ignored when Z_HOME_DIR > 0\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "Z_HOMING_HEIGHT\nZ_HOME_DIR\nZ_SAFE_HOMING\nhomeaxis(Z_AXIS)\ndo_blocking_move_to_z\ncurrent_position.z raise before homing",
+      "variants": [
+        "Z_HOMING_HEIGHT",
+        "Z_HOME_DIR",
+        "Z_SAFE_HOMING",
+        "homeaxis(Z_AXIS)",
+        "do_blocking_move_to_z",
+        "current_position.z raise before homing"
+      ]
+    },
+    {
+      "id": "Marlin-8710",
+      "source": "Marlin",
+      "query": "[2.0.X]- LPC1768 -  TCNT0 not defined when using LIN_ADVANCE or BABYSTEPPING",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[2.0.X]- LPC1768 -  TCNT0 not defined when using LIN_ADVANCE or BABYSTEPPING\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "TCNT0\nLIN_ADVANCE\nBABYSTEPPING\nHAL_STEP_TIMER_ISR\nLPC1768 timer register\nBabystep::task",
+      "variants": [
+        "TCNT0",
+        "LIN_ADVANCE",
+        "BABYSTEPPING",
+        "HAL_STEP_TIMER_ISR",
+        "LPC1768 timer register",
+        "Babystep::task"
+      ]
+    },
+    {
+      "id": "Marlin-8779",
+      "source": "Marlin",
+      "query": "Sainsmart 2-in-1 board pulling up gen7-custom board pins definition?",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"Sainsmart 2-in-1 board pulling up gen7-custom board pins definition?\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "GEN7_CUSTOM\nBOARD_GEN7_CUSTOM\npins_GEN7_CUSTOM.h\nSanguino\nATmega644P\nX_STEP_PIN",
+      "variants": [
+        "GEN7_CUSTOM",
+        "BOARD_GEN7_CUSTOM",
+        "pins_GEN7_CUSTOM.h",
+        "Sanguino",
+        "ATmega644P",
+        "X_STEP_PIN"
+      ]
+    },
+    {
+      "id": "Marlin-8805",
+      "source": "Marlin",
+      "query": "[2.0.x] LEVEL_BED_CORNERS times out after one lap around bed",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[2.0.x] LEVEL_BED_CORNERS times out after one lap around bed\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "LEVEL_BED_CORNERS\nbed_corner\nLEVEL_CORNERS_VERIFY\n_lcd_level_bed_corners\nLEVEL_CORNERS_LEVELING_ORDER\nlcd_wait_for_move",
+      "variants": [
+        "LEVEL_BED_CORNERS",
+        "bed_corner",
+        "LEVEL_CORNERS_VERIFY",
+        "_lcd_level_bed_corners",
+        "LEVEL_CORNERS_LEVELING_ORDER",
+        "lcd_wait_for_move"
+      ]
+    },
+    {
+      "id": "Marlin-9155",
+      "source": "Marlin",
+      "query": "Marlin 2.0 Build for MKS SBase 1.3 not compiling",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"Marlin 2.0 Build for MKS SBase 1.3 not compiling\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "MKS_SBASE\nBOARD_MKS_SBASE\npins_MKS_SBASE.h\n__LPC1768__\nplatformio.ini env:LPC1768\nHAL_LPC1768",
+      "variants": [
+        "MKS_SBASE",
+        "BOARD_MKS_SBASE",
+        "pins_MKS_SBASE.h",
+        "__LPC1768__",
+        "platformio.ini env:LPC1768",
+        "HAL_LPC1768"
+      ]
+    },
+    {
+      "id": "Marlin-9948",
+      "source": "Marlin",
+      "query": "Bugfix-2.0.x Compile failure when using dual serial ports on MKS-SBase (LPC1768)",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"Bugfix-2.0.x Compile failure when using dual serial ports on MKS-SBase (LPC1768)\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "SERIAL_PORT_2\nNUM_SERIAL\nMYSERIAL1\nLPC_SERIAL\nHardwareSerial\nusb_serial dual serial LPC1768",
+      "variants": [
+        "SERIAL_PORT_2",
+        "NUM_SERIAL",
+        "MYSERIAL1",
+        "LPC_SERIAL",
+        "HardwareSerial",
+        "usb_serial dual serial LPC1768"
+      ]
+    },
+    {
+      "id": "Marlin-10137",
+      "source": "Marlin",
+      "query": "Error MAXTEMP triggered if manual leveling bed is GT 0.05",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"Error MAXTEMP triggered if manual leveling bed is GT 0.05\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "MAXTEMP\nmax_temp_error\nTEMP_SENSOR_BED\nmanual_probe_at_point\nlcd_move_z\nG29 manual leveling\ntemperature ADC read\nbabystep_axis",
+      "variants": [
+        "MAXTEMP",
+        "max_temp_error",
+        "TEMP_SENSOR_BED",
+        "manual_probe_at_point",
+        "lcd_move_z",
+        "G29 manual leveling"
+      ]
+    },
+    {
+      "id": "Marlin-10660",
+      "source": "Marlin",
+      "query": "[Bugfix-1.1.x] Enable UBL compile error 'ARG_X' has not been declared",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[Bugfix-1.1.x] Enable UBL compile error 'ARG_X' has not been declared\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "ARG_X has not been declared\nAUTO_BED_LEVELING_UBL\nunified_bed_leveling\nubl_G29.cpp\n#define ARG_X\nmesh_index_to_xpos",
+      "variants": [
+        "ARG_X has not been declared",
+        "AUTO_BED_LEVELING_UBL",
+        "unified_bed_leveling",
+        "ubl_G29.cpp",
+        "#define ARG_X",
+        "mesh_index_to_xpos"
+      ]
+    },
+    {
+      "id": "Marlin-11697",
+      "source": "Marlin",
+      "query": "[2.0.x] Too long extrusion during filament change",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[2.0.x] Too long extrusion during filament change\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "FILAMENT_CHANGE_UNLOAD_LENGTH\nADVANCED_PAUSE_PURGE_LENGTH\nload_filament\nunload_filament\npause_print\nFILAMENT_CHANGE_FAST_LOAD_LENGTH",
+      "variants": [
+        "FILAMENT_CHANGE_UNLOAD_LENGTH",
+        "ADVANCED_PAUSE_PURGE_LENGTH",
+        "load_filament",
+        "unload_filament",
+        "pause_print",
+        "FILAMENT_CHANGE_FAST_LOAD_LENGTH"
+      ]
+    },
+    {
+      "id": "Marlin-13410",
+      "source": "Marlin",
+      "query": "Marlin\\src\\module\\temperature.cpp:826:46: error: operator ',' has no right operand[BUG] (short description)",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"Marlin\\src\\module\\temperature.cpp:826:46: error: operator ',' has no right operand[BUG] (short description)\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "PID_PARAM(Kp, e)\ntemperature.cpp:826\nPID_debug\ngetHeaterPower\nPID_K1\noperator ',' has no right operand\nwork_pid\nscalePID_i",
+      "variants": [
+        "PID_PARAM(Kp, e)",
+        "temperature.cpp:826",
+        "PID_debug",
+        "getHeaterPower",
+        "PID_K1",
+        "operator ',' has no right operand"
+      ]
+    },
+    {
+      "id": "Marlin-14328",
+      "source": "Marlin",
+      "query": "[BUG] [bugfix-2.0.x] Using M401 makes a subsequent G28 fail",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG] [bugfix-2.0.x] Using M401 makes a subsequent G28 fail\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "M401\nprobe_deployed\nGcodeSuite::M401\nDEPLOY_PROBE\nSTOW_PROBE\nG28 homeaxis probe",
+      "variants": [
+        "M401",
+        "probe_deployed",
+        "GcodeSuite::M401",
+        "DEPLOY_PROBE",
+        "STOW_PROBE",
+        "G28 homeaxis probe"
+      ]
+    },
+    {
+      "id": "Marlin-14774",
+      "source": "Marlin",
+      "query": "[BUG] M0 injection on end of SD card causing nozzle to linger heated on model",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG] M0 injection on end of SD card causing nozzle to linger heated on model\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "M0 M1 pause\nSD_FINISHED_STEPPERRELEASE\nSD_FINISHED_RELEASECOMMAND\nprintingHasFinished\ncard.printingHasFinished\nM0_M1_command",
+      "variants": [
+        "M0 M1 pause",
+        "SD_FINISHED_STEPPERRELEASE",
+        "SD_FINISHED_RELEASECOMMAND",
+        "printingHasFinished",
+        "card.printingHasFinished",
+        "M0_M1_command"
+      ]
+    },
+    {
+      "id": "Marlin-16767",
+      "source": "Marlin",
+      "query": "[BUG] latest bugfix compile error for due",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG] latest bugfix compile error for due\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "DUE compile error\n__SAM3X8E__\nHAL_DUE\nplatformio.ini due env\n#error unsupported platform\npins_RAMPS.h DUE",
+      "variants": [
+        "DUE compile error",
+        "__SAM3X8E__",
+        "HAL_DUE",
+        "platformio.ini due env",
+        "#error unsupported platform",
+        "pins_RAMPS.h DUE"
+      ]
+    },
+    {
+      "id": "Marlin-16881",
+      "source": "Marlin",
+      "query": "[BUG] Compile fails with BABYSTEP_TICKS not declared in scope",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG] Compile fails with BABYSTEP_TICKS not declared in scope\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "BABYSTEP_TICKS\nBABYSTEPPING\nbabystep.cpp\n#define BABYSTEP_ALWAYS_AVAILABLE\nbabystep_ticks\nintegrated_babystepping",
+      "variants": [
+        "BABYSTEP_TICKS",
+        "BABYSTEPPING",
+        "babystep.cpp",
+        "#define BABYSTEP_ALWAYS_AVAILABLE",
+        "babystep_ticks",
+        "integrated_babystepping"
+      ]
+    },
+    {
+      "id": "Marlin-17125",
+      "source": "Marlin",
+      "query": "GCODE_MACROS (i.e. M810 - M819) only execute once",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"GCODE_MACROS (i.e. M810 - M819) only execute once\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "GCODE_MACRO\nM810\ngcode_macro\nparser.string_arg\nGCODE_MACROS\nuser_gcode",
+      "variants": [
+        "GCODE_MACRO",
+        "M810",
+        "gcode_macro",
+        "parser.string_arg",
+        "GCODE_MACROS",
+        "user_gcode"
+      ]
+    },
+    {
+      "id": "Marlin-17255",
+      "source": "Marlin",
+      "query": "[BUG][bugfix-2.0.x] M114 Reports steps count twice",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG][bugfix-2.0.x] M114 Reports steps count twice\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "M114 report_current_position\nreport_real_position\nreport_logical_position\nstepper.report_positions\nCOUNT stepper position report\nreport_current_position_detail",
+      "variants": [
+        "M114 report_current_position",
+        "report_real_position",
+        "report_logical_position",
+        "stepper.report_positions",
+        "COUNT stepper position report",
+        "report_current_position_detail"
+      ]
+    },
+    {
+      "id": "Marlin-17264",
+      "source": "Marlin",
+      "query": "[BUG] Y Layer Shift when Skew Value is Set",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG] Y Layer Shift when Skew Value is Set\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "SKEW_CORRECTION\nskew_factor XY YZ XZ\napply_skew unapply_skew\nXY_SKEW_FACTOR\nplanner.skew\nskew_correction_matrix",
+      "variants": [
+        "SKEW_CORRECTION",
+        "skew_factor XY YZ XZ",
+        "apply_skew unapply_skew",
+        "XY_SKEW_FACTOR",
+        "planner.skew",
+        "skew_correction_matrix"
+      ]
+    },
+    {
+      "id": "Marlin-17422",
+      "source": "Marlin",
+      "query": "[BUG] min_temp_error for thermistor_998 and 999",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG] min_temp_error for thermistor_998 and 999\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "MIN_TEMP_ERROR\nmin_temp_error\nDUMMY_THERMISTOR_998_VALUE\nDUMMY_THERMISTOR_999_VALUE\nTEMP_SENSOR_0 998\ntemp_range mintemp",
+      "variants": [
+        "MIN_TEMP_ERROR",
+        "min_temp_error",
+        "DUMMY_THERMISTOR_998_VALUE",
+        "DUMMY_THERMISTOR_999_VALUE",
+        "TEMP_SENSOR_0 998",
+        "temp_range mintemp"
+      ]
+    },
+    {
+      "id": "Marlin-17635",
+      "source": "Marlin",
+      "query": "[BUG] Virtual Tool 1 is Incorrectly initialized with 0 : 0 mix on 2 in 1 mixing printer",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG] Virtual Tool 1 is Incorrectly initialized with 0 : 0 mix on 2 in 1 mixing printer\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "mixing_virtual_tool_init\nMIXING_VIRTUAL_TOOLS\nmixer.T\ncollector[]\nnormalize_mix\nmixing_tools_init",
+      "variants": [
+        "mixing_virtual_tool_init",
+        "MIXING_VIRTUAL_TOOLS",
+        "mixer.T",
+        "collector[]",
+        "normalize_mix",
+        "mixing_tools_init"
+      ]
+    },
+    {
+      "id": "Marlin-17770",
+      "source": "Marlin",
+      "query": "[BUG] Incorrect total count when probing for leveling",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG] Incorrect total count when probing for leveling\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "abl_probe_index\nG29 probe points\nGRID_MAX_POINTS\nprobe_count total points\nmesh_index_to_xpos\nauto_bed_leveling total probe points",
+      "variants": [
+        "abl_probe_index",
+        "G29 probe points",
+        "GRID_MAX_POINTS",
+        "probe_count total points",
+        "mesh_index_to_xpos",
+        "auto_bed_leveling total probe points"
+      ]
+    },
+    {
+      "id": "Marlin-21712",
+      "source": "Marlin",
+      "query": "[BUG] compile error with TEMP_SENSOR_1_AS_REDUNDANT",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG] compile error with TEMP_SENSOR_1_AS_REDUNDANT\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "TEMP_SENSOR_1_AS_REDUNDANT\nredundant_temperature\nMAX_REDUNDANT_TEMP_SENSOR_DIFF\ntemp_sensor_1\nHEATER_1_TEMPTABLE\nredundant temperature runaway",
+      "variants": [
+        "TEMP_SENSOR_1_AS_REDUNDANT",
+        "redundant_temperature",
+        "MAX_REDUNDANT_TEMP_SENSOR_DIFF",
+        "temp_sensor_1",
+        "HEATER_1_TEMPTABLE",
+        "redundant temperature runaway"
+      ]
+    },
+    {
+      "id": "Marlin-21929",
+      "source": "Marlin",
+      "query": "[BUG] EEPROM_CHITCHAT No Feedback?",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG] EEPROM_CHITCHAT No Feedback?\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "EEPROM_CHITCHAT\nDEBUG_ECHO_START\nM503 report_settings\nSERIAL_ECHO_MSG EEPROM\nEEPROM_ENABLED chitchat\npersistentStore write_data",
+      "variants": [
+        "EEPROM_CHITCHAT",
+        "DEBUG_ECHO_START",
+        "M503 report_settings",
+        "SERIAL_ECHO_MSG EEPROM",
+        "EEPROM_ENABLED chitchat",
+        "persistentStore write_data"
+      ]
+    },
+    {
+      "id": "Marlin-22167",
+      "source": "Marlin",
+      "query": "[BUG] X_HEAD undeclared compiler errors",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG] X_HEAD undeclared compiler errors\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "X_HEAD\nCOREXY X_HEAD\nCoreXY position calculation\nCOUNT_AXES X_HEAD\ndelta_mm[X_HEAD]\nCORE_FACTOR X_HEAD Y_HEAD",
+      "variants": [
+        "X_HEAD",
+        "COREXY X_HEAD",
+        "CoreXY position calculation",
+        "COUNT_AXES X_HEAD",
+        "delta_mm[X_HEAD]",
+        "CORE_FACTOR X_HEAD Y_HEAD"
+      ]
+    },
+    {
+      "id": "Marlin-22729",
+      "source": "Marlin",
+      "query": "[BUG] Delta sensorless probing compile error",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG] Delta sensorless probing compile error\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "SENSORLESS_PROBING\nDELTA sensorless homing\nhomeaxis stealthChop\nTMC sensorless probe endstop\nG33 delta calibration probe\nSTALL_SENSITIVITY delta",
+      "variants": [
+        "SENSORLESS_PROBING",
+        "DELTA sensorless homing",
+        "homeaxis stealthChop",
+        "TMC sensorless probe endstop",
+        "G33 delta calibration probe",
+        "STALL_SENSITIVITY delta"
+      ]
+    },
+    {
+      "id": "Marlin-24963",
+      "source": "Marlin",
+      "query": "[BUG] EEPROM error with M502 then M500",
+      "prompt": "You are helping search a codebase: Marlin 3D-printer firmware (C++).\nA user asks about this issue or topic:\n\"[BUG] EEPROM error with M502 then M500\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "M500 EEPROM save\nM502 factory reset defaults\nEEPROM_WRITE\nvalidate_crc EEPROM\nsettings.save\nEEPROM version mismatch",
+      "variants": [
+        "M500 EEPROM save",
+        "M502 factory reset defaults",
+        "EEPROM_WRITE",
+        "validate_crc EEPROM",
+        "settings.save",
+        "EEPROM version mismatch"
+      ]
+    },
+    {
+      "id": "gin-391",
+      "source": "gin",
+      "query": "Support HTTP content negotiation wildcards",
+      "prompt": "You are helping search a codebase: the Gin HTTP web framework (Go).\nA user asks about this issue or topic:\n\"Support HTTP content negotiation wildcards\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "Accept header parsing\nNegotiateFormat\ncontent negotiation\nMIMEType wildcard match\nAccept */* wildcard\ncontext.Negotiate",
+      "variants": [
+        "Accept header parsing",
+        "NegotiateFormat",
+        "content negotiation",
+        "MIMEType wildcard match",
+        "Accept */* wildcard",
+        "context.Negotiate"
+      ]
+    },
+    {
+      "id": "gin-630",
+      "source": "gin",
+      "query": "gin.Error does not implement the error interface",
+      "prompt": "You are helping search a codebase: the Gin HTTP web framework (Go).\nA user asks about this issue or topic:\n\"gin.Error does not implement the error interface\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "Error struct Error method\nfunc (msg *Error) Error() string\ngin.Error type\nerrorMsg Error interface\nErrorType\nError JSON MarshalJSON",
+      "variants": [
+        "Error struct Error method",
+        "func (msg *Error) Error() string",
+        "gin.Error type",
+        "errorMsg Error interface",
+        "ErrorType",
+        "Error JSON MarshalJSON"
+      ]
+    },
+    {
+      "id": "gin-752",
+      "source": "gin",
+      "query": "IsTerminal not available on Google App Engine",
+      "prompt": "You are helping search a codebase: the Gin HTTP web framework (Go).\nA user asks about this issue or topic:\n\"IsTerminal not available on Google App Engine\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "IsTerminal\nbuild appengine\n+build appengine\nsyscall.Stdout terminal\nconsoleColorMode\nDisableConsoleColor",
+      "variants": [
+        "IsTerminal",
+        "build appengine",
+        "+build appengine",
+        "syscall.Stdout terminal",
+        "consoleColorMode",
+        "DisableConsoleColor"
+      ]
+    },
+    {
+      "id": "gin-1644",
+      "source": "gin",
+      "query": "Multiple slashes in path is not working",
+      "prompt": "You are helping search a codebase: the Gin HTTP web framework (Go).\nA user asks about this issue or topic:\n\"Multiple slashes in path is not working\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "RemoveExtraSlash\ncleanPath\nredirectTrailingSlash\nhandleHTTPRequest\npath.Clean\ntrailingSlash redirect",
+      "variants": [
+        "RemoveExtraSlash",
+        "cleanPath",
+        "redirectTrailingSlash",
+        "handleHTTPRequest",
+        "path.Clean",
+        "trailingSlash redirect"
+      ]
+    },
+    {
+      "id": "gin-1760",
+      "source": "gin",
+      "query": "Out of range if redirect more than 45 times",
+      "prompt": "You are helping search a codebase: the Gin HTTP web framework (Go).\nA user asks about this issue or topic:\n\"Out of range if redirect more than 45 times\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "redirectTrailingSlash\nhandleHTTPRedirect\nhttp.Redirect\nc.redirect\nredirectFixedPath\nindex out of range context Params",
+      "variants": [
+        "redirectTrailingSlash",
+        "handleHTTPRedirect",
+        "http.Redirect",
+        "c.redirect",
+        "redirectFixedPath",
+        "index out of range context Params"
+      ]
+    },
+    {
+      "id": "gin-1823",
+      "source": "gin",
+      "query": "Styling breaks when request takes long",
+      "prompt": "You are helping search a codebase: the Gin HTTP web framework (Go).\nA user asks about this issue or topic:\n\"Styling breaks when request takes long\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "Content-Type text/css\nstatic file serving\nContent-Length header\nresponse header write timeout\nWriteHeaderNow flush\ngzip middleware static assets",
+      "variants": [
+        "Content-Type text/css",
+        "static file serving",
+        "Content-Length header",
+        "response header write timeout",
+        "WriteHeaderNow flush",
+        "gzip middleware static assets"
+      ]
+    },
+    {
+      "id": "gin-2674",
+      "source": "gin",
+      "query": "Data race with gin-gonic v1.7.0",
+      "prompt": "You are helping search a codebase: the Gin HTTP web framework (Go).\nA user asks about this issue or topic:\n\"Data race with gin-gonic v1.7.0\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "sync.RWMutex Context Keys\nc.Set c.Get mutex\nContext.Keys map race\nCopy() context goroutine\nKeysMutex Lock Unlock\natomic Context sameSite",
+      "variants": [
+        "sync.RWMutex Context Keys",
+        "c.Set c.Get mutex",
+        "Context.Keys map race",
+        "Copy() context goroutine",
+        "KeysMutex Lock Unlock",
+        "atomic Context sameSite"
+      ]
+    },
+    {
+      "id": "gin-2786",
+      "source": "gin",
+      "query": "[Bug]mixed param and non-param paths",
+      "prompt": "You are helping search a codebase: the Gin HTTP web framework (Go).\nA user asks about this issue or topic:\n\"[Bug]mixed param and non-param paths\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "conflicting wildcard path segment\naddRoute panic conflict\ntree.go insertChild\nwildcard conflicts with existing children\nnode addChild param\npath segment conflicts wildcard",
+      "variants": [
+        "conflicting wildcard path segment",
+        "addRoute panic conflict",
+        "tree.go insertChild",
+        "wildcard conflicts with existing children",
+        "node addChild param",
+        "path segment conflicts wildcard"
+      ]
+    },
+    {
+      "id": "gin-3659",
+      "source": "gin",
+      "query": "Can't bind list of struct pointer in query",
+      "prompt": "You are helping search a codebase: the Gin HTTP web framework (Go).\nA user asks about this issue or topic:\n\"Can't bind list of struct pointer in query\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "bind slice of struct query\nmapping struct pointer form\nsetWithProperType reflect slice\nbindQuery form binding\nreflect.Ptr form mapping\ntryToSetValue nested struct query",
+      "variants": [
+        "bind slice of struct query",
+        "mapping struct pointer form",
+        "setWithProperType reflect slice",
+        "bindQuery form binding",
+        "reflect.Ptr form mapping",
+        "tryToSetValue nested struct query"
+      ]
+    },
+    {
+      "id": "gin-3819",
+      "source": "gin",
+      "query": "Binding a non mandatory file parameter will directly result in an error message",
+      "prompt": "You are helping search a codebase: the Gin HTTP web framework (Go).\nA user asks about this issue or topic:\n\"Binding a non mandatory file parameter will directly result in an error message\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "FormFile multipart\nbindMultipartForm\nsetByForm file\nMultipartFileHeader binding\nform_multipart\nErrMissingFile",
+      "variants": [
+        "FormFile multipart",
+        "bindMultipartForm",
+        "setByForm file",
+        "MultipartFileHeader binding",
+        "form_multipart",
+        "ErrMissingFile"
+      ]
+    },
+    {
+      "id": "pandas-19289",
+      "source": "pandas",
+      "query": "Unstack performance regression",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"Unstack performance regression\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "def unstack\n_unstack_multiple\nreshape.unstack\n_Unstacker\nget_new_values\nunstack multiindex",
+      "variants": [
+        "def unstack",
+        "_unstack_multiple",
+        "reshape.unstack",
+        "_Unstacker",
+        "get_new_values",
+        "unstack multiindex"
+      ]
+    },
+    {
+      "id": "pandas-20554",
+      "source": "pandas",
+      "query": "DEPR: remove resample compatibility",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"DEPR: remove resample compatibility\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "resample deprecated\nDataFrame.resample compat\nResampler.__getattr__ deprecation\naxis parameter resample\nwarnings.warn resample FutureWarning\ngroupby resample compatibility",
+      "variants": [
+        "resample deprecated",
+        "DataFrame.resample compat",
+        "Resampler.__getattr__ deprecation",
+        "axis parameter resample",
+        "warnings.warn resample FutureWarning",
+        "groupby resample compatibility"
+      ]
+    },
+    {
+      "id": "pandas-20753",
+      "source": "pandas",
+      "query": "Inconsistent behaviour of .ix between list and scalar key with (missing) ints",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"Inconsistent behaviour of .ix between list and scalar key with (missing) ints\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "ix indexer integer fallback\n_convert_to_indexer\nloc getitem list of labels\nreindex missing keys KeyError\n_getitem_axis integer label\nconvert_to_index_sliceable",
+      "variants": [
+        "ix indexer integer fallback",
+        "_convert_to_indexer",
+        "loc getitem list of labels",
+        "reindex missing keys KeyError",
+        "_getitem_axis integer label",
+        "convert_to_index_sliceable"
+      ]
+    },
+    {
+      "id": "pandas-21374",
+      "source": "pandas",
+      "query": "pd.eval() discards imaginary part in division \"/\"",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"pd.eval() discards imaginary part in division \"/\"\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "complex division eval\npd.eval imaginary part\nDiv operator eval expr\n_arith_ops _binary_op\nnumexpr complex division\ntruediv complex eval",
+      "variants": [
+        "complex division eval",
+        "pd.eval imaginary part",
+        "Div operator eval expr",
+        "_arith_ops _binary_op",
+        "numexpr complex division",
+        "truediv complex eval"
+      ]
+    },
+    {
+      "id": "pandas-21593",
+      "source": "pandas",
+      "query": ".ix[int_number] falls back to positional indexing with MultiIndex with integers on first level",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\".ix[int_number] falls back to positional indexing with MultiIndex with integers on first level\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "ix positional fallback MultiIndex\n_getitem_axis integer label\n_convert_to_indexer\nMultiIndex get_loc integer\n_has_valid_type integer index\nis_integer index fallback positional",
+      "variants": [
+        "ix positional fallback MultiIndex",
+        "_getitem_axis integer label",
+        "_convert_to_indexer",
+        "MultiIndex get_loc integer",
+        "_has_valid_type integer index",
+        "is_integer index fallback positional"
+      ]
+    },
+    {
+      "id": "pandas-22702",
+      "source": "pandas",
+      "query": "ValueError in Categorical Constructor with empty data and boolean categories",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"ValueError in Categorical Constructor with empty data and boolean categories\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "Categorical constructor empty data\nCategorical dtype boolean categories\nfactorize_from_iterables empty\nsanitize_array Categorical\n_from_inferred_categories\nCategoricalDtype validate_categories",
+      "variants": [
+        "Categorical constructor empty data",
+        "Categorical dtype boolean categories",
+        "factorize_from_iterables empty",
+        "sanitize_array Categorical",
+        "_from_inferred_categories",
+        "CategoricalDtype validate_categories"
+      ]
+    },
+    {
+      "id": "pandas-23438",
+      "source": "pandas",
+      "query": "Converting series of dates to Periods",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"Converting series of dates to Periods\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "to_period\nSeries.dt.to_period\nPeriodIndex\nDatetimeIndex.to_period\nperiod_range\nPeriod freq conversion",
+      "variants": [
+        "to_period",
+        "Series.dt.to_period",
+        "PeriodIndex",
+        "DatetimeIndex.to_period",
+        "period_range",
+        "Period freq conversion"
+      ]
+    },
+    {
+      "id": "pandas-25580",
+      "source": "pandas",
+      "query": "Int64 series resampling",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"Int64 series resampling\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "Int64 resample\nnullable integer resampling\nresample downcast dtype\n_resample_object\nIntegerArray groupby aggregate\nresample_asfreq nan fill",
+      "variants": [
+        "Int64 resample",
+        "nullable integer resampling",
+        "resample downcast dtype",
+        "_resample_object",
+        "IntegerArray groupby aggregate",
+        "resample_asfreq nan fill"
+      ]
+    },
+    {
+      "id": "pandas-27148",
+      "source": "pandas",
+      "query": "Indexing single level with list of missing labels raises if (and only if) it has length 1",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"Indexing single level with list of missing labels raises if (and only if) it has length 1\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "reindex missing labels KeyError\n_validate_read_indexer\nloc raise missing labels\n_get_listlike_indexer\nNone of ... are in the index\nreindex_axis raise_missing",
+      "variants": [
+        "reindex missing labels KeyError",
+        "_validate_read_indexer",
+        "loc raise missing labels",
+        "_get_listlike_indexer",
+        "None of ... are in the index",
+        "reindex_axis raise_missing"
+      ]
+    },
+    {
+      "id": "pandas-27516",
+      "source": "pandas",
+      "query": "Partial string indexing returns ndarray rather than Series",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"Partial string indexing returns ndarray rather than Series\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "partial string indexing DatetimeIndex\n_partial_date_slice\nget_loc partial string\n_get_string_slice\nDatetimeIndex.get_value\npartial_string_indexing returns ndarray",
+      "variants": [
+        "partial string indexing DatetimeIndex",
+        "_partial_date_slice",
+        "get_loc partial string",
+        "_get_string_slice",
+        "DatetimeIndex.get_value",
+        "partial_string_indexing returns ndarray"
+      ]
+    },
+    {
+      "id": "pandas-27526",
+      "source": "pandas",
+      "query": "Groupby Array-Type Quantiles Broken in 0.25.0",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"Groupby Array-Type Quantiles Broken in 0.25.0\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "groupby quantile\ndef group_quantile\n_get_cythonized_result quantile\ngroupby.quantile interpolation\npre_processor post_processor quantile\nGroupBy quantile array dtype",
+      "variants": [
+        "groupby quantile",
+        "def group_quantile",
+        "_get_cythonized_result quantile",
+        "groupby.quantile interpolation",
+        "pre_processor post_processor quantile",
+        "GroupBy quantile array dtype"
+      ]
+    },
+    {
+      "id": "pandas-28204",
+      "source": "pandas",
+      "query": "CSS selector for index cells",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"CSS selector for index cells\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "row_heading\nStyler set_td_classes\nindex_name css class\ncol_heading level\napply_index applymap_index\n_translate style render",
+      "variants": [
+        "row_heading",
+        "Styler set_td_classes",
+        "index_name css class",
+        "col_heading level",
+        "apply_index applymap_index",
+        "_translate style render"
+      ]
+    },
+    {
+      "id": "pandas-28283",
+      "source": "pandas",
+      "query": "Various methods don't call call __finalize__",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"Various methods don't call call __finalize__\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "__finalize__\ndef __finalize__\nself.__finalize__\n_constructor\nreturn self._constructor\nNDFrame __finalize__",
+      "variants": [
+        "__finalize__",
+        "def __finalize__",
+        "self.__finalize__",
+        "_constructor",
+        "return self._constructor",
+        "NDFrame __finalize__"
+      ]
+    },
+    {
+      "id": "pandas-29563",
+      "source": "pandas",
+      "query": "Sparse DataFrame with all-zeros column returns NA for fancy index",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"Sparse DataFrame with all-zeros column returns NA for fancy index\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "SparseArray fillna\nSparseDataFrame iloc all zeros\nsparse block fancy indexing NaN\nSparseArray take fill_value\nsp_index all zero column\nsparse reindex NA fancy index",
+      "variants": [
+        "SparseArray fillna",
+        "SparseDataFrame iloc all zeros",
+        "sparse block fancy indexing NaN",
+        "SparseArray take fill_value",
+        "sp_index all zero column",
+        "sparse reindex NA fancy index"
+      ]
+    },
+    {
+      "id": "pandas-37782",
+      "source": "pandas",
+      "query": "json_normalize cannot parse metadata fields list type",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"json_normalize cannot parse metadata fields list type\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "json_normalize\n_json_normalize meta\nnested_to_record\n_pull_field\nmeta metadata list\ndef json_normalize record_path",
+      "variants": [
+        "json_normalize",
+        "_json_normalize meta",
+        "nested_to_record",
+        "_pull_field",
+        "meta metadata list",
+        "def json_normalize record_path"
+      ]
+    },
+    {
+      "id": "pandas-44366",
+      "source": "pandas",
+      "query": "parse_dates=False while passing date_parser tries to use date parser",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"parse_dates=False while passing date_parser tries to use date parser\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "parse_dates\ndate_parser\n_process_date_conversion\nparse_dates=False\nconverter date_parser\n_make_date_converter",
+      "variants": [
+        "parse_dates",
+        "date_parser",
+        "_process_date_conversion",
+        "parse_dates=False",
+        "converter date_parser",
+        "_make_date_converter"
+      ]
+    },
+    {
+      "id": "pandas-45319",
+      "source": "pandas",
+      "query": "Calling to_datetime With errrors=\"coerce\" Still Raises After 50 Rows",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"Calling to_datetime With errrors=\"coerce\" Still Raises After 50 Rows\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "errors=\"coerce\"\nto_datetime\n_convert_listlike_datetimes\narray_to_datetime\ntslib parsing\nobjects_to_datetime64",
+      "variants": [
+        "errors=\"coerce\"",
+        "to_datetime",
+        "_convert_listlike_datetimes",
+        "array_to_datetime",
+        "tslib parsing",
+        "objects_to_datetime64"
+      ]
+    },
+    {
+      "id": "pandas-46389",
+      "source": "pandas",
+      "query": "colon in URL gets cut off during call of to_html() when applying format(hyperlinks='html')",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"colon in URL gets cut off during call of to_html() when applying format(hyperlinks='html')\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "render_links to_html\n_render_href\nStringFormatter render links\ndef _render_href\nto_html render_links hyperlink\nhref regex url pattern",
+      "variants": [
+        "render_links to_html",
+        "_render_href",
+        "StringFormatter render links",
+        "def _render_href",
+        "to_html render_links hyperlink",
+        "href regex url pattern"
+      ]
+    },
+    {
+      "id": "pandas-47705",
+      "source": "pandas",
+      "query": "groupby.resample have inconsistent behavior when calling dataframe that's empty vs have entries",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"groupby.resample have inconsistent behavior when calling dataframe that's empty vs have entries\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "groupby resample empty dataframe\ndef resample groupby\n_GroupByMixin resample\nresample empty result\nDataFrameGroupBy.resample\ngroupby resample apply empty",
+      "variants": [
+        "groupby resample empty dataframe",
+        "def resample groupby",
+        "_GroupByMixin resample",
+        "resample empty result",
+        "DataFrameGroupBy.resample",
+        "groupby resample apply empty"
+      ]
+    },
+    {
+      "id": "pandas-48916",
+      "source": "pandas",
+      "query": "per docs, \"margins\" parameter returns row and column sums if True, but I think it returns the mean",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"per docs, \"margins\" parameter returns row and column sums if True, but I think it returns the mean\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "margins\nmargins_name pivot_table\npivot_table margins\ncrosstab margins\n_add_margins\naggfunc margins mean",
+      "variants": [
+        "margins",
+        "margins_name pivot_table",
+        "pivot_table margins",
+        "crosstab margins",
+        "_add_margins",
+        "aggfunc margins mean"
+      ]
+    },
+    {
+      "id": "pandas-50840",
+      "source": "pandas",
+      "query": "df.groupby().resample()[[cols]] raise KeyError when resampling on index",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"df.groupby().resample()[[cols]] raise KeyError when resampling on index\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "groupby resample __getitem__\n_gotitem resample\nResamplerGroupby\nDatetimeIndexResamplerGroupby\nresample on_index KeyError\n_selection resample groupby",
+      "variants": [
+        "groupby resample __getitem__",
+        "_gotitem resample",
+        "ResamplerGroupby",
+        "DatetimeIndexResamplerGroupby",
+        "resample on_index KeyError",
+        "_selection resample groupby"
+      ]
+    },
+    {
+      "id": "pandas-53983",
+      "source": "pandas",
+      "query": "Partial slicing of unordered datetimeindex inconsistent between providing start and end points",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"Partial slicing of unordered datetimeindex inconsistent between providing start and end points\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "partial string slicing DatetimeIndex\n_partial_date_slice\nslice_indexer datetime\nis_monotonic_increasing slice\n_maybe_cast_slice_bound\nget_slice_bound DatetimeIndex",
+      "variants": [
+        "partial string slicing DatetimeIndex",
+        "_partial_date_slice",
+        "slice_indexer datetime",
+        "is_monotonic_increasing slice",
+        "_maybe_cast_slice_bound",
+        "get_slice_bound DatetimeIndex"
+      ]
+    },
+    {
+      "id": "pandas-55009",
+      "source": "pandas",
+      "query": "The `DataFrame.apply` method does not use the extra argument list when `raw=True",
+      "prompt": "You are helping search a codebase: the pandas data-analysis library (Python).\nA user asks about this issue or topic:\n\"The `DataFrame.apply` method does not use the extra argument list when `raw=True\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "raw=True apply args\ndef apply raw\nFrameApply raw apply\napply_raw\nnp.apply_along_axis args\nDataFrame.apply args kwargs raw",
+      "variants": [
+        "raw=True apply args",
+        "def apply raw",
+        "FrameApply raw apply",
+        "apply_raw",
+        "np.apply_along_axis args",
+        "DataFrame.apply args kwargs raw"
+      ]
+    },
+    {
+      "id": "rg-1311",
+      "source": "ripgrep",
+      "query": "Unexpected (or incorrect?) multiline replace behavior",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"Unexpected (or incorrect?) multiline replace behavior\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "multiline replace\nreplacement bytes multiline\n--replace flag handling\nMatch::replace\ninterpolate replacement captures\nmulti_line submatch offset",
+      "variants": [
+        "multiline replace",
+        "replacement bytes multiline",
+        "replace flag handling",
+        "Match::replace",
+        "interpolate replacement captures",
+        "multi_line submatch offset"
+      ]
+    },
+    {
+      "id": "rg-1339",
+      "source": "ripgrep",
+      "query": "ripgrep doesn't match arbitrary bytes within a file",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"ripgrep doesn't match arbitrary bytes within a file\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "binary detection null byte\ninvalid UTF-8 bytes matching\nconvert_regex_bytes utf8 disabled\nallow_arbitrary_bytes regex\nUtf8(false) syntax config\nlossy encoding transcode bytes",
+      "variants": [
+        "binary detection null byte",
+        "invalid UTF-8 bytes matching",
+        "convert_regex_bytes utf8 disabled",
+        "allow_arbitrary_bytes regex",
+        "Utf8(false) syntax config",
+        "lossy encoding transcode bytes"
+      ]
+    },
+    {
+      "id": "rg-1401",
+      "source": "ripgrep",
+      "query": "Ending newline character of a line seems to be exposed to the regex engine with -P option",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"Ending newline character of a line seems to be exposed to the regex engine with -P option\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "line_terminator\nPCRE2\ncrlf\nstrip line terminator\n$ end of line anchor\nmulti_line matching",
+      "variants": [
+        "line_terminator",
+        "PCRE2",
+        "crlf",
+        "strip line terminator",
+        "$ end of line anchor",
+        "multi_line matching"
+      ]
+    },
+    {
+      "id": "rg-1739",
+      "source": "ripgrep",
+      "query": "rg outputs wrong matches when everything is matched and replaced with custom string",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"rg outputs wrong matches when everything is matched and replaced with custom string\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "replace\n--replace flag\nreplacement bytes\nempty match replace\napply_replacement\ncaptures replacement",
+      "variants": [
+        "replace",
+        "replace flag",
+        "replacement bytes",
+        "empty match replace",
+        "apply_replacement",
+        "captures replacement"
+      ]
+    },
+    {
+      "id": "rg-1879",
+      "source": "ripgrep",
+      "query": "Second line is matching with multiline option when trying to match start of entire input",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"Second line is matching with multiline option when trying to match start of entire input\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "multiline start anchor `\\A`\ncrlf multiline matching\nmulti_line regex builder\nline_terminator multiline\nRegex anchored start of input\ndot_matches_new_line multiline mode",
+      "variants": [
+        "multiline start anchor `\\A`",
+        "crlf multiline matching",
+        "multi_line regex builder",
+        "line_terminator multiline",
+        "Regex anchored start of input",
+        "dot_matches_new_line multiline mode"
+      ]
+    },
+    {
+      "id": "rg-1891",
+      "source": "ripgrep",
+      "query": "panic with -w and empty string",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"panic with -w and empty string\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "word_boundary empty pattern\n--word-regexp panic\nadd_line_boundary word boundary\nempty regex panic\nword boundary empty match\nsubtract 1 overflow match offset",
+      "variants": [
+        "word_boundary empty pattern",
+        "word-regexp panic",
+        "add_line_boundary word boundary",
+        "empty regex panic",
+        "word boundary empty match",
+        "subtract 1 overflow match offset"
+      ]
+    },
+    {
+      "id": "rg-1911",
+      "source": "ripgrep",
+      "query": "MS Windows 32bit binary does not work properly for files bigger than 4 gigabyte",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"MS Windows 32bit binary does not work properly for files bigger than 4 gigabyte\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "u64 file size\nmemory map mmap\nusize overflow\nas usize cast\nseek offset u64\nfile length metadata len",
+      "variants": [
+        "u64 file size",
+        "memory map mmap",
+        "usize overflow",
+        "as usize cast",
+        "seek offset u64",
+        "file length metadata len"
+      ]
+    },
+    {
+      "id": "rg-2195",
+      "source": "ripgrep",
+      "query": "shell completion '-t' for extensions prompt",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"shell completion '-t' for extensions prompt\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "complete_type\ntype-list\n--type-list\ngenerate_completions\ncompletions bash\ntype_add",
+      "variants": [
+        "complete_type",
+        "type-list",
+        "type-list",
+        "generate_completions",
+        "completions bash",
+        "type_add"
+      ]
+    },
+    {
+      "id": "rg-2246",
+      "source": "ripgrep",
+      "query": "emit log message when file is skipped becaue it was detected as \"binary\" data",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"emit log message when file is skipped becaue it was detected as \"binary\" data\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "binary_detection\nBinaryDetection::quit\nlog::debug binary\n\"binary file\" skipped\nfound_binary_byte\nconvert_binary_data",
+      "variants": [
+        "binary_detection",
+        "BinaryDetection::quit",
+        "log::debug binary",
+        "\"binary file\" skipped",
+        "found_binary_byte",
+        "convert_binary_data"
+      ]
+    },
+    {
+      "id": "rg-2260",
+      "source": "ripgrep",
+      "query": "Unexpected character group issue with grep crate",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"Unexpected character group issue with grep crate\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "character class\n[[:alpha:]] POSIX class\nHir::class\nClassBytes ClassUnicode\nparse character group\nunexpected escape sequence",
+      "variants": [
+        "character class",
+        "[[:alpha:]] POSIX class",
+        "Hir::class",
+        "ClassBytes ClassUnicode",
+        "parse character group",
+        "unexpected escape sequence"
+      ]
+    },
+    {
+      "id": "rg-2458",
+      "source": "ripgrep",
+      "query": "--trim runs after -M/--max-columns",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"--trim runs after -M/--max-columns\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "trim\nmax_columns\ntrim_ascii\ntrim_line_terminator\n--max-columns preview\ntrimmed line length",
+      "variants": [
+        "trim",
+        "max_columns",
+        "trim_ascii",
+        "trim_line_terminator",
+        "max-columns preview",
+        "trimmed line length"
+      ]
+    },
+    {
+      "id": "rg-2645",
+      "source": "ripgrep",
+      "query": "Append `--pcre2-version` info to `--version",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"Append `--pcre2-version` info to `--version\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "pcre2_version\n--version\npcre2-version\nfn version\nlong_version\nPCRE2_VERSION",
+      "variants": [
+        "pcre2_version",
+        "version",
+        "pcre2-version",
+        "fn version",
+        "long_version",
+        "PCRE2_VERSION"
+      ]
+    },
+    {
+      "id": "rg-2658",
+      "source": "ripgrep",
+      "query": "--line-regexp` no longer works with `--null-data` after upgrading to 14.0.1",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"--line-regexp` no longer works with `--null-data` after upgrading to 14.0.1\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "line_regexp\nnull_data\nline_terminator\nwhole_line matching\nLineTerminator::custom\n--line-regexp --null-data",
+      "variants": [
+        "line_regexp",
+        "null_data",
+        "line_terminator",
+        "whole_line matching",
+        "LineTerminator::custom",
+        "line-regexp --null-data"
+      ]
+    },
+    {
+      "id": "rg-2664",
+      "source": "ripgrep",
+      "query": "Using `--sortr path` gives error \"thread 'main' panicked\"/\"not yet implemented\"",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"Using `--sortr path` gives error \"thread 'main' panicked\"/\"not yet implemented\"\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "sortr\nunimplemented!()\nSortBy path\n--sort --sortr flag\nSortByKind\nsort_by_field",
+      "variants": [
+        "sortr",
+        "unimplemented!()",
+        "SortBy path",
+        "sort --sortr flag",
+        "SortByKind",
+        "sort_by_field"
+      ]
+    },
+    {
+      "id": "rg-2694",
+      "source": "ripgrep",
+      "query": "consider adding an `rg:` prefix all error messages",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"consider adding an `rg:` prefix all error messages\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "eprintln! error message\nerr_message macro\nStderr write error\nmessage! macro\nprint_error function\n\"error:\" format string",
+      "variants": [
+        "eprintln! error message",
+        "err_message macro",
+        "Stderr write error",
+        "message! macro",
+        "print_error function",
+        "\"error:\" format string"
+      ]
+    },
+    {
+      "id": "rg-2884",
+      "source": "ripgrep",
+      "query": "Alternation match regression",
+      "prompt": "You are helping search a codebase: ripgrep, a fast recursive line-search tool (Rust).\nA user asks about this issue or topic:\n\"Alternation match regression\"\n\nList 5-6 short search phrases a developer would use to find the relevant CODE \u2014 use the project's likely identifiers, function/macro names, and domain jargon. Output ONLY the phrases, one per line. No numbering, no explanation.",
+      "raw": "alternation\nregex_matcher find_at\nmulti_literal_prefix\nprefilter alternation matches\nbyte_set alternation\ncrossbeam alternation regex build",
+      "variants": [
+        "alternation",
+        "regex_matcher find_at",
+        "multi_literal_prefix",
+        "prefilter alternation matches",
+        "byte_set alternation",
+        "crossbeam alternation regex build"
+      ]
+    }
+  ]
+}

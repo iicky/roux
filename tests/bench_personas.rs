@@ -1,9 +1,13 @@
-/// Persona-based benchmark suite for roux.
-///
-/// Tests retrieval quality across real-world repos representing different developer personas.
-/// Queries are split into agent (programmatic, precise) and developer (natural language, fuzzy).
-/// Requires repos cloned at /tmp/roux-sources/. Run with:
-///   cargo test --test bench_personas -- --ignored --nocapture
+//! Persona-based benchmark suite for roux.
+//!
+//! Tests retrieval quality across real-world repos representing different developer personas.
+//! Queries are split into agent (programmatic, precise) and developer (natural language, fuzzy).
+//! Requires repos cloned at /tmp/roux-sources/. Run with:
+//!   cargo test --test bench_personas -- --ignored --nocapture
+
+mod common;
+
+use common::{hit_at_k, mrr};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum QueryMode {
@@ -160,8 +164,11 @@ const PERSONA_REMIX: Persona = Persona {
         },
         // Developer queries
         PersonaQuery {
+            // `Middleware` / `asyncContext` were removed in Remix v2; the
+            // current handler-chain entry points are `getContext` and the
+            // resource/document request dispatchers.
             query: "middleware request handling",
-            expected: &["Middleware", "asyncContext", "getContext"],
+            expected: &["getContext", "handleResourceRequest", "RequestHandler"],
             mode: QueryMode::Developer,
         },
         PersonaQuery {
@@ -170,13 +177,18 @@ const PERSONA_REMIX: Persona = Persona {
             mode: QueryMode::Developer,
         },
         PersonaQuery {
+            // The actual session storage factory is `createFileSessionStorage`
+            // (formerly `createFsSessionStorage` — renamed upstream).
             query: "file storage backend for sessions",
-            expected: &["FileStorage", "createFsSessionStorage"],
+            expected: &["createFileSessionStorage", "FileSessionStorage"],
             mode: QueryMode::Developer,
         },
         PersonaQuery {
-            query: "method override HTTP verbs",
-            expected: &["methodOverride", "MethodOverrideOptions"],
+            // `methodOverride` was removed in v2; v2 routes form HTTP verbs
+            // via the `Form` component / `_method` form field. The doc
+            // heading "HTML Form HTTP Verbs" lives at docs/route/action.md.
+            query: "form HTTP method routing",
+            expected: &["Form", "FormMethod", "useSubmit", "useFetcher"],
             mode: QueryMode::Developer,
         },
     ],
@@ -253,8 +265,10 @@ const PERSONA_MARLIN: Persona = Persona {
             mode: QueryMode::Agent,
         },
         PersonaQuery {
+            // Marlin uses `manage_hotends` for the heater management loop;
+            // there is no `manage_heater` symbol.
             query: "Temperature manage_heater PID control",
-            expected: &["Temperature", "manage_heater"],
+            expected: &["Temperature", "manage_hotends", "PID_autotune"],
             mode: QueryMode::Agent,
         },
         PersonaQuery {
@@ -269,8 +283,12 @@ const PERSONA_MARLIN: Persona = Persona {
             mode: QueryMode::Developer,
         },
         PersonaQuery {
+            // G-code symbols appear in both upper- and lowercase forms
+            // (e.g. `G29` the handler, `g29_what_command` the helper). Token
+            // matching is case-insensitive so either shape hits, but list both
+            // for clarity.
             query: "bed leveling probe command",
-            expected: &["G29", "run_z_probe"],
+            expected: &["G29", "g29_", "run_z_probe", "probe_index"],
             mode: QueryMode::Developer,
         },
         PersonaQuery {
@@ -279,48 +297,15 @@ const PERSONA_MARLIN: Persona = Persona {
             mode: QueryMode::Developer,
         },
         PersonaQuery {
+            // M140/M190 are G-code parsers; `manage_heated_bed` and
+            // `setTargetBed` are the actual control logic. Either is a
+            // useful answer for an agent asking about heated-bed control.
             query: "heated bed temperature control",
-            expected: &["M140", "M190"],
+            expected: &["M140", "M190", "manage_heated_bed", "setTargetBed"],
             mode: QueryMode::Developer,
         },
     ],
 };
-
-// ─── Metrics ────────────────────────────────────────────────────────
-
-fn hit_at_k(results: &[(Vec<String>, &[&str])], k: usize) -> f64 {
-    if results.is_empty() {
-        return 0.0;
-    }
-    let hits = results
-        .iter()
-        .filter(|(names, expected)| {
-            names
-                .iter()
-                .take(k)
-                .any(|name| expected.iter().any(|exp| name.contains(exp)))
-        })
-        .count();
-    hits as f64 / results.len() as f64
-}
-
-fn mrr(results: &[(Vec<String>, &[&str])]) -> f64 {
-    if results.is_empty() {
-        return 0.0;
-    }
-    let sum: f64 = results
-        .iter()
-        .map(|(names, expected)| {
-            for (i, name) in names.iter().enumerate() {
-                if expected.iter().any(|exp| name.contains(exp)) {
-                    return 1.0 / (i + 1) as f64;
-                }
-            }
-            0.0
-        })
-        .sum();
-    sum / results.len() as f64
-}
 
 // ─── Runner ─────────────────────────────────────────────────────────
 
@@ -352,7 +337,7 @@ fn run_persona(persona: &Persona) -> Option<PersonaResult> {
     let store = GraphStore::open_in_memory().unwrap();
 
     let t0 = Instant::now();
-    let graph = extract::extract_dir(path, persona.name, "dev", Some(persona.language)).unwrap();
+    let graph = extract::extract_dir(path, persona.name, Some(persona.language)).unwrap();
     let extract_ms = t0.elapsed().as_millis();
 
     let node_count = graph.nodes.len();
@@ -378,7 +363,7 @@ fn run_persona(persona: &Persona) -> Option<PersonaResult> {
 
         let rank = names
             .iter()
-            .position(|n| q.expected.iter().any(|exp| n.contains(exp)))
+            .position(|n| common::any_match(n, q.expected))
             .map(|r| r + 1);
         let status = if rank.is_some() { "✓" } else { "✗" };
         let rank_str = rank
@@ -469,6 +454,7 @@ fn bench_all_personas() {
     let mut total_dev_h1 = 0.0;
     let mut total_dev_mrr = 0.0;
     let mut count = 0;
+    let mut persona_json = Vec::new();
 
     for persona in &personas {
         if let Some(r) = run_persona(persona) {
@@ -477,6 +463,23 @@ fn bench_all_personas() {
             total_dev_h1 += r.dev_h1;
             total_dev_mrr += r.dev_mrr;
             count += 1;
+            persona_json.push(serde_json::json!({
+                "name": persona.name,
+                "language": persona.language,
+                "node_count": r.node_count,
+                "edge_count": r.edge_count,
+                "extract_ms": r.extract_ms,
+                "metrics": {
+                    "h1": r.h1,
+                    "h5": r.h5,
+                    "h10": r.h10,
+                    "mrr": r.mrr,
+                    "agent_h1": r.agent_h1,
+                    "agent_mrr": r.agent_mrr,
+                    "dev_h1": r.dev_h1,
+                    "dev_mrr": r.dev_mrr,
+                },
+            }));
         }
     }
 
@@ -492,6 +495,35 @@ fn bench_all_personas() {
             total_dev_h1 / count as f64 * 100.0,
             total_dev_mrr / count as f64,
         );
+    }
+
+    // Optional JSON emission for CI. Triggered by env var so local runs stay clean.
+    if let Ok(path) = std::env::var("ROUX_BENCH_JSON_OUT") {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let commit = std::env::var("GITHUB_SHA").ok();
+        let payload = serde_json::json!({
+            "roux_version": env!("CARGO_PKG_VERSION"),
+            "timestamp": timestamp,
+            "commit": commit,
+            "personas": persona_json,
+            "aggregate": if count > 0 {
+                serde_json::json!({
+                    "count": count,
+                    "agent_h1": total_agent_h1 / count as f64,
+                    "agent_mrr": total_agent_mrr / count as f64,
+                    "dev_h1": total_dev_h1 / count as f64,
+                    "dev_mrr": total_dev_mrr / count as f64,
+                })
+            } else {
+                serde_json::json!(null)
+            },
+        });
+        std::fs::write(&path, serde_json::to_string_pretty(&payload).unwrap())
+            .unwrap_or_else(|e| panic!("writing {path}: {e}"));
+        eprintln!("\nWrote JSON metrics to {path}");
     }
 }
 

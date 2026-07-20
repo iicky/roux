@@ -14,3 +14,10 @@ coverage:
 
 github_checks:
   annotations: false
+
+# Coverage reflects product code only. The Rust coverage report (from
+# cargo-llvm-cov) also instruments the integration-test harnesses under tests/;
+# exclude them so the number tracks src/. bench/ is Python and never appears.
+ignore:
+  - "tests/**"
+  - "bench/**"

@@ -1,0 +1,107 @@
+name: PR regression gate
+
+# Runs the persona query suite against pre-built snapshot DBs and fails the
+# check if Hit@10 / dev_mrr / agent_mrr regress beyond tolerance bands
+# defined in bench/snapshot_bench.py. Posts a sticky comment with the metric
+# table on every run so PRs that don't regress still surface the numbers.
+#
+# Snapshots are produced by snapshots.yml and live as release assets under a
+# tag like `snapshots-YYYY-MM`. We always pull from the latest such release.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write   # for the sticky comment
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build roux
+        run: cargo build --release --bin roux
+
+      - name: Resolve latest snapshot tag
+        id: snap
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag=$(gh release list --json tagName --jq \
+            '[.[] | select(.tagName | startswith("snapshots-"))] | sort_by(.tagName) | reverse | .[0].tagName')
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "::warning::No snapshots-* release found yet — gate is in info-only mode until snapshots.yml runs."
+            echo "tag=" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+            echo "Using snapshot tag: $tag"
+          fi
+
+      - name: Download snapshot DBs
+        if: steps.snap.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p snapshots
+          gh release download "${{ steps.snap.outputs.tag }}" \
+            --pattern '*.sqlite.gz' --dir snapshots
+          for f in snapshots/*.sqlite.gz; do
+            gunzip -k "$f"
+          done
+          ls -lh snapshots
+
+      - name: Run regression gate
+        id: bench
+        if: steps.snap.outputs.tag != ''
+        env:
+          ROUX_BIN: ${{ github.workspace }}/target/release/roux
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          baseline_arg=()
+          if [ -f bench/baseline-metrics.json ]; then
+            baseline_arg=(--baseline bench/baseline-metrics.json)
+          else
+            echo "::notice::No bench/baseline-metrics.json — running info-only (no diff)."
+          fi
+          python3 bench/snapshot_bench.py \
+            --db-dir snapshots \
+            "${baseline_arg[@]}" \
+            --out persona-metrics.json \
+            --md-out persona-summary.md
+        continue-on-error: true   # we still want to post the comment on regression
+
+      - name: Append summary to job
+        if: always() && steps.snap.outputs.tag != ''
+        run: |
+          if [ -f persona-summary.md ]; then
+            cat persona-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Post / update sticky PR comment
+        if: always() && steps.snap.outputs.tag != '' && hashFiles('persona-summary.md') != ''
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: persona-regression-gate
+          path: persona-summary.md
+
+      - name: Upload metrics artifact
+        if: always() && steps.snap.outputs.tag != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-metrics
+          path: |
+            persona-metrics.json
+            persona-summary.md
+          retention-days: 30
+
+      - name: Fail on regression
+        if: steps.bench.outcome == 'failure'
+        run: exit 1
