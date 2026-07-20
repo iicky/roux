@@ -7,9 +7,8 @@ roux artifact DBs (one per persona) and runs the persona query suite via
 bench writes (h1/h5/h10/mrr per persona + aggregate agent/dev splits) and
 diffs the result against bench/baseline-metrics.json.
 
-Exits 1 on regression. Tolerance bands chosen after the 2026-04-23 findings
-(see roux-d4w): Hit@1 ties grep on agent queries, so dev_mrr and h10 carry
-the signal.
+Exits 1 on regression. Tolerance bands chosen after the 2026-04-23 findings:
+Hit@1 ties grep on agent queries, so dev_mrr and h10 carry the signal.
 
 Usage:
     python bench/snapshot_bench.py \
