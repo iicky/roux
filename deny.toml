@@ -1,6 +1,10 @@
 [advisories]
 yanked = "warn"
-ignore = []
+ignore = [
+    # `paste` is unmaintained (archived by its author) but ships no code paths
+    # of concern; it reaches us only through the candle/gemm embedding stack.
+    "RUSTSEC-2024-0436",
+]
 
 [licenses]
 allow = [
