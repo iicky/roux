@@ -194,12 +194,46 @@ gate CI on findability with `roux audit --write-baseline` / `roux audit --check`
 
 ## Benchmarks
 
-On a held-out query set across five real repositories — ripgrep (Rust), pandas
-(Python), Remix (TypeScript), gin (Go), and Marlin (C++) — roux reaches an
-aggregate **Hit@10 of 97.5%** (MRR 0.68). On the largest codebase, pandas
-(~36k symbols), it reaches **Hit@10 100%** (MRR 0.91). These are retrieval-quality
-numbers, reproducible from the checked-in gold sets and index snapshots under
-[`bench/`](bench/); they are not a token-cost claim.
+Two instruments, reported separately and honestly.
+
+**Blind held-out retrieval — the real test.** Queries are real closed-issue
+titles from five repos — ripgrep (Rust), pandas (Python), Remix (TypeScript),
+gin (Go), Marlin (C++) — pinned to the fix commit's touched symbols, then
+frozen and human-reviewed. Never tuned against. Each query is bucketed by
+lexical overlap with its gold symbol: **L** (the symbol's name is in the query —
+a control BM25 can seed) and **S** (no shared vocabulary — the pure semantic
+gap). Every arm is graded identically: the gold *symbol* must appear in the
+top-10 under a word-boundary match (`bench/heldout_eval.py`, n=175).
+
+| Arm (blind, symbol-graded, Hit@10) | overall | L (control) | S (vocab gap) |
+|---|---|---|---|
+| **roux** (BM25 + graph, one-shot) | **32.6%** | 46.5% | 14.5% |
+| roux + agent reformulation (`--also` / RRF) | — | — | 25.0% |
+| lexical floor — multi-token coverage on symbols | 18.3% | 23.2% | 11.8% |
+| grep-savvy floor — single distinctive token → enclosing symbol | ~9% | 10.1% | 7.9% |
+| offline dense reference — BGE-small, best-case pool | — | — | 10.5% |
+
+roux ranks the correct *symbol* into the top-10 ~1.8–2.5× as often as the
+lexical floors on blind queries — CPU-only, no embeddings, and a shipped dense
+signal measured *below* it (`bench/vocab_gap_findings.md`). The S residual is
+dominated by symptom→root-cause bug reports (the query names a symptom, the
+gold is the internal function a maintainer changed); bridging that is an
+inference task no retrieval method here closes.
+
+**Where lexical wins — stated plainly.** At *file* granularity on
+out-of-distribution repos, a token-coverage grep beats roux (on polars fix-PR
+titles, ≈54% vs ≈46% Hit@10 for "which file"). roux's edge is *symbol*-level
+ranking, not file-finding; pick the tool to the task.
+
+The persona set under `baseline-metrics.json` / `tests/bench_personas.rs` is a
+lexically-friendly **CI regression tripwire** — many queries contain the answer
+verbatim, so it guards against ranking regressions but is *not* a public
+retrieval-quality claim. Reproduce it all from [`bench/`](bench/): held-out roux
+and its floors via `heldout_eval.py`, `grep_floor_eval.py`, and
+`coverage_floor_eval.py` against the frozen gold sets and index snapshots; the
+dense reference via `vocab_gap_dense.py`; the polars file-level check via
+`external_polars_eval.py` against its frozen query set (needs a pinned polars
+clone). None of it is a token-cost claim.
 
 ## How it works
 
