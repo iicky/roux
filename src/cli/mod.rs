@@ -227,6 +227,18 @@ enum Command {
         /// Shell to generate completions for (bash, zsh, fish, powershell, elvish)
         shell: clap_complete::Shell,
     },
+    /// Generate embeddings for indexed sources
+    Embed {
+        /// Model ID from HuggingFace (default: sentence-transformers/all-MiniLM-L6-v2)
+        #[arg(long, default_value = "sentence-transformers/all-MiniLM-L6-v2")]
+        model: String,
+        /// Only embed a specific source
+        #[arg(long)]
+        source: Option<String>,
+        /// Use local index
+        #[arg(long)]
+        local: bool,
+    },
 }
 
 impl Cli {
@@ -342,6 +354,11 @@ impl Cli {
             Command::Completions { .. } => {
                 unreachable!("completions handled before config load")
             }
+            Command::Embed {
+                model,
+                source,
+                local,
+            } => cmd_embed(&config, model, source.as_deref(), *local),
         }
     }
 }
@@ -2087,6 +2104,59 @@ fn cmd_remove(config: &Config, source_name: &str) -> Result<()> {
     let store = open_existing_store(&store_path, false, "")?;
     store.remove_source(source_name)?;
     output::done(format!("Removed {source_name} from index"));
+    Ok(())
+}
+
+fn cmd_embed(
+    config: &Config,
+    model_id: &str,
+    source_filter: Option<&str>,
+    local: bool,
+) -> Result<()> {
+    use crate::embed::Embedder;
+    use crate::embed::candle::CandleEmbedder;
+
+    let store_path = config.resolve_store_path(StoreScope::from_flags(local, false));
+    if !store_path.exists() {
+        anyhow::bail!("no index found at {}", store_path.display());
+    }
+    let store = GraphStore::open(&store_path)?;
+
+    eprintln!("Loading model {model_id}...");
+    let embedder = CandleEmbedder::from_pretrained(model_id)?;
+    eprintln!("Model loaded ({}d embeddings)", embedder.embedding_dim());
+
+    // Get all nodes that need embedding
+    let sources = store.list_sources()?;
+    for src in &sources {
+        if source_filter.is_some_and(|f| f != src.name) {
+            continue;
+        }
+
+        eprint!("  {} ({} nodes) ... ", src.name, src.node_count);
+
+        // Fetch descriptions for all nodes in this source
+        let node_texts = store.get_node_descriptions(&src.name)?;
+        if node_texts.is_empty() {
+            eprintln!("no descriptions");
+            continue;
+        }
+
+        // Embed in batches
+        let texts: Vec<&str> = node_texts.iter().map(|(_, t)| t.as_str()).collect();
+        let vectors = embedder.embed_passages(&texts)?;
+
+        let pairs: Vec<(String, Vec<f32>)> = node_texts
+            .into_iter()
+            .zip(vectors)
+            .map(|((id, _), vec)| (id, vec))
+            .collect();
+
+        store.store_vectors(&pairs)?;
+        eprintln!("{} vectors", pairs.len());
+    }
+
+    eprintln!("Done.");
     Ok(())
 }
 

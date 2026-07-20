@@ -8,7 +8,7 @@ use super::{Edge, Node};
 /// The current on-disk schema version. Bump this when adding a migration step
 /// in `migrate`; the runner applies every step between a database's recorded
 /// version and this value.
-const CURRENT_SCHEMA_VERSION: i64 = 9;
+pub(crate) const CURRENT_SCHEMA_VERSION: i64 = 10;
 
 pub struct GraphStore {
     conn: Connection,
@@ -152,6 +152,13 @@ impl GraphStore {
                 CREATE INDEX idx_edges_to   ON edges(to_id);
                 CREATE INDEX idx_edges_kind ON edges(kind);
 
+                CREATE TABLE vectors (
+                    node_id TEXT PRIMARY KEY,
+                    embedding BLOB NOT NULL
+                );
+
+                CREATE INDEX idx_vectors_node ON vectors(node_id);
+
                 CREATE VIRTUAL TABLE fts_nodes USING fts5(
                     id UNINDEXED,
                     name,
@@ -240,6 +247,19 @@ impl GraphStore {
             // be re-run over stored data during an incremental refresh (after a
             // target symbol is renamed/added/removed).
             Self::add_column_if_missing(&tx, "ALTER TABLE edges ADD COLUMN ref_name TEXT")?;
+        }
+
+        if version < 10 {
+            // Embedding vectors per node. IF NOT EXISTS on both statements
+            // because v5-era mainline databases already created this table
+            // under the old single-delta scheme.
+            tx.execute_batch(
+                "CREATE TABLE IF NOT EXISTS vectors (
+                    node_id TEXT PRIMARY KEY,
+                    embedding BLOB NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_vectors_node ON vectors(node_id);",
+            )?;
         }
 
         Self::set_schema_version(&tx, CURRENT_SCHEMA_VERSION)?;
@@ -824,7 +844,7 @@ impl GraphStore {
         })
     }
 
-    fn fetch_nodes(&self, ids: &[String]) -> Result<Vec<Node>> {
+    pub fn fetch_nodes(&self, ids: &[String]) -> Result<Vec<Node>> {
         if ids.is_empty() {
             return Ok(vec![]);
         }
@@ -1116,6 +1136,62 @@ impl GraphStore {
 
         tx.commit()?;
         Ok(())
+    }
+
+    /// Store embedding vectors for nodes.
+    pub fn store_vectors(&self, vectors: &[(String, Vec<f32>)]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT OR REPLACE INTO vectors (node_id, embedding) VALUES (?1, ?2)",
+            )?;
+            for (node_id, vec) in vectors {
+                let bytes: Vec<u8> = vec.iter().flat_map(|f| f.to_le_bytes()).collect();
+                stmt.execute(params![node_id, bytes])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Search by vector similarity. Returns (node_id, cosine_similarity) pairs.
+    pub fn vector_search(&self, query_vec: &[f32], limit: usize) -> Result<Vec<(String, f64)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT node_id, embedding FROM vectors")?;
+        let rows: Vec<(String, Vec<u8>)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        let mut scored: Vec<(String, f64)> = rows
+            .into_iter()
+            .filter_map(|(id, bytes)| {
+                let vec = bytes_to_f32(&bytes);
+                if vec.len() != query_vec.len() {
+                    return None;
+                }
+                let sim = cosine_similarity(query_vec, &vec);
+                Some((id, sim))
+            })
+            .collect();
+
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(limit);
+        Ok(scored)
+    }
+
+    /// Get (node_id, description_text) pairs for embedding.
+    /// Uses description if available, falls back to body text.
+    pub fn get_node_descriptions(&self, source_name: &str) -> Result<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, COALESCE(description, body) FROM nodes WHERE source_name = ?1 AND kind != 'file'",
+        )?;
+        let results = stmt
+            .query_map(params![source_name], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(results)
     }
 
     /// Record the provenance of a source: how it was ingested and a cheap
@@ -1478,6 +1554,24 @@ pub fn tokenize_for_fts(text: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
+}
+
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
+    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm_a == 0.0 || norm_b == 0.0 {
+        0.0
+    } else {
+        (dot / (norm_a * norm_b)) as f64
+    }
 }
 
 #[cfg(test)]
@@ -2056,6 +2150,50 @@ mod tests {
             )
             .unwrap();
         assert_eq!(has_ref_name, 1);
+        // The vectors table arrives via the v10 delta.
+        let vectors: i64 = store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'vectors'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(vectors, 1);
+    }
+
+    #[test]
+    fn migrate_adds_vectors_table_to_v9_db() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("graph.db");
+        {
+            // A v9-era database from before the vectors delta existed.
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 INSERT INTO metadata (key, value) VALUES ('schema_version', '9');",
+            )
+            .unwrap();
+        }
+        let store = GraphStore::open(&path).unwrap();
+        let version: i64 = store
+            .conn
+            .query_row(
+                "SELECT CAST(value AS INTEGER) FROM metadata WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, CURRENT_SCHEMA_VERSION);
+        let vectors: i64 = store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'vectors'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(vectors, 1);
     }
 
     #[test]

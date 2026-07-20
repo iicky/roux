@@ -32,7 +32,7 @@ use rusqlite::Connection;
 use crate::graph::store::GraphStore;
 
 pub const ARTIFACT_VERSION: &str = "1";
-pub const SUPPORTED_SCHEMA_MAX: i64 = 9;
+pub const SUPPORTED_SCHEMA_MAX: i64 = crate::graph::store::CURRENT_SCHEMA_VERSION;
 
 /// Write a portable artifact at `output`. `source_db` is the sqlite file to export.
 ///
